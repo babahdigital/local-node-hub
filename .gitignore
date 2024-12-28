@@ -34,7 +34,7 @@ Thumbs.db
 .gitconfig
 
 # Abaikan file konfigurasi lingkungan dan credential
-tool/credential.sh
+tool/credentials.sh
 
 # Jangan abaikan .env, biarkan tetap diupload
 !.env
