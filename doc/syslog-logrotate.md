@@ -10,7 +10,7 @@ Proyek ini mengatur Syslog-ng untuk pengumpulan log jaringan dan Logrotate untuk
 
 ## Cara Penggunaan
 
-### Edit Environment Variables
+### 1. Edit Environment Variables
 Ubah `docker-compose.yml` untuk mengatur zona waktu:
 ```yaml
 environment:
@@ -18,20 +18,46 @@ environment:
     TZ: Asia/Makassar
 ```
 
-### Build dan Jalankan Container
+### 2. Build dan Jalankan Container
 ```bash
 docker-compose build
 docker-compose up -d
 ```
 
-### Verifikasi Waktu di Container
+### 3. Verifikasi Waktu di Container
 ```bash
 docker exec syslog-ng date
 ```
 
-### Melihat Log Syslog-ng
+### 4. Melihat Log Syslog-ng
 ```bash
 docker logs syslog-ng
+```
+
+### 5. Uji Coba Pengiriman Log
+Kirim log uji ke `syslog-ng` untuk memastikan bahwa log diterima dan disimpan di lokasi yang benar:
+
+#### 5.1. Kirim Log Melalui UDP
+```bash
+logger -n 127.0.0.1 -P 1514 --udp "Test log message over UDP"
+```
+
+#### 5.2. Kirim Log Melalui TCP
+```bash
+logger -n 127.0.0.1 -P 1514 --tcp "Test log message over TCP"
+```
+
+### 6. Verifikasi File Log
+Periksa apakah file log telah dibuat dan berisi data yang diharapkan:
+
+#### 6.1. Periksa Log Test
+```bash
+docker exec -it syslog-ng cat /mnt/Data/Syslog/test/test.log
+```
+
+#### 6.2. Periksa Log Default
+```bash
+docker exec -it syslog-ng cat /mnt/Data/Syslog/default/default.log
 ```
 
 ## Struktur Folder
