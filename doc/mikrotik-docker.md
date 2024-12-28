@@ -72,27 +72,6 @@ add chain=input action=accept src-address-list=allowed-subnets
 add chain=output action=accept dst-address-list=allowed-subnets
 ```
 
-### 2.3 Tambahkan Logging untuk Traffic Antar-Subnet
-
-#### 2.3.1 Logging untuk traffic dari Docker ke MikroTik
-```bash
-/ip firewall filter
-add chain=forward action=log src-address=172.16.31.0/28 dst-address=172.16.10.0/24 log-prefix="Docker-to-MikroTik: "
-```
-
-#### 2.3.2 Logging untuk traffic dari MikroTik ke Docker
-```bash
-/ip firewall filter
-add chain=forward action=log src-address=172.16.10.0/24 dst-address=172.16.31.0/28 log-prefix="MikroTik-to-Docker: "
-```
-
-#### 2.3.3 Logging untuk traffic antara Docker dan host Docker
-```bash
-/ip firewall filter
-add chain=forward action=log src-address=172.16.30.0/28 dst-address=172.16.31.0/28 log-prefix="Host-to-Docker: "
-add chain=forward action=log src-address=172.16.31.0/28 dst-address=172.16.30.0/28 log-prefix="Docker-to-Host: "
-```
-
 ---
 
 ## 3. Konfigurasi IP Statis di TrueNAS Scale
