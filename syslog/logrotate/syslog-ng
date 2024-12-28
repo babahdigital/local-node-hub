@@ -1,0 +1,59 @@
+"/mnt/Data/Syslog/default/default.log" {
+    size 10M
+    rotate 7
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    su abdullah abdullah
+    create 0644 abdullah abdullah
+    postrotate
+        docker exec syslog-ng kill -HUP 1
+    endscript
+}
+
+"/mnt/Data/Syslog/rtsp/rtsp.log" {
+    size 10M
+    rotate 7
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    su abdullah abdullah
+    create 0644 abdullah abdullah
+    postrotate
+        docker exec syslog-ng kill -HUP 1
+    endscript
+}
+
+"/mnt/Data/Syslog/test/test.log" {
+    size 10M
+    rotate 7
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    su abdullah abdullah
+    create 0644 abdullah abdullah
+    postrotate
+        docker exec syslog-ng kill -HUP 1
+    endscript
+}
+
+"/mnt/Data/Syslog/debug/debug.log" {
+    size 10M
+    rotate 7
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    su abdullah abdullah
+    create 0644 abdullah abdullah
+    postrotate
+        docker exec syslog-ng kill -HUP 1
+    endscript
+}

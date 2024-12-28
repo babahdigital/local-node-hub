@@ -1,0 +1,53 @@
+{
+    "general": {
+      "log_file_load_error": "Gagal memuat pesan log dari {file_path}: {error}.",
+      "process_terminated": "Proses dihentikan oleh pengguna.",
+      "unexpected_error": "Kesalahan tidak terduga: {error}."
+    },
+    "proxy": {
+      "init": {
+        "start": "Memulai konfigurasi Nginx Proxy.",
+        "success": "Konfigurasi Nginx Proxy berhasil dimuat.",
+        "failed": "Gagal memuat konfigurasi Nginx Proxy: {error}."
+      },
+      "health": {
+        "check_start": "Memulai health check untuk Proxy.",
+        "check_success": "Proxy Nginx berjalan dengan baik.",
+        "check_failed": "Health check Proxy gagal: {error}."
+      },
+      "credentials": {
+        "file_missing": "File credentials.sh tidak ditemukan. Pastikan file ini telah dimount ke container.",
+        "env_loaded": "Kredensial dari credentials.sh berhasil dimuat.",
+        "env_failed": "Gagal memuat kredensial dari credentials.sh: {error}."
+      },
+      "config": {
+        "template_loaded": "Template nginx.conf.template berhasil dimuat.",
+        "template_failed": "Gagal memuat template nginx.conf.template: {error}.",
+        "env_substitution_start": "Memulai substitusi variabel pada template Nginx.",
+        "env_substitution_success": "Substitusi variabel pada template Nginx berhasil.",
+        "env_substitution_failed": "Substitusi variabel pada template Nginx gagal: {error}."
+      },
+      "runtime": {
+        "start_success": "Nginx Proxy berhasil dijalankan.",
+        "start_failed": "Gagal menjalankan Nginx Proxy: {error}.",
+        "unexpected_error": "Kesalahan tidak terduga saat menjalankan Nginx Proxy: {error}."
+      },
+      "log": {
+        "access_logged": "Akses ke Proxy dicatat dalam access.log.",
+        "error_logged": "Kesalahan dicatat dalam error.log: {error}."
+      }
+    },
+    "bash_entrypoint": {
+      "loading_env": "Memuat variabel lingkungan dari credentials.sh...",
+      "env_loaded": "Variabel lingkungan berhasil dimuat.",
+      "env_invalid": "Variabel lingkungan tidak valid. Pastikan Username, Password, dan IP DVR/NVR telah diatur.",
+      "template_missing": "Template nginx.conf.template tidak ditemukan.",
+      "config_generated": "Konfigurasi Nginx berhasil dibuat di {path}.",
+      "proxy_started": "Layanan Nginx Proxy berhasil dimulai."
+    },
+    "headers": {
+      "content_type_options": "nosniff",
+      "frame_options": "DENY",
+      "transport_security": "max-age=31536000; includeSubDomains"
+    }
+  }  
