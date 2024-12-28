@@ -191,11 +191,6 @@ net.ipv4.ip_forward = 1
 sysctl -p
 ```
 
-### 5.3 Tambahkan route ke subnet Docker
-```bash
-ip route add 172.16.31.0/28 via 172.16.30.3
-```
-
 ---
 
 ## 6. Konfigurasi Jaringan Docker
