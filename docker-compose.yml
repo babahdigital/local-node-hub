@@ -1,0 +1,121 @@
+services:
+
+  logrotate-setup:
+    image: alpine:latest
+    container_name: logrotate-setup
+    volumes:
+      - ./tool/generate_logrotate.sh:/app/generate_logrotate.sh
+      - /mnt/Data/Syslog:/mnt/Data/Syslog
+      - ./syslog/logrotate:/app/logrotate
+    user: root
+    entrypoint: ["/bin/sh", "-c", "apk add --no-cache bash && /app/generate_logrotate.sh"]
+    depends_on:
+      - syslog-ng
+    restart: "no"
+    networks:
+      rtsp-syslog-network:
+        ipv4_address: 172.16.31.2
+
+  syslog-ng:
+    build: ./syslog
+    container_name: syslog-ng
+    restart: always
+    hostname: ${SYSLOG_HOSTNAME:-syslog-ng}
+    cap_add:
+      - CAP_SYS_ADMIN
+      - CAP_NET_BIND_SERVICE
+    command: ["syslog-ng", "--foreground", "-f", "/app/config/syslog-ng.conf", "--persist-file=/run/syslog-ng.persist"]
+    volumes:
+      - /mnt/Data/Syslog:/mnt/Data/Syslog
+      - ./syslog/config/syslog-ng.conf:/app/config/syslog-ng.conf:ro
+      - /mnt/Data/Syslog/var-run:/run
+      - /mnt/Data/Syslog/default:/mnt/Data/Syslog/default
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./syslog/config/log_messages.json:/app/config/log_messages.json:ro
+    env_file:
+      - .env
+    environment:
+      SYSLOG_USER: ${SYSLOG_USER:-abdullah}
+      SYSLOG_PORT: ${SYSLOG_PORT:-1514}
+      TIMEZONE: Asia/Makassar
+      TZ: Asia/Makassar
+    networks:
+      rtsp-syslog-network:
+        ipv4_address: 172.16.31.3
+    healthcheck:
+      test: ["CMD", "pgrep", "syslog-ng"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  rtsp-backup:
+    build: ./rtsp
+    container_name: rtsp-backup
+    restart: always
+    volumes:
+      - /mnt/Data/Backup:/mnt/Data/Backup
+      - ./rtsp/scripts:/app/scripts
+      - ./rtsp/config/log_messages.json:/app/config/log_messages.json:ro
+      - ./tool/credentials.sh:/app/config/credentials.sh:ro
+      - /mnt/Data/Syslog/rtsp:/mnt/Data/Syslog/rtsp
+    ports:
+      - "127.0.0.1:8080:8080"
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "curl", "--silent", "--fail", "http://rtsp-backup:8080/health"]
+      interval: 120s
+      timeout: 60s
+      retries: 5
+    command: ["bash", "/app/entrypoint.sh"]
+    networks:
+      rtsp-syslog-network:
+        ipv4_address: 172.16.31.4
+
+  proxy:
+    build:
+      context: ./proxy
+    container_name: nginx-proxy
+    restart: always
+    volumes:
+      - ./tool/credentials.sh:/app/config/credentials.sh:ro  # Mount file credentials.sh ke dalam container
+      - /mnt/Data/Syslog/rtsp:/app/logs                      # Mount log ke lokasi host
+    ports:
+      - "8554:8554"
+    env_file:
+      - .env
+    networks:
+      rtsp-syslog-network:
+        ipv4_address: 172.16.31.5
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8554"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # api:
+  #   build: ./backend
+  #   container_name: backend-api
+  #   restart: always
+  #   volumes:
+  #     - ./backend/scripts:/app/scripts
+  #   ports:
+  #     - "5001:5001"
+  #   environment:
+  #     API_PORT: 5001
+  #   healthcheck:
+  #     test: ["CMD", "curl", "--silent", "--fail", "http://backend-api:5001/health"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #   networks:
+  #     rtsp-syslog-network:
+  #       ipv4_address: 172.16.31.6
+
+networks:
+  rtsp-syslog-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: "172.16.31.0/28"
+          gateway: "172.16.31.1"
