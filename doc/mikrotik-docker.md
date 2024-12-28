@@ -26,32 +26,40 @@ add name=vlan83 interface=bridge1 vlan-id=83
 ```
 > Ganti **`bridge1`** dengan nama interface fisik yang terhubung ke TrueNAS (misalnya **bridge1/ether1**).
 
-#### 2.1.2 Berikan IP pada VLAN 83
-```bash
-/ip address
-add address=172.16.30.1/28 interface=vlan83
-```
-
 ### 2.2 Buat Bridge di MikroTik
 
 #### 2.2.1 Buat bridge untuk menyatukan VLAN 83 dengan subnet lainnya
 ```bash
 /interface bridge
-add name=docker-31
+add name=docker-10
 add name=docker-30
+add name=docker-31
 ```
 
-#### 2.2.2 Tambahkan VLAN 83 ke bridge
+#### 2.2.2 Buat VLAN 83
+```bash
+/interface vlan
+add name=vlan83 interface=docker-30 vlan-id=83
+```
+
+#### 2.2.3 Berikan IP pada VLAN 83
+```bash
+/ip address
+add address=172.16.30.1/28 interface=vlan83
+```
+
+#### 2.2.4 Tambahkan VLAN 83 ke bridge
 ```bash
 /interface bridge port
-add bridge=br-docker interface=vlan83
+add bridge=docker-30 interface=vlan83
 ```
 
-#### 2.2.3 Berikan IP pada bridge
+#### 2.2.5 Berikan IP pada bridge
 ```bash
 /ip address
 add address=172.16.30.1/28 interface=docker-30
-add address=172.16.31.14/28 interface=docker-31
+add address=172.16.31.1/28 interface=docker-31
+add address=10.5.0.1/24 interface=docker-10
 ```
 > Biarkan bridge docker-31 tanpa client (ethernet/vlan, biarkan kosong)
 
@@ -267,41 +275,41 @@ docker network inspect bridge
 > Output akan menunjukkan subnet baru yang telah diterapkan, kurang lebih seperti di bawah ini.
 ```json
 [
-        {
-                "Name": "bridge",
-                "Id": "abf5306c696dc39e7bdf74f3ff32141dfa37aacfd0fa208b80bb166a426e2072",
-                "Created": "2024-12-28T10:07:20.388725497-05:00",
-                "Scope": "local",
-                "Driver": "bridge",
-                "EnableIPv6": false,
-                "IPAM": {
-                        "Driver": "default",
-                        "Options": null,
-                        "Config": [
-                                {
-                                        "Subnet": "10.5.0.0/24",
-                                        "Gateway": "10.5.0.1"
-                                }
-                        ]
-                },
-                "Internal": false,
-                "Attachable": false,
-                "Ingress": false,
-                "ConfigFrom": {
-                        "Network": ""
-                },
-                "ConfigOnly": false,
-                "Containers": {},
-                "Options": {
-                        "com.docker.network.bridge.default_bridge": "true",
-                        "com.docker.network.bridge.enable_icc": "true",
-                        "com.docker.network.bridge.enable_ip_masquerade": "true",
-                        "com.docker.network.bridge.host_binding_ipv4": "0.0.0.0",
-                        "com.docker.network.bridge.name": "docker0",
-                        "com.docker.network.driver.mtu": "1500"
-                },
-                "Labels": {}
-        }
+    {
+        "Name": "bridge",
+        "Id": "abf5306c696dc39e7bdf74f3ff32141dfa37aacfd0fa208b80bb166a426e2072",
+        "Created": "2024-12-28T10:07:20.388725497-05:00",
+        "Scope": "local",
+        "Driver": "bridge",
+        "EnableIPv6": false,
+        "IPAM": {
+            "Driver": "default",
+            "Options": null,
+            "Config": [
+                {
+                    "Subnet": "10.5.0.0/24",
+                    "Gateway": "10.5.0.1"
+                }
+            ]
+        },
+        "Internal": false,
+        "Attachable": false,
+        "Ingress": false,
+        "ConfigFrom": {
+            "Network": ""
+        },
+        "ConfigOnly": false,
+        "Containers": {},
+        "Options": {
+            "com.docker.network.bridge.default_bridge": "true",
+            "com.docker.network.bridge.enable_icc": "true",
+            "com.docker.network.bridge.enable_ip_masquerade": "true",
+            "com.docker.network.bridge.host_binding_ipv4": "0.0.0.0",
+            "com.docker.network.bridge.name": "docker0",
+            "com.docker.network.driver.mtu": "1500"
+        },
+        "Labels": {}
+    }
 ]
 ```
 
@@ -338,5 +346,5 @@ docker rm <CONTAINER_ID_OR_NAME>
 
 ## Catatan Tambahan
 
-> Pengujian Log: Periksa log untuk traffic antar-subnet di MikroTik: `/log print where message~"Docker"`
+> Pengujian Log: Periksa log untuk traffic antar-subnet di MikroTik: `/log print where message~"Docker"``
 > Pastikan Semua Subnet Terhubung: Lakukan ping antar-subnet untuk memastikan semua konfigurasi berjalan dengan baik.
