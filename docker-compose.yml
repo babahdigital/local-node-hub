@@ -1,6 +1,4 @@
-
 services:
-  
   logrotate-setup:
     image: alpine:latest
     container_name: logrotate-setup
@@ -9,7 +7,15 @@ services:
       - /mnt/Data/Syslog:/mnt/Data/Syslog
       - ./syslog/logrotate:/app/logrotate
     user: root
-    entrypoint: ["/bin/sh", "-c", "apk add --no-cache bash && /app/generate_logrotate.sh"]
+    entrypoint: ["/bin/sh", "-c", "
+      # Ganti mirror Alpine ke Leaseweb (atau bisa pakai dl-cdn.alpinelinux.org)
+      sed -i 's|http://dl-cdn.alpinelinux.org/alpine/|http://mirror.leaseweb.com/alpine/|g' /etc/apk/repositories &&
+      rm -rf /var/cache/apk/* &&
+      apk update --no-cache &&
+      apk add --no-cache bash &&
+      # Jalankan script generate_logrotate.sh
+      /app/generate_logrotate.sh
+    "]
     depends_on:
       - syslog-ng
     restart: "no"
@@ -20,6 +26,9 @@ services:
   syslog-ng:
     build: ./syslog
     container_name: syslog-ng
+    ports:
+      - "1514:1514/tcp"
+      - "1514:1514/udp"
     restart: always
     hostname: ${SYSLOG_HOSTNAME:-syslog-ng}
     cap_add:
@@ -79,8 +88,8 @@ services:
     container_name: nginx-proxy
     restart: always
     volumes:
-      - ./tool/credentials.sh:/app/config/credentials.sh:ro  # Mount file credentials.sh ke dalam container
-      - /mnt/Data/Syslog/rtsp:/app/logs                      # Mount log ke lokasi host
+      - ./tool/credentials.sh:/app/config/credentials.sh:ro
+      - /mnt/Data/Syslog/rtsp:/app/logs
     ports:
       - "8554:8554"
     env_file:

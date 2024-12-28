@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-
 set -e
 
 log() {
@@ -22,12 +21,12 @@ get_message() {
   echo "$MESSAGES" | jq -r ".$1"
 }
 
-# Atur zona waktu secara dinamis dengan lokasi alternatif
+# Atur zona waktu
 configure_timezone() {
   if [[ -n "$TIMEZONE" ]]; then
     log "$(get_message "configure_timezone") $TIMEZONE"
     if [[ -f "/usr/share/zoneinfo/$TIMEZONE" ]]; then
-      export TZ="$TIMEZONE"  # Gunakan variabel TZ untuk mengatur waktu global
+      export TZ="$TIMEZONE"
       ln -sf "/usr/share/zoneinfo/$TIMEZONE" /mnt/Data/Syslog/localtime
       echo "$TIMEZONE" > /mnt/Data/Syslog/timezone
       log "$(get_message "timezone_set_custom") $TIMEZONE"
@@ -45,7 +44,7 @@ configure_timezone() {
   fi
 }
 
-# Variabel
+# Variabel logrotate
 CONFIG_SOURCE="/app/logrotate/syslog-ng"
 CONFIG_TARGET="/etc/logrotate.d/syslog-ng"
 BACKUP_DIR="/etc/logrotate.d/backup"
@@ -53,10 +52,7 @@ SYSLOG_CONF="/app/config/syslog-ng.conf"
 LOGROTATE_STATE_FILE="/mnt/Data/Syslog/default/logrotate.status"
 LOGROTATE_LOG="/mnt/Data/Syslog/logrotate.log"
 
-# Load pesan dari log_messages.json
 load_messages
-
-# Atur zona waktu
 configure_timezone
 
 # Pastikan direktori backup ada
@@ -80,12 +76,12 @@ if [[ ! -f "$CONFIG_SOURCE" ]]; then
   exit 1
 fi
 
-# Bersihkan file backup lama
+# Bersihkan file backup lama (lebih dari 7 hari)
 log "$(get_message "clean_old_backup_files")"
 find "$BACKUP_DIR" -type f -mtime +7 -exec rm -f {} \;
 log "$(get_message "old_backup_files_cleaned")"
 
-# Validasi symlink untuk logrotate
+# Validasi symlink logrotate
 log "$(get_message "check_symlink")"
 if [[ -L "$CONFIG_TARGET" && "$(readlink -f "$CONFIG_TARGET")" == "$CONFIG_SOURCE" ]]; then
   log "$(get_message "symlink_valid")"
@@ -95,7 +91,7 @@ else
   log "$(get_message "symlink_created")"
 fi
 
-# Jalankan logrotate manual
+# Jalankan logrotate manual (force)
 log "$(get_message "run_logrotate")"
 if logrotate -v -f -s "$LOGROTATE_STATE_FILE" "$CONFIG_TARGET" >> "$LOGROTATE_LOG" 2>&1; then
   log "$(get_message "logrotate_no_rotation")"
@@ -103,6 +99,6 @@ else
   log "$(get_message "logrotate_rotated")"
 fi
 
-# Mulai syslog-ng
+# Terakhir, jalankan syslog-ng di foreground
 log "$(get_message "start_syslog_ng")"
 exec syslog-ng --foreground -f "$SYSLOG_CONF"
