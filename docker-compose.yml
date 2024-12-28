@@ -1,6 +1,6 @@
 
 services:
-  #test
+  
   logrotate-setup:
     image: alpine:latest
     container_name: logrotate-setup
