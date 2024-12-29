@@ -3,7 +3,7 @@
 Backup Manager adalah sebuah skrip Python yang digunakan untuk melakukan backup stream RTSP secara otomatis. Skrip ini mendukung dynamic scaling berdasarkan beban CPU dan memiliki fitur logging yang lengkap.
 
 ## Deskripsi
-Skrip `backup_manager.py` digunakan untuk melakukan backup stream RTSP dari beberapa channel secara paralel. Skrip ini menggunakan `ProcessPoolExecutor` untuk menjalankan proses backup secara paralel dan menyesuaikan parameter dinamis seperti jumlah pekerja, batas concurrency, dan jeda antar batch berdasarkan beban CPU.
+Skrip `backup_manager.py` digunakan untuk melakukan backup stream RTSP dari beberapa channel secara paralel. Skrip ini menggunakan `ThreadPoolExecutor` untuk menjalankan proses backup secara paralel dan menyesuaikan parameter dinamis seperti jumlah pekerja, batas concurrency, dan jeda antar batch berdasarkan beban CPU.
 
 ## Fitur
 
@@ -81,7 +81,7 @@ Menghitung batas concurrency berdasarkan beban CPU.
 - Integer yang menunjukkan batas concurrency.
 
 ### `get_dynamic_max_workers()`
-Menentukan jumlah pekerja untuk `ProcessPoolExecutor` berdasarkan beban CPU.
+Menentukan jumlah pekerja untuk `ThreadPoolExecutor` berdasarkan beban CPU.
 
 **Mengembalikan:**
 - Integer yang menunjukkan jumlah pekerja.
@@ -138,21 +138,13 @@ Skrip ini mendukung logging ke file dan syslog. Log file disimpan di `/mnt/Data/
    Mengambil nilai dinamis untuk `max_workers`, `concurrency_limit`, dan `retry_delay` menggunakan fungsi `get_dynamic_max_workers()`, `get_dynamic_concurrency_limit()`, dan `get_dynamic_retry_delay()`.
 
 6. **Proses Backup**:
-   Menggunakan `ProcessPoolExecutor` untuk menjalankan proses backup secara paralel. Setiap batch channel diproses secara paralel dengan jeda antar batch untuk menekan lonjakan resource.
+   Menggunakan `ThreadPoolExecutor` untuk menjalankan proses backup secara paralel. Setiap batch channel diproses secara paralel dengan jeda antar batch untuk menekan lonjakan resource.
 
 7. **Penanganan Kesalahan**:
    Menangani kesalahan yang mungkin terjadi selama proses backup dan mencatatnya ke log.
 
 8. **Mengakhiri Proses**:
    Mencatat pesan log ketika proses backup dihentikan atau selesai.
-
-## Kontribusi
-
-Silakan buat pull request atau buka issue untuk kontribusi atau pelaporan bug.
-
-## Lisensi
-
-Proyek ini dilisensikan di bawah lisensi MIT. Lihat file `LICENSE` untuk informasi lebih lanjut.
 
 ## Contoh Penggunaan
 
@@ -179,6 +171,53 @@ Proyek ini dilisensikan di bawah lisensi MIT. Lihat file `LICENSE` untuk informa
 2. Jalankan skrip `backup_manager.py`:
    ```sh
    python backup_manager.py
+   ```
+
+## Log yang Dihasilkan
+
+### Contoh Log
+
+1. **Inisialisasi**:
+   ```
+   [INFO] Proses backup dimulai dengan MAX_WORKERS: 4
+   [INFO] Concurrency limit (chunk size): 4
+   [INFO] Retry delay antar batch: 10 detik
+   ```
+
+2. **Health Check**:
+   ```
+   [INFO] Memulai health check pada URL: http://127.0.0.1:8080/health
+   [INFO] Health check berhasil dalam 50 detik
+   ```
+
+3. **Batch Backup**:
+   ```
+   [INFO] Memulai batch backup untuk channels: [1, 2, 3, 4]
+   ```
+
+4. **Backup Channel Berhasil**:
+   ```
+   [INFO] Backup channel 1 berhasil, file disimpan di /mnt/Data/Backup/01-01-2023/Channel-1/12-00-00.ts
+   ```
+
+5. **Backup Channel Gagal**:
+   ```
+   [ERROR] Gagal melakukan backup channel 2: <error message>
+   ```
+
+6. **Validasi Stream Gagal**:
+   ```
+   [ERROR] Stream RTSP untuk channel 3 tidak valid
+   ```
+
+7. **Proses Dihentikan**:
+   ```
+   [INFO] Proses backup dihentikan
+   ```
+
+8. **Proses Selesai**:
+   ```
+   [INFO] Proses backup selesai
    ```
 
 Dengan dokumentasi ini, Anda dapat memahami dan menggunakan skrip `backup_manager.py` dengan lebih baik. Jika ada pertanyaan lebih lanjut atau kebutuhan untuk penyesuaian, jangan ragu untuk menghubungi saya.

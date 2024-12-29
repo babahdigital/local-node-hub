@@ -5,7 +5,7 @@ import time
 import json
 import requests
 import psutil  # Digunakan untuk dynamic scaling
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ThreadPoolExecutor
 from dotenv import load_dotenv
 import logging
 from logging.handlers import SysLogHandler, RotatingFileHandler
@@ -34,6 +34,10 @@ except RuntimeError as e:
 # Setup logger
 logger = logging.getLogger("RTSP-Backup")
 logger.setLevel(logging.DEBUG if os.getenv("DEBUG", "false").lower() == "true" else logging.INFO)
+
+ENABLE_SYSLOG = os.getenv("ENABLE_SYSLOG", "true").lower() == "true"
+SYSLOG_SERVER = os.getenv("SYSLOG_SERVER", "syslog-ng")
+SYSLOG_PORT = int(os.getenv("SYSLOG_PORT", "1514"))
 
 if ENABLE_SYSLOG:
     syslog_handler = SysLogHandler(address=(SYSLOG_SERVER, SYSLOG_PORT))
@@ -67,7 +71,7 @@ def get_dynamic_concurrency_limit():
 # Dynamic scaling untuk jumlah pekerja
 def get_dynamic_max_workers():
     """
-    Menentukan jumlah pekerja untuk ProcessPoolExecutor 
+    Menentukan jumlah pekerja untuk ThreadPoolExecutor 
     berdasarkan beban CPU.
     """
     cpu_percent = psutil.cpu_percent(interval=1)
@@ -97,40 +101,56 @@ APP_VERSION = "1.4.0"
 HEALTH_CHECK_URL = os.getenv("HEALTH_CHECK_URL", "http://127.0.0.1:8080/health")
 HEALTH_CHECK_TIMEOUT = int(os.getenv("HEALTH_CHECK_TIMEOUT", "50"))
 
-SYSLOG_SERVER = os.getenv("SYSLOG_SERVER", "syslog-ng")
-SYSLOG_PORT = int(os.getenv("SYSLOG_PORT", "1514"))
-ENABLE_SYSLOG = os.getenv("ENABLE_SYSLOG", "true").lower() == "true"
-
 BACKEND_ENDPOINT = os.getenv("BACKEND_ENDPOINT", "http://127.0.0.1:5001/api/report")
 
 # Fungsi untuk menghasilkan URL RTSP
 def get_rtsp_url(channel):
     return f"rtsp://{RTSP_USERNAME}:{RTSP_PASSWORD}@{RTSP_IP}:554/cam/realmonitor?channel={channel}&subtype={RTSP_SUBTYPE}"
 
-# Fungsi untuk memvalidasi stream RTSP menggunakan FFprobe
-def validate_rtsp_stream(rtsp_url):
+# Fungsi untuk memeriksa frame hitam menggunakan FFmpeg
+def check_black_frames(rtsp_url):
     try:
         result = subprocess.run(
             [
-                "ffprobe",
-                "-v", "error",
-                "-select_streams", "v:0",
-                "-show_entries", "stream=codec_name",
-                "-of", "default=noprint_wrappers=1",
-                rtsp_url
+                "ffmpeg",
+                "-i", rtsp_url,
+                "-vf", "blackdetect=d=0.1:pic_th=0.98",
+                "-an",
+                "-t", "5",  # Periksa hanya 5 detik pertama
+                "-f", "null",
+                "-"
             ],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            timeout=5
+            timeout=10
         )
-        if result.returncode == 0 and result.stdout:
-            logger.info(log_messages["backup_manager"]["validation"]["success"].format(channel=rtsp_url))
-            return True
-        else:
-            logger.error(log_messages["backup_manager"]["validation"]["stream_invalid"].format(channel=rtsp_url))
-            return False
+        if b"black_start" in result.stderr:
+            return False  # Frame hitam terdeteksi
+        return True
     except subprocess.TimeoutExpired:
         logger.error(log_messages["backup_manager"]["validation"]["stream_invalid"].format(channel=rtsp_url))
+        return False
+    except Exception as e:
+        logger.error(log_messages["general"]["unexpected_error"].format(error=str(e)))
+        return False
+
+# Fungsi untuk memeriksa validitas file .ts menggunakan FFmpeg
+def validate_ts_file(file_path):
+    try:
+        result = subprocess.run(
+            [
+                "ffmpeg",
+                "-v", "error",
+                "-i", file_path,
+                "-f", "null",
+                "-"
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=10
+        )
+        return result.returncode == 0
+    except subprocess.TimeoutExpired:
         return False
     except Exception as e:
         logger.error(log_messages["general"]["unexpected_error"].format(error=str(e)))
@@ -158,18 +178,24 @@ def backup_channel(channel):
                 check=True
             )
             if os.path.exists(output_file) and os.path.getsize(output_file) > 0:
-                logger.info(
-                    log_messages["backup_manager"]["backup"]["success"].format(
-                        channel=channel, file=output_file
+                # Validasi file .ts yang dihasilkan
+                if validate_ts_file(output_file):
+                    logger.info(
+                        log_messages["backup_manager"]["backup"]["success"].format(
+                            channel=channel, file=output_file
+                        )
                     )
-                )
-                payload = {
-                    "type": "backup_status",
-                    "status": "success",
-                    "channel": channel,
-                    "file": output_file,
-                }
-                send_report_to_backend(BACKEND_ENDPOINT, payload)
+                    payload = {
+                        "type": "backup_status",
+                        "status": "success",
+                        "channel": channel,
+                        "file": output_file,
+                    }
+                    send_report_to_backend(BACKEND_ENDPOINT, payload)
+                else:
+                    logger.error(
+                        log_messages["backup_manager"]["backup"]["invalid_file"].format(file=output_file)
+                    )
             else:
                 logger.error(
                     log_messages["backup_manager"]["backup"]["invalid_file"].format(file=output_file)
@@ -182,6 +208,39 @@ def backup_channel(channel):
         logger.error(
             log_messages["backup_manager"]["validation"]["stream_invalid"].format(channel=channel)
         )
+
+# Fungsi untuk memvalidasi stream RTSP menggunakan FFprobe dan memeriksa frame hitam
+def validate_rtsp_stream(rtsp_url):
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v", "error",
+                "-select_streams", "v:0",
+                "-show_entries", "stream=codec_name",
+                "-of", "default=noprint_wrappers=1",
+                rtsp_url
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=5
+        )
+        if result.returncode == 0 and result.stdout:
+            logger.info(log_messages["backup_manager"]["validation"]["success"].format(channel=rtsp_url))
+            # Periksa frame hitam setelah validasi stream
+            if not check_black_frames(rtsp_url):
+                logger.error(log_messages["backup_manager"]["validation"]["camera_down"].format(channel=rtsp_url))
+                return False
+            return True
+        else:
+            logger.error(log_messages["backup_manager"]["validation"]["stream_invalid"].format(channel=rtsp_url))
+            return False
+    except subprocess.TimeoutExpired:
+        logger.error(log_messages["backup_manager"]["validation"]["stream_invalid"].format(channel=rtsp_url))
+        return False
+    except Exception as e:
+        logger.error(log_messages["general"]["unexpected_error"].format(error=str(e)))
+        return False
 
 # Fungsi utama
 def main():
@@ -205,8 +264,8 @@ def main():
 
         channels_to_backup = range(1, CHANNELS + 1)
 
-        # Jalankan proses backup secara paralel dengan ProcessPoolExecutor
-        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        # Jalankan proses backup secara paralel dengan ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
             for i in range(0, len(channels_to_backup), concurrency_limit):
                 subset = channels_to_backup[i : i + concurrency_limit]
                 logger.info(
