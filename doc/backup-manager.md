@@ -59,62 +59,16 @@ python backup_manager.py
 
 ## Fungsi
 
-### `load_log_messages(file_path)`
-Memuat pesan log dari file JSON.
-
-**Parameter:**
-- `file_path`: Path ke file JSON yang berisi pesan log.
-
-**Mengembalikan:**
-- Dictionary yang berisi pesan log.
-
-### `get_dynamic_retry_delay()`
-Menghitung jeda antar batch berdasarkan beban CPU.
-
-**Mengembalikan:**
-- Integer yang menunjukkan jeda dalam detik.
-
-### `get_dynamic_concurrency_limit()`
-Menghitung batas concurrency berdasarkan beban CPU.
-
-**Mengembalikan:**
-- Integer yang menunjukkan batas concurrency.
-
-### `get_dynamic_max_workers()`
-Menentukan jumlah pekerja untuk `ThreadPoolExecutor` berdasarkan beban CPU.
-
-**Mengembalikan:**
-- Integer yang menunjukkan jumlah pekerja.
-
-### `get_dynamic_max_retries()`
-Menghitung jumlah maksimal retry berdasarkan kondisi tertentu.
-
-**Mengembalikan:**
-- Integer yang menunjukkan jumlah maksimal retry.
-
-### `get_rtsp_url(channel)`
-Menghasilkan URL RTSP untuk channel tertentu.
-
-**Parameter:**
-- `channel`: Nomor channel.
-
-**Mengembalikan:**
-- String yang berisi URL RTSP.
-
-### `validate_rtsp_stream(rtsp_url)`
-Memvalidasi stream RTSP menggunakan `ffprobe`.
-
-**Parameter:**
-- `rtsp_url`: URL RTSP yang akan divalidasi.
-
-**Mengembalikan:**
-- Boolean yang menunjukkan apakah stream valid atau tidak.
-
-### `backup_channel(channel)`
-Melakukan backup channel menggunakan `openRTSP`.
-
-**Parameter:**
-- `channel`: Nomor channel yang akan di-backup.
+| Fungsi | Deskripsi | Parameter | Mengembalikan |
+| --- | --- | --- | --- |
+| `load_log_messages(file_path)` | Memuat pesan log dari file JSON. | `file_path`: Path ke file JSON yang berisi pesan log. | Dictionary yang berisi pesan log. |
+| `get_dynamic_retry_delay()` | Menghitung jeda antar batch berdasarkan beban CPU. | - | Integer yang menunjukkan jeda dalam detik. |
+| `get_dynamic_concurrency_limit()` | Menghitung batas concurrency berdasarkan beban CPU. | - | Integer yang menunjukkan batas concurrency. |
+| `get_dynamic_max_workers()` | Menentukan jumlah pekerja untuk `ThreadPoolExecutor` berdasarkan beban CPU. | - | Integer yang menunjukkan jumlah pekerja. |
+| `get_dynamic_max_retries()` | Menghitung jumlah maksimal retry berdasarkan kondisi tertentu. | - | Integer yang menunjukkan jumlah maksimal retry. |
+| `get_rtsp_url(channel)` | Menghasilkan URL RTSP untuk channel tertentu. | `channel`: Nomor channel. | String yang berisi URL RTSP. |
+| `validate_rtsp_stream(rtsp_url)` | Memvalidasi stream RTSP menggunakan `ffprobe`. | `rtsp_url`: URL RTSP yang akan divalidasi. | Boolean yang menunjukkan apakah stream valid atau tidak. |
+| `backup_channel(channel)` | Melakukan backup channel menggunakan `openRTSP`. | `channel`: Nomor channel yang akan di-backup. | - |
 
 ## Logging
 
