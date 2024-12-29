@@ -9,23 +9,21 @@ from utils import load_log_messages, setup_logger, validate_backend_url
 from report_manager import send_report_to_backend
 from validate_cctv import validate_rtsp_stream, check_black_frames
 
-# Import validation functions from the new file
-from validate_cctv import check_black_frames, validate_rtsp_stream
-
 # Load environment variables
 load_dotenv()
 
-LOG_MESSAGES_FILE = os.getenv("LOG_MESSAGES_FILE", "/app/config/log_messages.json")
-
 # Load log messages
+LOG_MESSAGES_FILE = os.getenv("LOG_MESSAGES_FILE", "/app/config/log_messages.json")
 try:
     log_messages = load_log_messages(LOG_MESSAGES_FILE)
 except RuntimeError as e:
-    print(e)
+    print(f"Gagal memuat pesan log: {e}")
     exit(1)
 
+# Initialize logger
 logger = setup_logger("RTSP-Backup")
 
+# Dynamic system-based configurations
 def get_dynamic_retry_delay():
     cpu_percent = psutil.cpu_percent(interval=1)
     if cpu_percent < 50:
@@ -50,9 +48,7 @@ def get_dynamic_max_workers():
         return 4
     return 2
 
-def get_dynamic_max_retries():
-    return 3
-
+# Configuration
 RTSP_USERNAME = os.getenv("RTSP_USERNAME")
 RTSP_PASSWORD = os.getenv("RTSP_PASSWORD")
 RTSP_IP = os.getenv("RTSP_IP")
@@ -60,32 +56,25 @@ RTSP_SUBTYPE = os.getenv("RTSP_SUBTYPE", "1")
 VIDEO_DURATION = int(os.getenv("VIDEO_DURATION", "10"))
 CHANNELS = int(os.getenv("CHANNELS", "1"))
 BACKUP_DIR = os.getenv("BACKUP_DIR", "/mnt/Data/Backup")
-MAX_RETRIES = get_dynamic_max_retries()
-APP_VERSION = "1.4.0"
-
 HEALTH_CHECK_URL = os.getenv("HEALTH_CHECK_URL", "http://127.0.0.1:8080/health")
 HEALTH_CHECK_TIMEOUT = int(os.getenv("HEALTH_CHECK_TIMEOUT", "50"))
 BACKEND_ENDPOINT = os.getenv("BACKEND_ENDPOINT", "http://127.0.0.1:5001/api/report")
 
+# Helper functions
 def get_rtsp_url(channel):
     return f"rtsp://{RTSP_USERNAME}:{RTSP_PASSWORD}@{RTSP_IP}:554/cam/realmonitor?channel={channel}&subtype={RTSP_SUBTYPE}"
 
 def validate_ts_file(file_path):
     try:
         result = subprocess.run(
-            [
-                "ffmpeg",
-                "-v", "error",
-                "-i", file_path,
-                "-f", "null",
-                "-"
-            ],
+            ["ffmpeg", "-v", "error", "-i", file_path, "-f", "null", "-"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             timeout=10
         )
         return result.returncode == 0
     except subprocess.TimeoutExpired:
+        logger.error(log_messages["backup_manager"]["backup"]["timeout"].format(file=file_path))
         return False
     except Exception as e:
         logger.error(log_messages["general"]["unexpected_error"].format(error=str(e)))
@@ -104,7 +93,6 @@ def backup_channel(channel):
     timestamp = datetime.datetime.now().strftime("%H-%M-%S")
     output_file = os.path.join(channel_dir, f"{timestamp}.ts")
 
-    # Validasi sebelum backup
     if validate_rtsp_stream(rtsp_url):
         try:
             subprocess.run(
@@ -113,11 +101,7 @@ def backup_channel(channel):
             )
             if os.path.exists(output_file) and os.path.getsize(output_file) > 0:
                 if validate_ts_file(output_file):
-                    logger.info(
-                        log_messages["backup_manager"]["backup"]["success"].format(
-                            channel=channel, file=output_file
-                        )
-                    )
+                    logger.info(log_messages["backup_manager"]["backup"]["success"].format(channel=channel, file=output_file))
                     payload = {"type": "backup_status", "status": "success", "channel": channel, "file": output_file}
                     send_report_to_backend(BACKEND_ENDPOINT, payload)
                 else:
