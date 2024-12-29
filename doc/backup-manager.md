@@ -35,21 +35,6 @@ Skrip ini menggunakan variabel lingkungan yang dapat diatur melalui file `.env` 
 | `ENABLE_SYSLOG` | Mengaktifkan atau menonaktifkan syslog (true/false). |
 | `BACKEND_ENDPOINT` | Endpoint backend untuk mengirim laporan. |
 
-## Instalasi
-
-1. Clone repository ini:
-    ```bash
-    git clone <repository-url>
-    cd <repository-directory>
-    ```
-
-2. Install dependencies:
-    ```bash
-    pip install -r requirements.txt
-    ```
-
-3. Buat file `.env` berdasarkan contoh `.env.example` dan sesuaikan dengan konfigurasi Anda.
-
 ## Penggunaan
 
 Jalankan skrip `backup_manager.py`:
@@ -77,101 +62,101 @@ Skrip ini mendukung logging ke file dan syslog. Log file disimpan di `/mnt/Data/
 ## Alur Kerja Utama
 
 1. **Memuat Variabel Lingkungan**:
-   Menggunakan `load_dotenv()` untuk memuat variabel lingkungan dari file `.env`.
+    Menggunakan `load_dotenv()` untuk memuat variabel lingkungan dari file `.env`.
 
 2. **Memuat Pesan Log**:
-   Memanggil `load_log_messages(LOG_MESSAGES_FILE)` untuk memuat pesan log dari file JSON.
+    Memanggil `load_log_messages(LOG_MESSAGES_FILE)` untuk memuat pesan log dari file JSON.
 
 3. **Setup Logger**:
-   Mengatur logger untuk mencatat pesan log ke file dan Syslog (jika diaktifkan).
+    Mengatur logger untuk mencatat pesan log ke file dan Syslog (jika diaktifkan).
 
 4. **Health Check**:
-   Memvalidasi URL health check menggunakan `validate_rtsp_stream(HEALTH_CHECK_URL)`.
+    Memvalidasi URL health check menggunakan `validate_rtsp_stream(HEALTH_CHECK_URL)`.
 
 5. **Mengambil Nilai Dinamis**:
-   Mengambil nilai dinamis untuk `max_workers`, `concurrency_limit`, dan `retry_delay` menggunakan fungsi `get_dynamic_max_workers()`, `get_dynamic_concurrency_limit()`, dan `get_dynamic_retry_delay()`.
+    Mengambil nilai dinamis untuk `max_workers`, `concurrency_limit`, dan `retry_delay` menggunakan fungsi `get_dynamic_max_workers()`, `get_dynamic_concurrency_limit()`, dan `get_dynamic_retry_delay()`.
 
 6. **Proses Backup**:
-   Menggunakan `ThreadPoolExecutor` untuk menjalankan proses backup secara paralel. Setiap batch channel diproses secara paralel dengan jeda antar batch untuk menekan lonjakan resource.
+    Menggunakan `ThreadPoolExecutor` untuk menjalankan proses backup secara paralel. Setiap batch channel diproses secara paralel dengan jeda antar batch untuk menekan lonjakan resource.
 
 7. **Penanganan Kesalahan**:
-   Menangani kesalahan yang mungkin terjadi selama proses backup dan mencatatnya ke log.
+    Menangani kesalahan yang mungkin terjadi selama proses backup dan mencatatnya ke log.
 
 8. **Mengakhiri Proses**:
-   Mencatat pesan log ketika proses backup dihentikan atau selesai.
+    Mencatat pesan log ketika proses backup dihentikan atau selesai.
 
 ## Contoh Penggunaan
 
 ### Menjalankan Skrip
 
 1. Buat file `.env` dengan variabel lingkungan yang diperlukan:
-   ```env
-   LOG_MESSAGES_FILE=/path/to/log_messages.json
-   RTSP_USERNAME=your_username
-   RTSP_PASSWORD=your_password
-   RTSP_IP=192.168.1.100
-   RTSP_SUBTYPE=1
-   VIDEO_DURATION=10
-   CHANNELS=4
-   BACKUP_DIR=/mnt/Data/Backup
-   HEALTH_CHECK_URL=http://127.0.0.1:8080/health
-   HEALTH_CHECK_TIMEOUT=50
-   SYSLOG_SERVER=syslog-ng
-   SYSLOG_PORT=1514
-   ENABLE_SYSLOG=true
-   BACKEND_ENDPOINT=http://127.0.0.1:5001/api/report
-   ```
+    ```env
+    LOG_MESSAGES_FILE=/path/to/log_messages.json
+    RTSP_USERNAME=your_username
+    RTSP_PASSWORD=your_password
+    RTSP_IP=192.168.1.100
+    RTSP_SUBTYPE=1
+    VIDEO_DURATION=10
+    CHANNELS=4
+    BACKUP_DIR=/mnt/Data/Backup
+    HEALTH_CHECK_URL=http://127.0.0.1:8080/health
+    HEALTH_CHECK_TIMEOUT=50
+    SYSLOG_SERVER=syslog-ng
+    SYSLOG_PORT=1514
+    ENABLE_SYSLOG=true
+    BACKEND_ENDPOINT=http://127.0.0.1:5001/api/report
+    ```
 
 2. Jalankan skrip `backup_manager.py`:
-   ```sh
-   python backup_manager.py
-   ```
+    ```sh
+    python backup_manager.py
+    ```
 
 ## Log yang Dihasilkan
 
 ### Contoh Log
 
 1. **Inisialisasi**:
-   ```
-   [INFO] Proses backup dimulai dengan MAX_WORKERS: 4
-   [INFO] Concurrency limit (chunk size): 4
-   [INFO] Retry delay antar batch: 10 detik
-   ```
+    ```
+    [INFO] Proses backup dimulai dengan MAX_WORKERS: 4
+    [INFO] Concurrency limit (chunk size): 4
+    [INFO] Retry delay antar batch: 10 detik
+    ```
 
 2. **Health Check**:
-   ```
-   [INFO] Memulai health check pada URL: http://127.0.0.1:8080/health
-   [INFO] Health check berhasil dalam 50 detik
-   ```
+    ```
+    [INFO] Memulai health check pada URL: http://127.0.0.1:8080/health
+    [INFO] Health check berhasil dalam 50 detik
+    ```
 
 3. **Batch Backup**:
-   ```
-   [INFO] Memulai batch backup untuk channels: [1, 2, 3, 4]
-   ```
+    ```
+    [INFO] Memulai batch backup untuk channels: [1, 2, 3, 4]
+    ```
 
 4. **Backup Channel Berhasil**:
-   ```
-   [INFO] Backup channel 1 berhasil, file disimpan di /mnt/Data/Backup/01-01-2023/Channel-1/12-00-00.ts
-   ```
+    ```
+    [INFO] Backup channel 1 berhasil, file disimpan di /mnt/Data/Backup/01-01-2023/Channel-1/12-00-00.ts
+    ```
 
 5. **Backup Channel Gagal**:
-   ```
-   [ERROR] Gagal melakukan backup channel 2: <error message>
-   ```
+    ```
+    [ERROR] Gagal melakukan backup channel 2: <error message>
+    ```
 
 6. **Validasi Stream Gagal**:
-   ```
-   [ERROR] Stream RTSP untuk channel 3 tidak valid
-   ```
+    ```
+    [ERROR] Stream RTSP untuk channel 3 tidak valid
+    ```
 
 7. **Proses Dihentikan**:
-   ```
-   [INFO] Proses backup dihentikan
-   ```
+    ```
+    [INFO] Proses backup dihentikan
+    ```
 
 8. **Proses Selesai**:
-   ```
-   [INFO] Proses backup selesai
-   ```
+    ```
+    [INFO] Proses backup selesai
+    ```
 
 Dengan dokumentasi ini, Anda dapat memahami dan menggunakan skrip `backup_manager.py` dengan lebih baik. Jika ada pertanyaan lebih lanjut atau kebutuhan untuk penyesuaian, jangan ragu untuk menghubungi saya.
