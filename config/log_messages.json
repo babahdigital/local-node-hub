@@ -154,5 +154,27 @@
     "content_type_options": "nosniff",
     "frame_options": "DENY",
     "transport_security": "max-age=31536000; includeSubDomains"
+  },
+  "entrypoint": {
+    "configure_timezone": "Mengonfigurasi zona waktu: {timezone}.",
+    "timezone_invalid": "Zona waktu tidak valid: {timezone}.",
+    "timezone_missing": "Zona waktu tidak ditemukan, menggunakan default.",
+    "timezone_set_custom": "Zona waktu diatur ke: {timezone}.",
+    "ensure_backup_dir": "Memastikan direktori backup ada.",
+    "backup_dir_created": "Direktori backup dibuat.",
+    "ensure_state_dir": "Memastikan direktori state logrotate ada.",
+    "state_dir_created": "Direktori state logrotate dibuat.",
+    "validate_logrotate_config": "Memvalidasi file konfigurasi logrotate.",
+    "config_not_found": "File konfigurasi logrotate tidak ditemukan.",
+    "clean_old_backup_files": "Membersihkan file backup lama (lebih dari 7 hari).",
+    "old_backup_files_cleaned": "File backup lama dibersihkan.",
+    "check_symlink": "Memeriksa symlink logrotate.",
+    "symlink_valid": "Symlink logrotate valid.",
+    "create_symlink": "Membuat symlink logrotate.",
+    "symlink_created": "Symlink logrotate dibuat.",
+    "run_logrotate": "Menjalankan logrotate manual (force).",
+    "logrotate_no_rotation": "Logrotate tidak melakukan rotasi.",
+    "logrotate_rotated": "Logrotate melakukan rotasi.",
+    "start_syslog_ng": "Memulai syslog-ng."
   }
 }

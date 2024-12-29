@@ -8,6 +8,7 @@ services:
       - ./syslog/logrotate:/app/logrotate
     user: root
     entrypoint: ["/bin/sh", "-c", "
+      chmod +x /app/generate_logrotate.sh &&
       sed -i 's|http://dl-cdn.alpinelinux.org/alpine/|http://mirror.leaseweb.com/alpine/|g' /etc/apk/repositories &&
       rm -rf /var/cache/apk/* &&
       apk update --no-cache &&
