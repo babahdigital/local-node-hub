@@ -30,22 +30,16 @@ add name=docker-31
 #### 2.1.2 Tambahkan VLAN 83 ke interface fisik MikroTik
 ```bash
 /interface vlan
-add name=vlan83 interface=bridge1 vlan-id=83
+add name=vlan83 interface=docker-30 vlan-id=83
 ```
 
-#### 2.1.3 Berikan IP pada VLAN 83
-```bash
-/ip address
-add address=172.16.30.1/28 interface=vlan83
-```
-
-#### 2.1.4 Tambahkan VLAN 83 ke bridge
+#### 2.1.3 Tambahkan VLAN 83 ke bridge
 ```bash
 /interface bridge port
 add bridge=docker-30 interface=vlan83
 ```
 
-#### 2.1.5 Berikan IP pada bridge
+#### 2.1.4 Berikan IP pada bridge
 ```bash
 /ip address
 add address=172.16.30.1/28 interface=docker-30
