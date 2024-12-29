@@ -181,10 +181,4 @@ Proyek ini dilisensikan di bawah lisensi MIT. Lihat file `LICENSE` untuk informa
    python backup_manager.py
    ```
 
-## Kode Lengkap
-
-```python
-# Kode lengkap dari skrip backup_manager.py
-```
-
 Dengan dokumentasi ini, Anda dapat memahami dan menggunakan skrip `backup_manager.py` dengan lebih baik. Jika ada pertanyaan lebih lanjut atau kebutuhan untuk penyesuaian, jangan ragu untuk menghubungi saya.
