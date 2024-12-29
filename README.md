@@ -1,209 +1,138 @@
-# Local-Node-Hub
+## [`README.md`](README.md )
 
-Local-Node-Hub adalah solusi sistem terpusat untuk manajemen dan backup data CCTV di tingkat cabang, yang berfungsi sebagai pengelola log, backup video, dan relay data ke sistem pusat.
+# Sistem Backup dan Monitoring RTSP
+
+Proyek ini dirancang untuk mengotomatisasi backup stream RTSP, memantau penggunaan disk, dan menyediakan layanan livestream. Ini mencakup beberapa komponen seperti manajer backup, monitor HDD, pemeriksaan kesehatan, dan server proxy untuk livestreaming. Sistem ini dibangun menggunakan Docker dan Docker Compose untuk memudahkan deployment dan manajemen.
+
+## Daftar Isi
+
+- [Ikhtisar](#ikhtisar)
+- [Fitur](#fitur)
+- [Arsitektur](#arsitektur)
+- [Persiapan](#persiapan)
+- [Penggunaan](#penggunaan)
+- [Variabel Lingkungan](#variabel-lingkungan)
+- [Logging](#logging)
+- [Pemeriksaan Kesehatan](#pemeriksaan-kesehatan)
+- [API](#api)
+- [Kontribusi](#kontribusi)
+- [Lisensi](#lisensi)
+
+## Ikhtisar
+
+Sistem Backup dan Monitoring RTSP adalah solusi komprehensif untuk mengelola stream RTSP. Ini mencakup komponen-komponen berikut:
+
+- **Manajer Backup**: Secara otomatis melakukan backup stream RTSP.
+- **Monitor HDD**: Memantau penggunaan disk dan merotasi file lama.
+- **Pemeriksaan Kesehatan**: Menyediakan endpoint pemeriksaan kesehatan.
+- **Server Livestream**: Menyediakan layanan livestream dengan autentikasi berbasis token.
+- **Server Proxy**: Bertindak sebagai proxy untuk stream RTSP.
 
 ## Fitur
 
-- **Syslog-ng**: Pengumpulan log dari jaringan melalui UDP/TTCP.
-- **Logrotate**: Rotasi log otomatis dengan threshold yang dapat disesuaikan.
-- **Konfigurasi Zona Waktu Dinamis**: Menggunakan variabel `TIMEZONE` dan `TZ`.
-- **Pesan Dinamis**: Melalui file konfigurasi `log_messages.json`.
-- **Backup Video**: Backup video CCTV secara otomatis.
-- **Relay Data**: Relay data ke sistem pusat.
+- **Skalabilitas Dinamis**: Menyesuaikan jumlah pekerja dan penundaan retry berdasarkan beban CPU.
+- **Validasi Stream**: Memvalidasi stream RTSP sebelum backup.
+- **Logging Komprehensif**: Mencatat log ke file dan syslog.
+- **Pemeriksaan Kesehatan**: Memvalidasi kesehatan layanan sebelum memulai.
+- **Konfigurasi melalui Variabel Lingkungan**: Konfigurasi fleksibel menggunakan variabel lingkungan.
+- **Monitoring Penggunaan Disk**: Memantau penggunaan disk dan merotasi file lama untuk membebaskan ruang.
+- **Layanan Livestream**: Menyediakan layanan livestream dengan autentikasi berbasis token.
 
-## Prasyarat
+## Arsitektur
+
+Sistem ini terdiri dari beberapa kontainer Docker:
+
+- **logrotate-setup**: Mengatur rotasi log untuk syslog.
+- **syslog-ng**: Mengumpulkan dan mengelola log.
+- **rtsp-backup**: Menangani backup stream RTSP.
+- **proxy**: Bertindak sebagai proxy untuk stream RTSP.
+- **backend**: Mengumpulkan data dan mengirimkannya ke kantor pusat melalui API.
+
+## Persiapan
+
+### Prasyarat
 
 - Docker
 - Docker Compose
 
-## Cara Penggunaan
+### Instalasi
 
-### 1. Clone Repository
+1. Clone repository:
+    ```sh
+    git clone https://github.com/yourusername/rtsp-backup-monitoring.git
+    cd rtsp-backup-monitoring
+    ```
 
-```bash
-git clone https://github.com/babahdigital/Local-Node-Hub.git
-cd Local-Node-Hub
-```
+2. Buat file [`.env`](.env) dengan variabel lingkungan yang diperlukan:
+    ```env
+    LOG_MESSAGES_FILE=/app/config/log_messages.json
+    ENABLE_LIVESTREAM=true
+    RTSP_USERNAME=your_rtsp_username
+    RTSP_PASSWORD=your_rtsp_password
+    RTSP_IP=your_rtsp_ip
+    BACKUP_DIR=/mnt/Data/Backup
+    HEALTH_CHECK_URL=http://127.0.0.1:8080/health
+    BACKEND_ENDPOINT=http://your_backend_endpoint/api/report
+    ```
 
-### 2. Edit Environment Variables
+3. Bangun dan jalankan kontainer:
+    ```sh
+    docker-compose up --build
+    ```
 
-Ubah file `.env` untuk mengatur konfigurasi yang diperlukan:
+## Penggunaan
 
-```properties
-RTSP_USERNAME=username
-RTSP_PASSWORD=password
-RTSP_IP=192.168.100.1
-RTSP_SUBTYPE=1
-VIDEO_DURATION=10
-CHANNELS=1
+### Menjalankan Backup
 
-# ===========================
-# KONFIGURASI SYSLOG
-# ===========================
-SYSLOG_SERVER=syslog-ng
-SYSLOG_PORT=1514
-SYSLOG_HOST=0.0.0.0
-SYSLOG_DATA_DIR=/mnt/Data/Syslog
-SYSLOG_CONFIG_FILE=/app/config/syslog-ng.conf
-SYSLOG_USER=abdullah
-SYSLOG_HOSTNAME=syslog-ng
-ENABLE_SYSLOG=true
+Sistem akan secara otomatis menjalankan backup stream RTSP sesuai dengan konfigurasi yang telah ditentukan.
 
-# ===========================
-# DIREKTORI & PATH
-# ===========================
-RTSP_OUTPUT_DIR=/data
-BACKUP_DIR=/mnt/Data/Backup
-NAS_MOUNT_POINT=/mnt/Data/Backup
-LOG_MESSAGES_FILE=/app/config/log_messages.json
+### Memantau Penggunaan Disk
 
-# ===========================
-# KONFIGURASI RETRY DAN MONITORING
-```
+Monitor HDD akan memantau penggunaan disk dan merotasi file lama jika penggunaan disk melebihi batas yang ditentukan.
 
-### 3. Build dan Jalankan Container
+### Pemeriksaan Kesehatan
 
-```bash
-docker-compose build
-docker-compose up -d
-```
+Endpoint pemeriksaan kesehatan dapat diakses di `http://127.0.0.1:8080/health` untuk memeriksa status kesehatan layanan.
 
-### 4. Verifikasi Waktu di Container
+## Variabel Lingkungan
 
-```bash
-docker exec syslog-ng date
-```
+| Variabel                 | Deskripsi                                                                          |
+|--------------------------|--------------------------------------------------------------------------------------|
+| `LOG_MESSAGES_FILE`      | Path file JSON yang berisi pesan-pesan log.                                         |
+| `ENABLE_LIVESTREAM`      | `true/false`, apakah Livestream diaktifkan.                                         |
+| `RTSP_USERNAME`          | Username untuk autentikasi RTSP.                                                    |
+| `RTSP_PASSWORD`          | Password untuk autentikasi RTSP.                                                    |
+| `RTSP_IP`                | IP address dari server RTSP.                                                        |
+| `BACKUP_DIR`             | Direktori utama untuk penyimpanan backup.                                           |
+| `HEALTH_CHECK_URL`       | URL endpoint layanan health check.                                                  |
+| `BACKEND_ENDPOINT`       | Endpoint backend untuk melaporkan status sistem.                                    |
 
-### 5. Melihat Log Syslog-ng
+## Logging
 
-```bash
-docker logs syslog-ng
-```
+Semua aktivitas monitoring, termasuk informasi penggunaan disk, penghapusan file, dan error dicatat dalam file log. Secara default di `/mnt/Data/Syslog/rtsp/`.
 
-### 6. Uji Coba Pengiriman Log
+## Pemeriksaan Kesehatan
 
-Kirim log uji ke `syslog-ng` untuk memastikan bahwa log diterima dan disimpan di lokasi yang benar:
+Sebelum memulai, skrip menunggu respons health check dari layanan terkait. Jika layanan sehat, monitoring akan berjalan. Jika tidak, skrip berhenti dengan pesan error ke log.
 
-#### 6.1. Kirim Log Melalui UDP
+## API
 
-```bash
-logger -n 127.0.0.1 -P 1514 --udp "Test log message over UDP"
-```
+### Endpoint Pemeriksaan Kesehatan
 
-#### 6.2. Kirim Log Melalui TCP
+- **GET /health**: Mengembalikan status kesehatan layanan.
 
-```bash
-logger -n 127.0.0.1 -P 1514 --tcp "Test log message over TCP"
-```
+### Endpoint Backend
 
-### 7. Verifikasi File Log
+- **POST /api/report**: Mengirim laporan status sistem ke backend.
 
-Periksa apakah file log telah dibuat dan berisi data yang diharapkan:
+## Kontribusi
 
-#### 7.1. Periksa Log Test
+Kontribusi sangat diterima! Silakan fork repository ini dan buat pull request dengan perubahan Anda.
 
-```bash
-docker exec -it syslog-ng cat /mnt/Data/Syslog/test/test.log
-```
+## Lisensi
 
-#### 7.2. Periksa Log Default
+Proyek ini dilisensikan di bawah lisensi MIT. Lihat file [LICENSE](LICENSE) untuk informasi lebih lanjut.
 
-```bash
-docker exec -it syslog-ng cat /mnt/Data/Syslog/default/default.log
-```
+---
 
-## Struktur Folder
-
-```bash
-.
-├── docker-compose.yml         # Konfigurasi Docker Compose
-├── Dockerfile                 # Dockerfile untuk Syslog-ng dan Logrotate
-├── app/
-│   ├── config/
-│   │   ├── syslog-ng.conf     # Konfigurasi Syslog-ng
-│   │   └── log_messages.json  # Pesan log dinamis
-│   ├── logrotate/
-│   │   └── syslog-ng          # Konfigurasi Logrotate
-│   └── entrypoint.sh          # Script entrypoint untuk container
-├── logs/                      # Folder untuk menyimpan log
-├── data/                      # Folder untuk menyimpan data backup video
-├── .env                       # File konfigurasi environment variables
-└── README.md                  # Dokumentasi proyek
-```
-
-## Catatan
-
-- Pastikan `log_messages.json` berisi pesan statis yang sesuai.
-- Rotasi log akan berjalan otomatis berdasarkan konfigurasi di `logrotate/syslog-ng`.
-- Jika ada kendala atau pertanyaan, silakan buka issue di repositori ini.
-
-## Verifikasi File Log yang Dihasilkan
-
-### Lokasi Log Syslog-ng
-
-Berdasarkan konfigurasi di file `syslog-ng.conf`, log disimpan di:
-- Default log: `/mnt/Data/Syslog/default/default.log`
-
-Untuk melihat log:
-
-```bash
-cat /mnt/Data/Syslog/default/default.log
-```
-
-Untuk memantau log secara real-time:
-
-```bash
-tail -f /mnt/Data/Syslog/default/default.log
-```
-
-### Log Rotasi
-
-File log yang dirotasi akan berada di lokasi berikut:
-
-```bash
-/mnt/Data/Syslog/default/logrotate.status
-```
-
-Untuk memeriksa status rotasi:
-
-```bash
-cat /mnt/Data/Syslog/default/logrotate.status
-```
-
-## Verifikasi Layanan dan Status
-
-### Cek Kesehatan Container
-
-Gunakan perintah berikut untuk memeriksa kesehatan container:
-
-```bash
-docker ps
-```
-
-Cari kolom `STATUS` untuk memastikan container dalam status `healthy`.
-
-### Cek Konfigurasi Logrotate
-
-Jalankan logrotate secara manual untuk memverifikasi:
-
-```bash
-docker exec syslog-ng logrotate -d -s /mnt/Data/Syslog/default/logrotate.status /etc/logrotate.d/syslog-ng
-```
-
-### Cek Zona Waktu
-
-Untuk memverifikasi zona waktu container:
-
-```bash
-docker exec syslog-ng date
-```
-
-Jika zona waktu tidak sesuai, pastikan variabel `TIMEZONE` disetel dengan benar di file `.env` atau `docker-compose.yml`.
-
-## Langkah Tambahan
-
-- Pastikan folder `/mnt/Data/Syslog` memiliki izin yang benar untuk akses tulis oleh container.
-- Gunakan file `.env` untuk mengatur konfigurasi seperti `TIMEZONE` agar lebih mudah dikelola.
-- Periksa konfigurasi jaringan container jika ada masalah konektivitas.
-
-Jika Anda menghadapi masalah saat menjalankan perintah ini, beri tahu saya untuk analisis lebih lanjut.
+Dengan dokumentasi ini, Anda seharusnya dapat memahami dan mengoperasikan Sistem Backup dan Monitoring RTSP dengan mudah. Jika ada pertanyaan lebih lanjut, jangan ragu untuk menghubungi kami melalui issue di GitHub.
