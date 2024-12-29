@@ -30,37 +30,37 @@
 ## Cara Kerja
 
 1. **Penjadwalan Monitoring**  
-   Skrip berjalan dalam loop, memeriksa kapasitas disk setiap interval `MONITOR_INTERVAL`.  
+    Skrip berjalan dalam loop, memeriksa kapasitas disk setiap interval `MONITOR_INTERVAL`.  
 
 2. **Penghitungan Kapasitas Maksimal (Dinamis)**  
-   Jika variabel `MAX_CAPACITY_PERCENT` tidak disetel, skrip menentukan batas penggunaan disk secara otomatis:
-   - Jika total disk > 500GB: 95%
-   - Jika total disk > 100GB: 92%
-   - Jika total disk ≤ 100GB: 90%
+    Jika variabel `MAX_CAPACITY_PERCENT` tidak disetel, skrip menentukan batas penggunaan disk secara otomatis:
+    - Jika total disk > 500GB: 95%
+    - Jika total disk > 100GB: 92%
+    - Jika total disk ≤ 100GB: 90%
 
 3. **Retensi Berbasis Umur File**  
-   Menghapus file lebih tua dari `FILE_RETENTION_DAYS` hari, menggunakan nilai default 7 hari. Aktif dengan logika: `(now_ts - os.path.getmtime(file)) > retention_seconds`.
+    Menghapus file lebih tua dari `FILE_RETENTION_DAYS` hari, menggunakan nilai default 7 hari. Aktif dengan logika: `(now_ts - os.path.getmtime(file)) > retention_seconds`.
 
 4. **Rotasi File Lama**  
-   Jika penggunaan disk (`usage_percent`) melebihi `MAX_CAPACITY_PERCENT`, skrip mengurutkan file berdasarkan waktu modifikasi tertua dan mulai menghapus file lama hingga kapasitas disk turun di bawah ambang batas.
+    Jika penggunaan disk (`usage_percent`) melebihi `MAX_CAPACITY_PERCENT`, skrip mengurutkan file berdasarkan waktu modifikasi tertua dan mulai menghapus file lama hingga kapasitas disk turun di bawah ambang batas.
 
 5. **Batas Penghapusan per Siklus**  
-   Maksimal `MAX_DELETE_PER_CYCLE` file yang dihapus pada setiap iterasi. Jika batas ini tercapai dan disk masih penuh, penghapusan dilanjutkan pada iterasi selanjutnya.
+    Maksimal `MAX_DELETE_PER_CYCLE` file yang dihapus pada setiap iterasi. Jika batas ini tercapai dan disk masih penuh, penghapusan dilanjutkan pada iterasi selanjutnya.
 
 6. **Penghapusan Folder Kosong**  
-   Setelah rotasi file, skrip menghapus folder kosong agar struktur direktori tetap rapi.
+    Setelah rotasi file, skrip menghapus folder kosong agar struktur direktori tetap rapi.
 
 7. **Rotasi Log Otomatis**  
-   Menggunakan `RotatingFileHandler` untuk file log dengan ukuran maksimum 10MB per file dan cadangan 5 file.
+    Menggunakan `RotatingFileHandler` untuk file log dengan ukuran maksimum 10MB per file dan cadangan 5 file.
 
 8. **Logging Terperinci**  
-   Menggunakan modul `logging` untuk mencatat setiap aktivitas, error, dan informasi kapasitas disk. Jika `ENABLE_SYSLOG` bernilai `true`, log juga dikirim ke server Syslog.
+    Menggunakan modul `logging` untuk mencatat setiap aktivitas, error, dan informasi kapasitas disk. Jika `ENABLE_SYSLOG` bernilai `true`, log juga dikirim ke server Syslog.
 
 9. **Validasi Health Check**  
-   Sebelum mulai, skrip menunggu respons health check dari layanan terkait (URL disetel di `HEALTH_CHECK_URL`). Jika layanan sehat, monitoring akan berjalan. Jika tidak, skrip berhenti dengan pesan error ke log.
+    Sebelum mulai, skrip menunggu respons health check dari layanan terkait (URL disetel di `HEALTH_CHECK_URL`). Jika layanan sehat, monitoring akan berjalan. Jika tidak, skrip berhenti dengan pesan error ke log.
 
 10. **Penggunaan dan Quota TrueNAS**  
-    Memanfaatkan `shutil.disk_usage()` sehingga jika dataset memiliki quota, skrip akan menyesuaikan nilai total disk dengan quota yang diterapkan.
+     Memanfaatkan `shutil.disk_usage()` sehingga jika dataset memiliki quota, skrip akan menyesuaikan nilai total disk dengan quota yang diterapkan.
 
 ## Variabel Lingkungan yang Digunakan
 
@@ -98,4 +98,19 @@
 ```bash
 # Jalankan skrip
 python3 hdd_monitor.py
+```
+
+## Contoh Log
+
+```plaintext
+05-12-2023 10:23:14 [INFO] Monitoring disk berjalan.
+05-12-2023 10:23:14 [INFO] Penggunaan disk: 78.52%. Total: 49.80 GiB, Terpakai: 39.06 GiB, Tersisa: 10.69 GiB.
+05-12-2023 10:24:14 [INFO] Penggunaan disk: 91.03%. Total: 49.80 GiB, Terpakai: 45.32 GiB, Tersisa: 4.49 GiB.
+05-12-2023 10:24:14 [INFO] Rotasi dimulai. Penggunaan disk 91.03% melebihi 90%.
+05-12-2023 10:24:15 [INFO] File dihapus: 2023/12/05/some_old_file.mp4
+05-12-2023 10:24:16 [INFO] Rotasi selesai. Penggunaan disk saat ini 89.94%.
+05-12-2023 10:24:16 [WARNING] Penggunaan disk masih tinggi: 89.94%. Mungkin perlu rotasi tambahan.
+05-12-2023 10:24:16 [INFO] Folder kosong dihapus: /mnt/Data/Backup/2023/12/05
+05-12-2023 10:24:16 [ERROR] Terjadi kesalahan saat monitoring disk: [error message]
+05-12-2023 10:24:16 [INFO] Monitoring disk dihentikan oleh pengguna.
 ```

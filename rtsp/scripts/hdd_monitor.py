@@ -21,6 +21,10 @@ def get_local_time():
     return datetime.datetime.now(local_tz).strftime("%d-%m-%Y %H:%M:%S") + \
            (" WITA" if local_tz.zone == "Asia/Makassar" else " WIB")
 
+def bytes_to_gib(bytes):
+    """Konversi byte ke GiB."""
+    return bytes / (1024 ** 3)
+
 def calculate_max_capacity():
     """
     Menghitung kapasitas maksimum disk yang diperbolehkan secara dinamis.
@@ -38,7 +42,7 @@ def calculate_max_capacity():
         return min_limit  # Gunakan nilai default jika direktori tidak ditemukan
 
     total, _, _ = shutil.disk_usage(BACKUP_DIR)
-    total_gb = total // (1024 ** 3)
+    total_gb = bytes_to_gib(total)
 
     # Tentukan batas berdasarkan ukuran disk atau quota
     if total_gb > 500:  # Jika kapasitas > 500GB, tetapkan batas 95%
@@ -151,9 +155,9 @@ def monitor_disk_usage():
                 usage_percent = (used / total) * 100
                 logger.info(log_messages["hdd_monitor"]["disk_usage"]["usage"].format(
                     usage_percent=usage_percent,
-                    total=total,
-                    used=used,
-                    free=free
+                    total=bytes_to_gib(total),
+                    used=bytes_to_gib(used),
+                    free=bytes_to_gib(free)
                 ))
 
                 # Jika kapasitas belum mencapai threshold, tidak ada file dihapus
