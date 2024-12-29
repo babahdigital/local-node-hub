@@ -21,6 +21,7 @@ RTSP_USERNAME = os.getenv("RTSP_USERNAME", "admin")
 RTSP_PASSWORD = os.getenv("RTSP_PASSWORD", "password")
 LIVESTREAM_PORT = int(os.getenv("LIVESTREAM_PORT", 5005))
 RTSP_TIMEOUT = int(os.getenv("RTSP_TIMEOUT", 10))  # Timeout untuk validasi stream
+RTSP_SERVER_URL = os.getenv("RTSP_SERVER_URL", "rtsp://127.0.0.1:8554")
 
 # Path ke log_messages.json
 LOG_MESSAGES_FILE = os.getenv("LOG_MESSAGES_FILE", "/app/config/log_messages.json")
@@ -37,7 +38,7 @@ logger = setup_logger("Livestream")
 
 # Fungsi untuk menghasilkan URL RTSP
 def get_rtsp_url(channel):
-    return f"rtsp://{RTSP_USERNAME}:{RTSP_PASSWORD}@{DDNS_DOMAIN}:{RTSP_PORT}/cam/realmonitor?channel={channel}&subtype={RTSP_SUBTYPE}"
+    return f"{RTSP_SERVER_URL}/proxy/{channel}"
 
 # Fungsi untuk memvalidasi stream RTSP
 def validate_rtsp_stream(rtsp_url):
