@@ -4,6 +4,9 @@ FROM nginx:alpine
 # Install utilitas envsubst dan bash
 RUN apk add --no-cache gettext bash
 
+RUN mkdir -p /mnt/Data/Syslog/nginx \
+    && chown -R abdullah:abdullah
+
 # Salin template nginx.conf
 COPY config/nginx.conf.template /app/config/nginx.conf.template
 

@@ -1,64 +1,49 @@
 #!/usr/bin/env bash
 
-# Aktifkan mode penanganan kesalahan
 set -e
 
-# Path ke file konfigurasi dan log
 CREDENTIALS_FILE="/app/config/credentials.sh"
 NGINX_TEMPLATE="/app/config/nginx.conf.template"
 NGINX_CONF="/etc/nginx/nginx.conf"
 LOG_MESSAGES_FILE="/app/config/log_messages.json"
 ACCESS_LOG="/app/logs/access.log"
 ERROR_LOG="/app/logs/error.log"
+CONFIG_CHECKSUM_FILE="/tmp/nginx_config_checksum"
 
-# Fungsi logging
 log() {
-    local level="$1"
-    local message="$2"
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - $level: $message"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1: $2"
 }
 
-# Fungsi untuk memuat pesan dari log_messages.json
 get_log_message() {
     local key="$1"
     local default_message="$2"
-
     if [ -f "$LOG_MESSAGES_FILE" ]; then
-        local message
-        message=$(jq -r ".$key" "$LOG_MESSAGES_FILE" 2>/dev/null)
-        if [ "$message" != "null" ]; then
-            echo "$message"
-            return
-        fi
+        jq -r ".$key // \"$default_message\"" "$LOG_MESSAGES_FILE" 2>/dev/null
+    else
+        echo "$default_message"
     fi
-    echo "$default_message"
 }
 
-# Periksa apakah file credentials.sh ada
-if [ ! -f "$CREDENTIALS_FILE" ]; then
-    log "ERROR" "$(get_log_message "proxy.credentials.file_missing" "File credentials.sh tidak ditemukan.")"
-    exit 1
-fi
+validate_files() {
+    [ -f "$CREDENTIALS_FILE" ] || { log "ERROR" "$(get_log_message "file_missing" "File kredensial tidak ditemukan.")"; exit 1; }
+    [ -f "$NGINX_TEMPLATE" ] || { log "ERROR" "$(get_log_message "template_missing" "Template Nginx tidak ditemukan.")"; exit 1; }
+}
 
-# Muat variabel dari credentials.sh
-log "INFO" "$(get_log_message "proxy.credentials.env_loaded" "Memuat variabel dari credentials.sh...")"
-source "$CREDENTIALS_FILE"
+generate_nginx_config() {
+    local new_checksum
+    new_checksum=$(sha256sum "$CREDENTIALS_FILE" "$NGINX_TEMPLATE" | sha256sum)
 
-# Periksa apakah template nginx.conf tersedia
-if [ ! -f "$NGINX_TEMPLATE" ]; then
-    log "ERROR" "$(get_log_message "proxy.config.template_failed" "Template nginx.conf tidak ditemukan.")"
-    exit 1
-fi
+    if [ -f "$CONFIG_CHECKSUM_FILE" ] && grep -q "$new_checksum" "$CONFIG_CHECKSUM_FILE"; then
+        log "INFO" "$(get_log_message "config_no_change" "Konfigurasi tidak berubah.")"
+    else
+        envsubst < "$NGINX_TEMPLATE" > "$NGINX_CONF"
+        echo "$new_checksum" > "$CONFIG_CHECKSUM_FILE"
+        log "INFO" "$(get_log_message "config_generated" "Konfigurasi Nginx berhasil dihasilkan.")"
+    fi
+}
 
-# Generate konfigurasi nginx.conf dari template
-log "INFO" "$(get_log_message "proxy.config.env_substitution_start" "Menghasilkan konfigurasi Nginx dari template...")"
-envsubst < "$NGINX_TEMPLATE" > "$NGINX_CONF"
-log "INFO" "$(get_log_message "proxy.config.env_substitution_success" "Konfigurasi Nginx berhasil dibuat.")"
+validate_files
+generate_nginx_config
 
-# Pastikan direktori log tersedia
-mkdir -p "$(dirname "$ACCESS_LOG")"
-mkdir -p "$(dirname "$ERROR_LOG")"
-
-# Jalankan Nginx
-log "INFO" "$(get_log_message "proxy.runtime.start_success" "Memulai Nginx Proxy...")"
-nginx -g "daemon off;"
+log "INFO" "$(get_log_message "nginx_start" "Menjalankan Nginx...")"
+exec nginx -g "daemon off;"

@@ -25,7 +25,7 @@ RUN setcap 'cap_net_bind_service=+ep' /usr/sbin/syslog-ng
 RUN adduser -D -s /bin/bash abdullah
 
 # Buat direktori yang dibutuhkan, ubah owner
-RUN mkdir -p /app/config /app/logrotate /mnt/Data/Syslog /etc/logrotate.d/backup \
+RUN mkdir -p /app/config /app/logrotate /mnt/Data/Syslog/default/logrotate /mnt/Data/Syslog/var-run /etc/logrotate.d/backup \
     && chown -R abdullah:abdullah /app /mnt/Data/Syslog /etc/logrotate.d
 
 # Copy file konfigurasi & script
