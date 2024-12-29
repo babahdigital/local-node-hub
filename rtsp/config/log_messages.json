@@ -32,6 +32,10 @@
     },
     "batch": {
       "start": "Memulai batch backup untuk channels: {channels}."
+    },
+    "process": {
+      "start": "Proses backup dimulai dengan MAX_WORKERS: {max_workers}.",
+      "concurrency_limit": "Concurrency limit (chunk size) yang dipakai: {concurrency_limit}."
     }
   },
   "hdd_monitor": {
