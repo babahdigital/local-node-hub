@@ -17,6 +17,13 @@
 | Validasi Layanan Health Check | Memastikan layanan dalam kondisi sehat menggunakan fungsi `wait_for_health_check()` sebelum monitoring dimulai. |
 | Ketahanan terhadap Error | Error pada satu iterasi monitoring tidak menghentikan proses keseluruhan. |
 
+## Nilai Rekomendasi Batasan
+
+| Tipe Disk | Batasan Minimum | Batasan Maksimum |
+|-----------|-----------------|-----------------|
+| HDD Fisik | 90% (disk size) | 95% (disk size) |
+| Quota TrueNAS | 90% (quota size) | 95% (quota size) |
+
 ## Cara Kerja
 
 ### Penjadwalan Monitoring
