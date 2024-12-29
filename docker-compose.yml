@@ -2,17 +2,21 @@ services:
   logrotate-setup:
     image: alpine:latest
     container_name: logrotate-setup
+    environment:
+      - TIMEZONE=Asia/Makassar
+      - TZ=Asia/Makassar
     volumes:
       - ./config/generate_logrotate.sh:/app/generate_logrotate.sh
       - /mnt/Data/Syslog:/mnt/Data/Syslog
       - ./syslog/logrotate:/app/logrotate
+      - ./config/log_messages.json:/app/config/log_messages.json:ro
     user: root
     entrypoint: ["/bin/sh", "-c", "
       chmod +x /app/generate_logrotate.sh &&
       sed -i 's|http://dl-cdn.alpinelinux.org/alpine/|http://mirror.leaseweb.com/alpine/|g' /etc/apk/repositories &&
       rm -rf /var/cache/apk/* &&
       apk update --no-cache &&
-      apk add --no-cache bash &&
+      apk add --no-cache bash jq tzdata &&
       /app/generate_logrotate.sh
     "]
     depends_on:
