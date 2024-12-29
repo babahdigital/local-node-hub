@@ -3,7 +3,7 @@ services:
     image: alpine:latest
     container_name: logrotate-setup
     volumes:
-      - ./tool/generate_logrotate.sh:/app/generate_logrotate.sh
+      - ./config/generate_logrotate.sh:/app/generate_logrotate.sh
       - /mnt/Data/Syslog:/mnt/Data/Syslog
       - ./syslog/logrotate:/app/logrotate
     user: root
@@ -39,7 +39,7 @@ services:
       - /mnt/Data/Syslog/var-run:/run
       - /mnt/Data/Syslog/default:/mnt/Data/Syslog/default
       - /var/run/docker.sock:/var/run/docker.sock
-      - ./syslog/config/log_messages.json:/app/config/log_messages.json:ro
+      - ./config/log_messages.json:/app/config/log_messages.json:ro
     env_file:
       - .env
     environment:
@@ -63,8 +63,8 @@ services:
     volumes:
       - /mnt/Data/Backup:/mnt/Data/Backup
       - ./rtsp/scripts:/app/scripts
-      - ./rtsp/config/log_messages.json:/app/config/log_messages.json:ro
-      - ./tool/credentials.sh:/app/config/credentials.sh:ro
+      - ./config/log_messages.json:/app/config/log_messages.json:ro
+      - ./config/credentials.sh:/app/config/credentials.sh:ro
       - /mnt/Data/Syslog/rtsp:/mnt/Data/Syslog/rtsp
     ports:
       - "127.0.0.1:8080:8080"
@@ -86,7 +86,7 @@ services:
     container_name: nginx-proxy
     restart: always
     volumes:
-      - ./tool/credentials.sh:/app/config/credentials.sh:ro
+      - ./config/credentials.sh:/app/config/credentials.sh:ro
       - /mnt/Data/Syslog/rtsp:/app/logs
     ports:
       - "8554:8554"
@@ -101,24 +101,24 @@ services:
       timeout: 10s
       retries: 3
 
-  # api:
-  #   build: ./backend
-  #   container_name: backend-api
-  #   restart: always
-  #   volumes:
-  #     - ./backend/scripts:/app/scripts
-  #   ports:
-  #     - "5001:5001"
-  #   environment:
-  #     API_PORT: 5001
-  #   healthcheck:
-  #     test: ["CMD", "curl", "--silent", "--fail", "http://backend-api:5001/health"]
-  #     interval: 30s
-  #     timeout: 10s
-  #     retries: 3
-  #   networks:
-  #     rtsp-syslog-network:
-  #       ipv4_address: 172.16.31.6
+  backend-api:
+    build: ./backend
+    container_name: backend-api
+    restart: always
+    volumes:
+      - ./backend/scripts:/app/scripts
+    ports:
+      - "5001:5001"
+    environment:
+      API_PORT: 5001
+    healthcheck:
+      test: ["CMD", "curl", "--silent", "--fail", "http://backend-api:5001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      rtsp-syslog-network:
+        ipv4_address: 172.16.31.6
 
 networks:
   rtsp-syslog-network:

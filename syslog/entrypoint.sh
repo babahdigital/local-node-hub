@@ -2,7 +2,9 @@
 set -e
 
 log() {
-  echo "$(date '+%d-%m-%Y %H:%M:%S') - $1"
+  local timezone=$(date +%Z)
+  local time_format="%d-%m-%Y %H:%M:%S"
+  echo "$(date +"$time_format $timezone") - $1"
 }
 
 # Load pesan dari file JSON
@@ -23,29 +25,25 @@ get_message() {
 
 # Atur zona waktu
 configure_timezone() {
+  local default_timezone="UTC"
   if [[ -n "$TIMEZONE" ]]; then
     log "$(get_message "configure_timezone") $TIMEZONE"
     if [[ -f "/usr/share/zoneinfo/$TIMEZONE" ]]; then
-      export TZ="$TIMEZONE"
-      ln -sf "/usr/share/zoneinfo/$TIMEZONE" /mnt/Data/Syslog/localtime
-      echo "$TIMEZONE" > /mnt/Data/Syslog/timezone
-      log "$(get_message "timezone_set_custom") $TIMEZONE"
+      default_timezone="$TIMEZONE"
     else
       log "$(get_message "timezone_invalid") $TIMEZONE"
-      export TZ="UTC"
-      ln -sf "/usr/share/zoneinfo/UTC" /mnt/Data/Syslog/localtime
-      echo "UTC" > /mnt/Data/Syslog/timezone
     fi
   else
     log "$(get_message "timezone_missing")"
-    export TZ="UTC"
-    ln -sf "/usr/share/zoneinfo/UTC" /mnt/Data/Syslog/localtime
-    echo "UTC" > /mnt/Data/Syslog/timezone
   fi
+  export TZ="$default_timezone"
+  ln -sf "/usr/share/zoneinfo/$default_timezone" /mnt/Data/Syslog/localtime
+  echo "$default_timezone" > /mnt/Data/Syslog/timezone
+  log "$(get_message "timezone_set_custom") $default_timezone"
 }
 
 # Variabel logrotate
-CONFIG_SOURCE="/app/logrotate/syslog-ng"
+CONFIG_SOURCE="/app/config/syslog-ng"
 CONFIG_TARGET="/etc/logrotate.d/syslog-ng"
 BACKUP_DIR="/etc/logrotate.d/backup"
 SYSLOG_CONF="/app/config/syslog-ng.conf"
@@ -57,17 +55,13 @@ configure_timezone
 
 # Pastikan direktori backup ada
 log "$(get_message "ensure_backup_dir")"
-if [[ ! -d "$BACKUP_DIR" ]]; then
-  mkdir -p "$BACKUP_DIR"
-  log "$(get_message "backup_dir_created")"
-fi
+mkdir -p "$BACKUP_DIR"
+log "$(get_message "backup_dir_created")"
 
 # Pastikan direktori untuk state file logrotate ada
 log "$(get_message "ensure_state_dir")"
-if [[ ! -d "$(dirname "$LOGROTATE_STATE_FILE")" ]]; then
-  mkdir -p "$(dirname "$LOGROTATE_STATE_FILE")"
-  log "$(get_message "state_dir_created")"
-fi
+mkdir -p "$(dirname "$LOGROTATE_STATE_FILE")"
+log "$(get_message "state_dir_created")"
 
 # Validasi file konfigurasi logrotate
 log "$(get_message "validate_logrotate_config")"
