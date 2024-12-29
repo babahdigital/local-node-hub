@@ -95,6 +95,7 @@
 ## Cara Menggunakan
 
 1. Pastikan semua variabel lingkungan yang diperlukan sudah disetel (di file `.env` atau setara).  
-2. Jalankan perintah berikut untuk memulai monitoring:  
 ```bash
+# Jalankan skrip
 python3 hdd_monitor.py
+```

@@ -36,29 +36,29 @@
     },
     "hdd_monitor": {
       "health_check": {
-        "start": "Memeriksa layanan health check di {url}.",
-        "ready": "Health check siap.",
-        "warning": "Health check belum siap: {error}. Retry ke-{retries}.",
-        "failed": "Health check gagal setelah {timeout} detik.",
-        "unhealthy": "Layanan health check tidak aktif."
+        "start": "Memeriksa health check service di {url}",
+        "ready": "Health check service sudah siap.",
+        "warning": "Percobaan health check ke-{retries}, error: {error}",
+        "failed": "Health check service tidak aktif dalam waktu {timeout} detik.",
+        "unhealthy": "Sistem terdeteksi tidak sehat."
       },
       "disk_usage": {
         "directory_not_found": "Direktori {BACKUP_DIR} tidak ditemukan.",
         "monitor_running": "Monitoring disk berjalan.",
-        "usage": "Disk Usage: {usage_percent:.2f}% | Total: {total} | Used: {used} | Free: {free}.",
-        "no_deletion_needed": "Disk usage {usage_percent:.2f}% belum mencapai threshold {threshold_percent}%. Tidak ada file yang dihapus.",
-        "rotation_start": "Disk usage {usage_percent:.2f}% melewati threshold {threshold_percent}%. Mulai proses rotasi.",
-        "file_deleted": "Menghapus file: /Backup/{relative_path}.",
-        "file_deletion_failed": "Gagal menghapus file {file_path}: {error}.",
-        "rotation_complete": "Selesai proses penghapusan file. Disk usage sekarang: {usage_percent:.2f}%.",
-        "rotation_insufficient": "Proses rotasi tidak cukup. Disk usage tetap: {usage_percent:.2f}%."
+        "usage": "Penggunaan disk: {usage_percent:.2f}%. Total: {total} bytes, Terpakai: {used} bytes, Tersisa: {free} bytes.",
+        "no_deletion_needed": "Penggunaan disk {usage_percent:.2f}% masih di bawah ambang rotasi {threshold_percent}%.",
+        "rotation_start": "Rotasi dimulai. Penggunaan disk {usage_percent:.2f}% melebihi {threshold_percent}%.",
+        "file_deleted": "File dihapus: {relative_path}",
+        "file_deletion_failed": "Gagal menghapus file: {file_path}. Error: {error}",
+        "rotation_complete": "Rotasi selesai. Penggunaan disk saat ini {usage_percent:.2f}%.",
+        "rotation_insufficient": "Penggunaan disk masih tinggi: {usage_percent:.2f}%. Mungkin perlu rotasi tambahan."
       },
       "report": {
         "send_start": "Mengirim laporan status disk ke backend.",
         "send_success": "Laporan status disk berhasil dikirim ke backend.",
         "send_failed": "Gagal mengirim laporan ke backend: {error}."
       },
-      "monitor_stopped": "HDD Monitoring dihentikan oleh pengguna."
+      "monitor_stopped": "Monitoring disk dihentikan oleh pengguna."
     },
     "livestream": {
       "url": {
@@ -109,7 +109,7 @@
         "timezone_error": "Timezone tidak valid. Harus salah satu dari [Asia/Makassar, Asia/Jakarta].",
         "port_error": "Port tidak valid. Harus dalam rentang 1-65535."
       },
-      "healthy": "sehat",
+      "healthy": "ok",
       "unhealthy": "gagal"
     },
     "report_manager": {
@@ -149,4 +149,4 @@
       "frame_options": "DENY",
       "transport_security": "max-age=31536000; includeSubDomains"
     }
-  }  
+  }

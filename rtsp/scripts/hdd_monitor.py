@@ -138,142 +138,108 @@ def wait_for_health_check(url, timeout):
     return False
 
 def monitor_disk_usage():
-    """Monitoring disk dan menjalankan rotasi jika diperlukan."""
+    """
+    Fungsi utama untuk memantau disk usage, menghapus file lama
+    jika melampaui ambang batas kapasitas, dan menghapus folder kosong.
+    """
+    logger.info(log_messages["hdd_monitor"]["disk_usage"]["monitor_running"])  # "Monitoring disk berjalan."
     try:
-        if not os.path.exists(BACKUP_DIR):
-            logger.error(
-                log_messages["hdd_monitor"]["disk_usage"]["directory_not_found"].format(
-                    BACKUP_DIR=BACKUP_DIR
-                )
-            )
-            raise FileNotFoundError(
-                log_messages["hdd_monitor"]["disk_usage"]["directory_not_found"].format(
-                    BACKUP_DIR=BACKUP_DIR
-                )
-            )
-
-        # Ambil kapasitas total sekali saja
-        total, _, _ = shutil.disk_usage(BACKUP_DIR)
-        logger.info(f"Monitoring disk dimulai dengan interval {MONITOR_INTERVAL} detik.")
-
-        iteration_count = 0
         while True:
             try:
-                iteration_count += 1
-
-                # Ambil data 'used' dan 'free' tiap loop
-                _, used, free = shutil.disk_usage(BACKUP_DIR)
+                # Contoh logging penggunaan disk
+                total, used, free = shutil.disk_usage(BACKUP_DIR)
                 usage_percent = (used / total) * 100
+                logger.info(log_messages["hdd_monitor"]["disk_usage"]["usage"].format(
+                    usage_percent=usage_percent,
+                    total=total,
+                    used=used,
+                    free=free
+                ))
 
-                # Tampilkan log ringkas setiap loop, log lebih detail hanya kadang-kadang
-                if iteration_count % 5 == 0:  # Misal 1 kali log detail per 5 iterasi
-                    logger.info(log_messages["hdd_monitor"]["disk_usage"]["monitor_running"])
-                    iteration_count = 0
+                # Jika kapasitas belum mencapai threshold, tidak ada file dihapus
+                if usage_percent < MAX_CAPACITY_PERCENT - ROTATE_THRESHOLD:
+                    logger.info(log_messages["hdd_monitor"]["disk_usage"]["no_deletion_needed"].format(
+                        usage_percent=usage_percent,
+                        threshold_percent=MAX_CAPACITY_PERCENT
+                    ))
+                    time.sleep(MONITOR_INTERVAL)
+                    continue
 
-                if free == 0:
-                    logger.error("Quota atau disk penuh! Tidak ada ruang yang tersisa.")
-                else:
-                    # Log detail tiap 5 iterasi atau sesuai kebijakan
-                    if iteration_count == 0:
-                        logger.info(
-                            log_messages["hdd_monitor"]["disk_usage"]["usage"].format(
-                                usage_percent=round(usage_percent, 2),
-                                total=f"{total // (1024 ** 3)} GB",
-                                used=f"{used // (1024 ** 3)} GB",
-                                free=f"{free // (1024 ** 3)} GB",
-                            )
-                        )
+                logger.info(log_messages["hdd_monitor"]["disk_usage"]["rotation_start"].format(
+                    usage_percent=usage_percent,
+                    threshold_percent=MAX_CAPACITY_PERCENT
+                ))
 
-                # Lakukan rotasi jika usage melebihi ambang batas
-                if usage_percent >= MAX_CAPACITY_PERCENT:
-                    logger.warning(
-                        log_messages["hdd_monitor"]["disk_usage"]["rotation_start"].format(
-                            usage_percent=round(usage_percent, 2),
-                            threshold_percent=MAX_CAPACITY_PERCENT,
-                        )
-                    )
+                # Kumpulkan semua file di BACKUP_DIR
+                all_files = []
+                for root, _, files in os.walk(BACKUP_DIR):
+                    for f in files:
+                        full_path = os.path.join(root, f)
+                        all_files.append(full_path)
 
-                    # Kumpulkan semua file di BACKUP_DIR
-                    all_files = []
-                    for root, _, files in os.walk(BACKUP_DIR):
-                        for f in files:
-                            full_path = os.path.join(root, f)
-                            all_files.append(full_path)
+                # Retensi berbasis umur file
+                now_ts = time.time()
+                retention_seconds = FILE_RETENTION_DAYS * 24 * 3600
+                all_files = [
+                    f for f in all_files
+                    if (now_ts - os.path.getmtime(f)) > retention_seconds
+                ]
 
-                    # (Opsional) Jika ingin retensi berbasis umur file, aktifkan kode di bawah
-                    now_ts = time.time()
-                    retention_seconds = FILE_RETENTION_DAYS * 24 * 3600
-                    all_files = [
-                        f for f in all_files
-                        if (now_ts - os.path.getmtime(f)) > retention_seconds
-                    ]
+                # Urutkan file berdasarkan waktu modifikasi tertua
+                all_files.sort(key=lambda x: os.path.getmtime(x))
 
-                    # Urutkan file berdasarkan waktu modifikasi tertua
-                    all_files.sort(key=lambda x: os.path.getmtime(x))
+                deleted_count = 0
+                for file in all_files:
+                    _, used_new, _ = shutil.disk_usage(BACKUP_DIR)
+                    usage_percent = (used_new / total) * 100
+                    if usage_percent < MAX_CAPACITY_PERCENT - ROTATE_THRESHOLD:
+                        break
+                    if deleted_count >= MAX_DELETE_PER_CYCLE:
+                        break
+                    try:
+                        os.remove(file)
+                        # Log penghapusan file
+                        rel_path = os.path.relpath(file, BACKUP_DIR)
+                        logger.info(log_messages["hdd_monitor"]["disk_usage"]["file_deleted"].format(
+                            relative_path=rel_path
+                        ))
+                        deleted_count += 1
+                    except Exception as err:
+                        logger.warning(log_messages["hdd_monitor"]["disk_usage"]["file_deletion_failed"].format(
+                            file_path=file,
+                            error=err
+                        ))
 
-                    deleted_count = 0
-                    for file in all_files:
-                        # Perbarui usage sebelum menghapus file selanjutnya
-                        _, used_new, _ = shutil.disk_usage(BACKUP_DIR)
-                        usage_percent = (used_new / total) * 100
-                        if usage_percent < MAX_CAPACITY_PERCENT - ROTATE_THRESHOLD:
-                            break
-                        if deleted_count >= MAX_DELETE_PER_CYCLE:
-                            # Batasi jumlah file yang dihapus per iterasi
-                            logger.info(
-                                "Batas penghapusan file per siklus tercapai: {} file".format(
-                                    MAX_DELETE_PER_CYCLE
-                                )
-                            )
-                            break
+                _, used_after, _ = shutil.disk_usage(BACKUP_DIR)
+                usage_after = (used_after / total) * 100
+                logger.info(log_messages["hdd_monitor"]["disk_usage"]["rotation_complete"].format(
+                    usage_percent=usage_after
+                ))
 
-                        try:
-                            os.remove(file)
-                            deleted_count += 1
-                            logger.info(
-                                log_messages["hdd_monitor"]["disk_usage"]["file_deleted"].format(
-                                    relative_path=os.path.relpath(file, BACKUP_DIR)
-                                )
-                            )
-                        except Exception as e:
-                            logger.error(
-                                log_messages["hdd_monitor"]["disk_usage"]["file_deletion_failed"].format(
-                                    file_path=file, error=e
-                                )
-                            )
+                # Jika setelah rotasi masih di atas threshold, log peringatan
+                if usage_after > MAX_CAPACITY_PERCENT:
+                    logger.warning(log_messages["hdd_monitor"]["disk_usage"]["rotation_insufficient"].format(
+                        usage_percent=usage_after
+                    ))
 
-                    logger.info(
-                        log_messages["hdd_monitor"]["disk_usage"]["rotation_complete"].format(
-                            usage_percent=round(usage_percent, 2)
-                        )
-                    )
+                # Hapus folder kosong
+                for root_dir, dirs, _ in os.walk(BACKUP_DIR, topdown=False):
+                    for d in dirs:
+                        dir_path = os.path.join(root_dir, d)
+                        if not os.listdir(dir_path):
+                            os.rmdir(dir_path)
+                            logger.info(f"Folder kosong dihapus: {dir_path}")
 
-                    # Jika tetap tidak cukup, beri peringatan
-                    if usage_percent >= MAX_CAPACITY_PERCENT:
-                        logger.warning(
-                            log_messages["hdd_monitor"]["disk_usage"]["rotation_insufficient"].format(
-                                usage_percent=round(usage_percent, 2)
-                            )
-                        )
-
-                    # Menghapus folder kosong setelah rotasi
-                    for root, dirs, _ in os.walk(BACKUP_DIR, topdown=False):
-                        for d in dirs:
-                            path_dir = os.path.join(root, d)
-                            try:
-                                if not os.listdir(path_dir):
-                                    os.rmdir(path_dir)
-                                    logger.info(f"Folder kosong dihapus: {path_dir}")
-                            except Exception as e:
-                                logger.warning(f"Gagal menghapus folder kosong {path_dir}: {e}")
-
+                # Tunggu sebelum iterasi berikutnya
                 time.sleep(MONITOR_INTERVAL)
 
             except Exception as e:
                 logger.error(f"Terjadi kesalahan saat monitoring disk: {e}")
 
     except KeyboardInterrupt:
+        # Gunakan pesan "monitor_stopped" dari JSON
         logger.info(log_messages["hdd_monitor"]["monitor_stopped"])
+        sys.exit(0)
 
 if __name__ == "__main__":
     # Pastikan health check service sudah siap
