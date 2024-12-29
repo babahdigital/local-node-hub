@@ -129,17 +129,59 @@
     "report_failed": "Laporan gagal dikirim setelah {retries} percobaan: {payload}."
   },
   "proxy": {
-    "start_success": "Nginx Proxy berhasil dijalankan.",
-    "start_failed": "Gagal menjalankan Nginx Proxy: {error}.",
-    "unexpected_error": "Kesalahan tidak terduga saat menjalankan Nginx Proxy: {error}.",
-    "log": {
-      "access_logged": "Akses ke Proxy dicatat dalam access.log.",
-      "error_logged": "Kesalahan dicatat dalam error.log: {error}."
+    "startup": {
+      "check_nginx": "Memeriksa apakah nginx telah diinstal...",
+      "check_envsubst": "Memeriksa apakah envsubst telah diinstal...",
+      "check_user": "Memeriksa apakah user abdullah tersedia...",
+      "check_directories": "Memeriksa direktori yang diperlukan...",
+      "init_complete": "Inisialisasi proxy selesai"
     },
-    "token": {
-      "validation_success": "Validasi token berhasil untuk channel: {channel}.",
-      "validation_failed": "Validasi token gagal: {error}.",
-      "missing_token": "Token tidak ditemukan dalam permintaan."
+    "validation": {
+      "nginx_missing": "Nginx tidak ditemukan. Pastikan Nginx terinstal.",
+      "envsubst_missing": "Envsubst tidak ditemukan. Pastikan envsubst terinstal.",
+      "user_missing": "User abdullah tidak ditemukan. Pastikan user telah dibuat.",
+      "files_valid": "Semua file konfigurasi tersedia.",
+      "env_valid": "Semua variabel lingkungan valid.",
+      "dir_missing": "Direktori {dir} tidak ditemukan.",
+      "template_invalid": "Template {template} tidak valid: {error}",
+      "config_invalid": "Konfigurasi tidak valid: {error}"
+    },
+    "permissions": {
+      "setting": "Mengatur izin untuk {path}...",
+      "success": "Izin berhasil diatur untuk {path}",
+      "failed": "Gagal mengatur izin untuk {path}: {error}",
+      "permissions_set": "Semua izin direktori dan file telah diatur"
+    },
+    "config": {
+      "generate_main": "Menghasilkan konfigurasi utama Nginx...",
+      "generate_rtsp": "Menghasilkan konfigurasi RTSP...",
+      "template_processing": "Memproses template {template}...",
+      "validate_syntax": "Memvalidasi sintaks konfigurasi...",
+      "syntax_failed": "Validasi sintaks gagal: {error}",
+      "config_validated": "Konfigurasi berhasil divalidasi",
+      "config_applied": "Konfigurasi berhasil diterapkan"
+    },
+    "runtime": {
+      "starting": "Memulai Nginx sebagai user abdullah...",
+      "started": "Nginx berhasil dijalankan",
+      "stopping": "Menghentikan Nginx...",
+      "stopped": "Nginx berhasil dihentikan",
+      "reloading": "Memuat ulang konfigurasi Nginx...",
+      "reloaded": "Konfigurasi berhasil dimuat ulang"
+    },
+    "errors": {
+      "permission_denied": "Akses ditolak untuk {path}: {error}",
+      "config_generation": "Gagal menghasilkan konfigurasi: {error}",
+      "start_failed": "Gagal menjalankan Nginx: {error}",
+      "reload_failed": "Gagal memuat ulang konfigurasi: {error}",
+      "runtime_error": "Error saat runtime: {error}"
+    },
+    "rtsp": {
+      "connection_success": "Koneksi RTSP berhasil ke {url}",
+      "connection_failed": "Koneksi RTSP gagal ke {url}: {error}",
+      "stream_started": "Stream RTSP dimulai untuk {url}",
+      "stream_stopped": "Stream RTSP dihentikan untuk {url}",
+      "auth_failed": "Otentikasi RTSP gagal untuk {url}"
     }
   },
   "bash_entrypoint": {
@@ -176,5 +218,17 @@
     "logrotate_no_rotation": "Logrotate tidak melakukan rotasi.",
     "logrotate_rotated": "Logrotate melakukan rotasi.",
     "start_syslog_ng": "Memulai syslog-ng."
-  }
+  },
+  "proxy.validation": {
+    "files_valid": "Validasi file konfigurasi Nginx.",
+    "file_missing": "File konfigurasi tidak ditemukan: {file}. Pastikan file tersedia dan dapat diakses."
+  },
+  "proxy.permissions.permissions_set": "Izin telah disetel.",
+  "proxy.validation.files_valid": "Semua file valid.",
+  "proxy.validation.env_valid": "Semua variabel lingkungan valid.",
+  "proxy.config.generate_main": "Menghasilkan konfigurasi utama Nginx.",
+  "proxy.config.generate_rtsp": "Menghasilkan konfigurasi RTSP.",
+  "proxy.config.syntax_failed": "Validasi sintaks gagal.",
+  "proxy.runtime.starting": "Memulai Nginx...",
+  "proxy.runtime.started": "Nginx berjalan."
 }

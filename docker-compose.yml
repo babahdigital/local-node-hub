@@ -66,6 +66,7 @@ services:
     container_name: rtsp-backup
     restart: always
     volumes:
+      - ./config/validate_cctv.py:/app/scripts/validate_cctv.py
       - /mnt/Data/Backup:/mnt/Data/Backup
       - ./rtsp/scripts:/app/scripts
       - ./config/log_messages.json:/app/config/log_messages.json:ro
@@ -91,10 +92,10 @@ services:
     container_name: nginx-proxy
     restart: always
     volumes:
+      - ./proxy/config:/app/config
       - ./config/credentials.sh:/app/config/credentials.sh:ro
       - ./config/log_messages.json:/app/config/log_messages.json:ro
-      - /mnt/Data/Syslog/rtsp:/app/logs
-      - /mnt/Data/Syslog:/mnt/Data/Syslog
+      - /mnt/Data/Syslog/nginx:/mnt/Data/Syslog/nginx
     ports:
       - "8554:8554"
     env_file:

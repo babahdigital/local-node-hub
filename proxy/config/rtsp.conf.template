@@ -1,0 +1,18 @@
+server {
+    listen 8554;
+    server_name localhost;
+
+    location /rtsp/ {
+        proxy_pass rtsp://${RTSP_USERNAME}:${RTSP_PASSWORD}@${RTSP_IP}:554/;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header Host $host;
+        proxy_set_header Connection "";
+
+        limit_conn perip 5;
+        proxy_buffering off;
+
+        # RTSP-specific
+        proxy_set_header Connection "Upgrade";
+        proxy_http_version 1.1;
+    }
+}

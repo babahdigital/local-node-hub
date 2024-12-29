@@ -1,37 +1,30 @@
-events {}
+user nginx;
+worker_processes auto;
+
+error_log /mnt/Data/Syslog/nginx/error.log notice;
+pid /var/run/nginx.pid;
+
+events {
+    worker_connections 1024;
+}
 
 http {
-    # Define limit_conn_zone untuk membatasi koneksi per IP
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                    '$status $body_bytes_sent "$http_referer" '
+                    '"$http_user_agent" "$http_x_forwarded_for"';
+
+    access_log /mnt/Data/Syslog/nginx/access.log main;
+
+    sendfile on;
+    tcp_nopush on;
+    tcp_nodelay on;
+    keepalive_timeout 65;
+    types_hash_max_size 2048;
+
     limit_conn_zone $binary_remote_addr zone=perip:10m;
 
-    server {
-        listen 8554;
-        server_name localhost;
-
-        # RTSP Proxy
-        location /rtsp/ {
-            # Gunakan variabel dinamis untuk RTSP URL
-            proxy_pass rtsp://${RTSP_USERNAME}:${RTSP_PASSWORD}@${RTSP_IP}:554;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header Host $host;
-
-            # Batasi koneksi per IP
-            limit_conn perip 5;
-
-            # Nonaktifkan buffering untuk RTSP
-            proxy_buffering off;
-
-            # Logging
-            access_log /mnt/Data/Syslog/nginx/access.log;
-            error_log /mnt/Data/Syslog/nginx/error.log;
-        }
-
-        # Internal endpoint untuk validasi token
-        location /validate-token {
-            internal;
-            proxy_pass http://127.0.0.1:5005/validate-token;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header Host $host;
-        }
-    }
+    include /etc/nginx/conf.d/*.conf;
 }
