@@ -1,9 +1,9 @@
 # Dokumentasi: Fitur-Fitur HDD Monitor
 
-## 1. Deskripsi Umum
+## Deskripsi Umum
 `hdd_monitor.py` adalah script Python yang dirancang untuk memantau penggunaan disk dan melakukan rotasi file lama secara otomatis ketika kapasitas penyimpanan mendekati batas maksimum. Script ini kompatibel dengan HDD fisik maupun penyimpanan dengan batasan quota seperti TrueNAS.
 
-## 2. Fitur Utama
+## Fitur Utama
 
 | Fitur | Deskripsi |
 |-------|-----------|
@@ -17,7 +17,7 @@
 | Validasi Layanan Health Check | Memastikan layanan dalam kondisi sehat menggunakan fungsi `wait_for_health_check()` sebelum monitoring dimulai. |
 | Ketahanan terhadap Error | Error pada satu iterasi monitoring tidak menghentikan proses keseluruhan. |
 
-## 3. Cara Kerja
+## Cara Kerja
 
 ### Penjadwalan Monitoring
 Script berjalan dalam loop, memeriksa kapasitas disk pada interval yang ditentukan (`MONITOR_INTERVAL`).
@@ -43,7 +43,7 @@ Jika terjadi error selama iterasi monitoring, script akan mencatat log error dan
 ### Health Check
 Script memvalidasi layanan terkait sebelum memulai monitoring.
 
-## 4. Variabel Lingkungan yang Digunakan
+## Variabel Lingkungan yang Digunakan
 
 | Variabel | Deskripsi |
 |----------|-----------|
@@ -57,7 +57,7 @@ Script memvalidasi layanan terkait sebelum memulai monitoring.
 | `HEALTH_CHECK_URL` | URL endpoint layanan health check. |
 | `HEALTH_CHECK_TIMEOUT` | Waktu maksimal (detik) untuk menunggu respons dari health check. |
 
-## 5. Log dan Debugging
+## Log dan Debugging
 
 ### File Log
 Semua aktivitas dicatat dalam file log di `/mnt/Data/Syslog/rtsp/hdd_monitor.log`. File log secara otomatis berotasi setelah mencapai ukuran 10MB.
@@ -65,7 +65,7 @@ Semua aktivitas dicatat dalam file log di `/mnt/Data/Syslog/rtsp/hdd_monitor.log
 ### Error Handling
 Error pada iterasi tertentu tidak menghentikan proses monitoring secara keseluruhan. Semua error dicatat dalam log.
 
-## 6. Kompatibilitas
+## Kompatibilitas
 
 ### HDD Fisik
 Memantau kapasitas fisik disk menggunakan `shutil.disk_usage`.
