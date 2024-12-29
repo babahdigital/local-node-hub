@@ -20,25 +20,12 @@ fi
 
 # Fungsi untuk membaca pesan dari file JSON
 get_log_message() {
-    local key="$1"
-    local message
-    message=$(jq -r ".bash_entrypoint.${key}" "$LOG_MESSAGES_FILE" 2>/dev/null)
-    if [ "$message" == "null" ]; then
-        echo "$(date '+%d-%m-%Y %H:%M:%S') - ERROR: Pesan untuk kunci '${key}' tidak ditemukan di $LOG_MESSAGES_FILE" >&2
-        exit 1
-    fi
-    echo "$message"
+    python3 -c "from utils import get_log_message; print(get_log_message('$1'))"
 }
 
 # Fungsi untuk mendapatkan waktu lokal dengan format dd-MM-yyyy HH:mm:ss WITA/WIB
 get_local_time() {
-    local tz_suffix
-    if [ "$TIMEZONE" = "Asia/Jakarta" ]; then
-        tz_suffix="WIB"
-    else
-        tz_suffix="WITA"
-    fi
-    TZ="$TIMEZONE" date "+%d-%m-%Y %H:%M:%S $tz_suffix"
+    python3 -c "from utils import get_local_time; print(get_local_time('$TIMEZONE'))"
 }
 
 # Fungsi logging
@@ -55,11 +42,11 @@ mkdir -p /mnt/Data/Syslog/rtsp
 log "INFO" "$(get_log_message 'loading_env')"
 
 # Validasi file credentials.sh
-if [ ! -f "/rtsp/credentials.sh" ]; then
+if [ ! -f "/app/config/credentials.sh" ]; then
     log "ERROR" "File credentials.sh tidak ditemukan."
     exit 1
 fi
-source /rtsp/credentials.sh
+source /app/config/credentials.sh
 if [ -n "$RTSP_USERNAME" ] && [ -n "$RTSP_IP" ]; then
     log "INFO" "$(get_log_message 'env_loaded')"
 else

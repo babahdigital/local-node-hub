@@ -2,13 +2,10 @@ import os
 import subprocess
 import datetime
 import time
-import json
-import requests
 import psutil  # Digunakan untuk dynamic scaling
 from concurrent.futures import ThreadPoolExecutor
 from dotenv import load_dotenv
-import logging
-from logging.handlers import SysLogHandler, RotatingFileHandler
+from utils import load_log_messages, setup_logger, validate_backend_url
 from report_manager import send_report_to_backend
 
 # Load environment variables
@@ -17,14 +14,7 @@ load_dotenv()
 # Path ke log_messages.json
 LOG_MESSAGES_FILE = os.getenv("LOG_MESSAGES_FILE", "/app/config/log_messages.json")
 
-# Fungsi untuk memuat pesan log dari file JSON
-def load_log_messages(file_path):
-    try:
-        with open(file_path, "r") as f:
-            return json.load(f)
-    except Exception as e:
-        raise RuntimeError(f"Gagal memuat pesan log dari {file_path}: {e}")
-
+# Load log messages
 try:
     log_messages = load_log_messages(LOG_MESSAGES_FILE)
 except RuntimeError as e:
@@ -32,23 +22,7 @@ except RuntimeError as e:
     exit(1)
 
 # Setup logger
-logger = logging.getLogger("RTSP-Backup")
-logger.setLevel(logging.DEBUG if os.getenv("DEBUG", "false").lower() == "true" else logging.INFO)
-
-ENABLE_SYSLOG = os.getenv("ENABLE_SYSLOG", "true").lower() == "true"
-SYSLOG_SERVER = os.getenv("SYSLOG_SERVER", "syslog-ng")
-SYSLOG_PORT = int(os.getenv("SYSLOG_PORT", "1514"))
-
-if ENABLE_SYSLOG:
-    syslog_handler = SysLogHandler(address=(SYSLOG_SERVER, SYSLOG_PORT))
-    formatter = logging.Formatter('[RTSP-BACKUP] %(message)s')
-    syslog_handler.setFormatter(formatter)
-    logger.addHandler(syslog_handler)
-
-file_handler = RotatingFileHandler("/mnt/Data/Syslog/rtsp/backup_manager.log", maxBytes=10 * 1024 * 1024, backupCount=5)
-file_formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s', datefmt='%d-%m-%Y %H:%M:%S')
-file_handler.setFormatter(file_formatter)
-logger.addHandler(file_handler)
+logger = setup_logger("RTSP-Backup")
 
 # Fungsi untuk menghitung delay retry berdasarkan beban CPU atau I/O
 def get_dynamic_retry_delay():
@@ -70,10 +44,6 @@ def get_dynamic_concurrency_limit():
 
 # Dynamic scaling untuk jumlah pekerja
 def get_dynamic_max_workers():
-    """
-    Menentukan jumlah pekerja untuk ThreadPoolExecutor 
-    berdasarkan beban CPU.
-    """
     cpu_percent = psutil.cpu_percent(interval=1)
     if cpu_percent < 50:
         return 8  # Maksimum 8 pekerja jika CPU rendah
@@ -83,8 +53,6 @@ def get_dynamic_max_workers():
 
 # Fungsi untuk menghitung jumlah maksimal retry berdasarkan stabilitas jaringan atau jumlah kegagalan sebelumnya
 def get_dynamic_max_retries():
-    # Misalnya, kita bisa menggunakan jumlah kegagalan sebelumnya untuk menentukan ini
-    # Untuk contoh ini, kita set nilai statis
     return 3
 
 # Konfigurasi dari .env dengan fallback ke nilai otomatis
