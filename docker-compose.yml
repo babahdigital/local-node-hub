@@ -7,7 +7,7 @@ services:
       - TZ=Asia/Makassar
     volumes:
       - ./config/generate_logrotate.sh:/app/generate_logrotate.sh
-      - /mnt/Data/Syslog:/mnt/Data/Syslog
+      - /mnt/Data/Syslog/default/logrotate:/mnt/Data/Syslog/default/logrotate
       - ./syslog/logrotate:/app/logrotate
       - ./config/log_messages.json:/app/config/log_messages.json:ro
     user: root

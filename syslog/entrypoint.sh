@@ -84,8 +84,8 @@ CONFIG_SOURCE="/app/logrotate/syslog-ng"
 CONFIG_TARGET="/etc/logrotate.d/syslog-ng"
 BACKUP_DIR="/etc/logrotate.d/backup"
 SYSLOG_CONF="/app/config/syslog-ng.conf"
-LOGROTATE_STATE_FILE="/mnt/Data/Syslog/default/logrotate.status"
-LOGROTATE_LOG="/mnt/Data/Syslog/logrotate.log"
+LOGROTATE_STATE_FILE="/mnt/Data/Syslog/default/logrotate/logrotate.status"
+LOGROTATE_LOG="/mnt/Data/Syslog/logrotate/logrotate.log"
 
 #####################################
 # Eksekusi utama

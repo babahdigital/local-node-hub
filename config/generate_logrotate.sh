@@ -73,7 +73,7 @@ configure_timezone() {
 #####################################
 # Variabel
 #####################################
-LOG_DIR="/mnt/Data/Syslog"
+LOG_DIR="/mnt/Data/Syslog/default/logrotate"
 CONFIG_FILE="/app/logrotate/syslog-ng"
 OWNER="abdullah"
 GROUP="abdullah"
