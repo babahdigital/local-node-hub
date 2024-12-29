@@ -92,14 +92,17 @@ services:
     restart: always
     volumes:
       - ./config/credentials.sh:/app/config/credentials.sh:ro
+      - ./config/log_messages.json:/app/config/log_messages.json:ro
       - /mnt/Data/Syslog/rtsp:/app/logs
+      - /mnt/Data/Syslog:/mnt/Data/Syslog
     ports:
       - "8554:8554"
     env_file:
       - .env
     networks:
       rtsp-syslog-network:
-        ipv4_address: 172.16.31.5
+        aliases:
+          - nginx-proxy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:8554"]
       interval: 30s

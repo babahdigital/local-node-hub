@@ -2,48 +2,91 @@
 
 set -e
 
+# Path ke file konfigurasi dan log
 CREDENTIALS_FILE="/app/config/credentials.sh"
 NGINX_TEMPLATE="/app/config/nginx.conf.template"
 NGINX_CONF="/etc/nginx/nginx.conf"
-LOG_MESSAGES_FILE="/app/config/log_messages.json"
-ACCESS_LOG="/app/logs/access.log"
-ERROR_LOG="/app/logs/error.log"
-CONFIG_CHECKSUM_FILE="/tmp/nginx_config_checksum"
+LOG_DIR="/mnt/Data/Syslog/nginx"
+ACCESS_LOG="$LOG_DIR/access.log"
+ERROR_LOG="$LOG_DIR/error.log"
+CONFIG_CHECKSUM_FILE="$LOG_DIR/nginx_config_checksum"
 
+# Fungsi logging
 log() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1: $2"
+    local level="$1"
+    local message="$2"
+    echo "$(date '+%d-%m-%Y %H:%M:%S') - $level: $message" | tee -a "$ERROR_LOG"
 }
 
-get_log_message() {
-    local key="$1"
-    local default_message="$2"
-    if [ -f "$LOG_MESSAGES_FILE" ]; then
-        jq -r ".$key // \"$default_message\"" "$LOG_MESSAGES_FILE" 2>/dev/null
-    else
-        echo "$default_message"
-    fi
-}
-
+# Fungsi validasi file
 validate_files() {
-    [ -f "$CREDENTIALS_FILE" ] || { log "ERROR" "$(get_log_message "file_missing" "File kredensial tidak ditemukan.")"; exit 1; }
-    [ -f "$NGINX_TEMPLATE" ] || { log "ERROR" "$(get_log_message "template_missing" "Template Nginx tidak ditemukan.")"; exit 1; }
+    [ -f "$CREDENTIALS_FILE" ] || { log "ERROR" "Credentials file not found: $CREDENTIALS_FILE"; exit 1; }
+    [ -f "$NGINX_TEMPLATE" ] || { log "ERROR" "Nginx template not found: $NGINX_TEMPLATE"; exit 1; }
 }
 
+# Fungsi validasi environment variables
+validate_env() {
+    source "$CREDENTIALS_FILE"
+    local required_vars=("RTSP_USERNAME" "RTSP_PASSWORD" "RTSP_IP")
+    for var in "${required_vars[@]}"; do
+        if [ -z "${!var}" ]; then
+            log "ERROR" "Required environment variable $var is not set"
+            exit 1
+        fi
+    done
+    log "INFO" "Environment variables are valid."
+    log "DEBUG" "RTSP_USERNAME=${RTSP_USERNAME}, RTSP_IP=${RTSP_IP}"  # Menyembunyikan RTSP_PASSWORD
+}
+
+# Fungsi untuk membuat konfigurasi Nginx
 generate_nginx_config() {
     local new_checksum
-    new_checksum=$(sha256sum "$CREDENTIALS_FILE" "$NGINX_TEMPLATE" | sha256sum)
-
+    new_checksum=$(sha256sum "$CREDENTIALS_FILE" "$NGINX_TEMPLATE" | awk '{ print $1 }')
     if [ -f "$CONFIG_CHECKSUM_FILE" ] && grep -q "$new_checksum" "$CONFIG_CHECKSUM_FILE"; then
-        log "INFO" "$(get_log_message "config_no_change" "Konfigurasi tidak berubah.")"
+        log "INFO" "Nginx configuration is up-to-date."
     else
-        envsubst < "$NGINX_TEMPLATE" > "$NGINX_CONF"
+        log "INFO" "Generating new Nginx configuration..."
+        if ! envsubst < "$NGINX_TEMPLATE" > "$NGINX_CONF"; then
+            log "ERROR" "Failed to generate Nginx configuration."
+            exit 1
+        fi
         echo "$new_checksum" > "$CONFIG_CHECKSUM_FILE"
-        log "INFO" "$(get_log_message "config_generated" "Konfigurasi Nginx berhasil dihasilkan.")"
+        log "DEBUG" "Generated Nginx configuration:"
+        cat "$NGINX_CONF" | tee -a "$ERROR_LOG"
     fi
 }
 
-validate_files
-generate_nginx_config
+# Inisialisasi direktori log
+initialize_log_directory() {
+    mkdir -p "$LOG_DIR"
+    chmod 755 "$LOG_DIR"
+    touch "$ACCESS_LOG" "$ERROR_LOG"
+    if [ ! -w "$LOG_DIR" ]; then
+        log "ERROR" "Log directory is not writable: $LOG_DIR"
+        exit 1
+    fi
+    rm -f "$CONFIG_CHECKSUM_FILE"
+    log "INFO" "Log directory initialized: $LOG_DIR"
+}
 
-log "INFO" "$(get_log_message "nginx_start" "Menjalankan Nginx...")"
-exec nginx -g "daemon off;"
+# Validasi dan jalankan Nginx
+run_nginx() {
+    log "INFO" "Validating Nginx configuration..."
+    set +e
+    nginx -t
+    local nginx_status=$?
+    set -e
+    if [ $nginx_status -ne 0 ]; then
+        log "ERROR" "Nginx configuration validation failed."
+        exit 1
+    fi
+    log "INFO" "Starting Nginx..."
+    exec nginx -g "daemon off;"
+}
+
+# Eksekusi utama
+validate_files
+validate_env
+initialize_log_directory
+generate_nginx_config
+run_nginx

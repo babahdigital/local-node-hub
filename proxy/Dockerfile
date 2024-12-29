@@ -1,20 +1,19 @@
-# Gunakan base image Nginx
 FROM nginx:alpine
 
-# Install utilitas envsubst dan bash
-RUN apk add --no-cache gettext bash
+LABEL maintainer="babahdigital"
+LABEL version="1.0"
+LABEL description="Proxy berbasis Nginx dengan konfigurasi dinamis."
 
-RUN mkdir -p /mnt/Data/Syslog/nginx \
-    && chown -R abdullah:abdullah
+# Buat pengguna dan grup abdullah
+RUN addgroup -S abdullah && adduser -S abdullah -G abdullah
 
-# Salin template nginx.conf
-COPY config/nginx.conf.template /app/config/nginx.conf.template
+RUN apk add --no-cache bash jq && mkdir -p /app/logs
 
-# CMD untuk membaca credentials.sh dari volume dan generate nginx.conf
-CMD ["/bin/sh", "-c", "source /app/config/credentials.sh && envsubst < /app/config/nginx.conf.template > /etc/nginx/nginx.conf && nginx -g 'daemon off;'"]
+COPY config/nginx.conf.template /app/config/
+COPY entrypoint.sh /app/
 
-# Buat direktori untuk log
-RUN mkdir -p /app/logs
+RUN chmod +x /app/entrypoint.sh
 
-# Expose port untuk RTSP
 EXPOSE 8554
+
+ENTRYPOINT ["/app/entrypoint.sh"]

@@ -1,27 +1,32 @@
 events {}
 
 http {
+    # Define limit_conn_zone untuk membatasi koneksi per IP
     limit_conn_zone $binary_remote_addr zone=perip:10m;
 
     server {
         listen 8554;
         server_name localhost;
 
+        # RTSP Proxy
         location /rtsp/ {
             # Gunakan variabel dinamis untuk RTSP URL
             proxy_pass rtsp://${RTSP_USERNAME}:${RTSP_PASSWORD}@${RTSP_IP}:554;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header Host $host;
 
-            # Batasi koneksi
+            # Batasi koneksi per IP
             limit_conn perip 5;
+
+            # Nonaktifkan buffering untuk RTSP
             proxy_buffering off;
 
-            # Arahkan log ke direktori /app/logs di container
-            access_log /app/logs/access.log;
-            error_log /app/logs/error.log;
+            # Logging
+            access_log /mnt/Data/Syslog/nginx/access.log;
+            error_log /mnt/Data/Syslog/nginx/error.log;
         }
 
+        # Internal endpoint untuk validasi token
         location /validate-token {
             internal;
             proxy_pass http://127.0.0.1:5005/validate-token;
