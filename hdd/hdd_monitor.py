@@ -5,6 +5,7 @@ import os
 import shutil
 import time
 import logging
+import socket  # Added for server name resolution check
 from logging.handlers import SysLogHandler, RotatingFileHandler
 import json
 from flask import Flask, jsonify
@@ -62,9 +63,7 @@ def get_zfs_quota_info(dataset):
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True
         )
         lines = result.stdout.strip().split("\n")
-        quota = None
-        used = None
-        available = None
+        quota = used = available = None
         for line in lines:
             fields = line.split()
             if "quota" in fields:
@@ -110,11 +109,24 @@ file_formatter = logging.Formatter('%(message)s')
 file_handler.setFormatter(file_formatter)
 logger.addHandler(file_handler)
 
-if ENABLE_SYSLOG:
-    syslog_handler = SysLogHandler(address=(SYSLOG_SERVER, SYSLOG_PORT))
-    syslog_formatter = logging.Formatter('[HDD-MONITOR] %(message)s')
-    syslog_handler.setFormatter(syslog_formatter)
-    logger.addHandler(syslog_handler)
+# Check if SYSLOG_SERVER is resolvable before creating syslog handler
+def is_resolvable(host):
+    try:
+        socket.getaddrinfo(host, None)
+        return True
+    except socket.gaierror:
+        return False
+
+if ENABLE_SYSLOG and SYSLOG_SERVER and is_resolvable(SYSLOG_SERVER):
+    try:
+        syslog_handler = SysLogHandler(address=(SYSLOG_SERVER, SYSLOG_PORT))
+        syslog_formatter = logging.Formatter('[HDD-MONITOR] %(message)s')
+        syslog_handler.setFormatter(syslog_formatter)
+        logger.addHandler(syslog_handler)
+    except Exception as e:
+        logger.error(f"Unable to enable syslog: {e}")
+else:
+    logger.warning("Syslog disabled or server not resolvable.")
 
 def monitor_disk_usage():
     try:
