@@ -118,3 +118,68 @@ Berikut adalah rencana prioritas pengerjaan berdasarkan dependensi dan integrasi
 7. **API** → Mengintegrasikan seluruh sistem dengan kantor pusat.
 
 Jika Anda setuju, saya dapat mulai membuat kerangka untuk Backup Manager dan HDD Monitoring terlebih dahulu.
+
+## Tahapan Implementasi
+
+Berdasarkan alur yang diusulkan, tahapannya adalah:
+
+### 1. HDD Monitoring (Tahap Pertama)
+
+**Fungsi Utama**: Memastikan kapasitas disk cukup untuk proses backup.
+
+**Alur**:
+- HDD Monitoring berjalan sebagai proses terpisah (atau container terpisah) untuk memantau kapasitas disk.
+- Jika kapasitas disk melebihi ambang batas, HDD Monitoring:
+    - Menghapus file lama berdasarkan aturan retensi atau kapasitas.
+    - Melaporkan status kapasitas disk ke Syslog-ng dan Report Manager.
+- Backup Manager memeriksa log HDD Monitoring sebelum memulai proses backup.
+
+**Output**: Disk selalu memiliki ruang yang cukup untuk backup.
+
+### 2. Validasi CCTV (Tahap Kedua)
+
+**Fungsi Utama**: Memastikan stream RTSP valid sebelum data di-backup.
+
+**Alur**:
+- Backup Manager memanggil skrip Validasi CCTV (validate_rtsp_stream dan check_black_frames) untuk setiap channel RTSP.
+- Jika validasi gagal:
+    - Backup untuk channel tersebut dilewati.
+    - Log kegagalan dikirim ke Report Manager.
+- Jika validasi berhasil:
+    - Channel ditambahkan ke daftar yang akan di-backup.
+
+**Output**: Hanya stream yang valid yang diproses lebih lanjut.
+
+### 3. Backup Manager (Tahap Ketiga)
+
+**Fungsi Utama**: Melakukan backup stream RTSP yang sudah divalidasi ke disk.
+
+**Alur**:
+- Backup Manager memeriksa kapasitas disk sebelum memulai proses backup (dengan membaca log HDD Monitoring).
+- Memproses backup hanya untuk channel yang lolos validasi.
+- Jika backup berhasil:
+    - File backup dicatat di log dan dilaporkan ke Report Manager.
+- Jika backup gagal:
+    - Log kegagalan dicatat dan dikirim ke Report Manager.
+
+**Output**: Backup berjalan hanya untuk stream yang valid dan tersedia.
+
+### Mengapa Tahapan Ini?
+
+**HDD Monitoring Sebelum Validasi**:
+- Jika disk penuh, validasi tidak diperlukan karena backup tidak dapat dilakukan.
+- Ini menghemat waktu dan resource sistem.
+
+**Validasi Sebelum Backup**:
+- Memastikan hanya stream yang valid yang di-backup, menghindari pemborosan resource dan disk.
+
+**Log yang Terkait**:
+- Semua tahap menghasilkan log yang dapat dianalisis di Report Manager atau kantor pusat.
+
+### Rekomendasi Implementasi
+
+1. Siapkan container terpisah untuk HDD Monitoring dan pastikan berjalan terus-menerus.
+2. Integrasikan validasi ke Backup Manager untuk dijalankan sebelum proses backup.
+3. Optimalkan Backup Manager untuk memeriksa kapasitas disk dan memproses backup dalam batch kecil.
+
+Jika setuju, saya dapat menyusun rencana lebih rinci atau langsung menyesuaikan script untuk setiap tahap.
