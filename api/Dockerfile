@@ -29,4 +29,4 @@ RUN mkdir -p /app/data
 RUN chmod -R 755 /app
 
 # Jalankan Gunicorn
-CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:5001", "backend_api:app"]
+CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:5001", "--timeout", "60", "backend_api:app"]

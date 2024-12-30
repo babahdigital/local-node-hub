@@ -29,6 +29,7 @@ services:
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
       - /mnt/Data/Syslog/default/logrotate:/mnt/Data/Syslog/default/logrotate
+      - /var/run/docker.sock:/var/run/docker.sock
     user: root
     depends_on:
       - syslog-ng
@@ -66,7 +67,7 @@ services:
     networks:
       rtsp-syslog-network:
         ipv4_address: 172.16.31.4
-        
+
   api:
     build:
       context: .

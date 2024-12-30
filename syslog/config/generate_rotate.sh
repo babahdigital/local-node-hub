@@ -53,18 +53,10 @@ get_message() {
   echo "$MESSAGES" | jq -r ".$key // \"\""
 }
 
-# Fungsi untuk mengganti placeholder
-replace_placeholder() {
-  local text="$1"
-  local placeholder="$2"
-  local replacement="$3"
-  echo "${text//\{$placeholder\}/$replacement}"
-}
-
 #####################################
 # Variabel
 #####################################
-LOG_DIR="/mnt/Data/Syslog/default/logrotate"
+LOG_ROOT="/mnt/Data/Syslog"
 CONFIG_FILE="/app/logrotate/syslog-ng"
 OWNER="abdullah"
 GROUP="abdullah"
@@ -78,9 +70,9 @@ load_messages
 log "Memastikan direktori konfigurasi logrotate ada..."
 mkdir -p "$(dirname "$CONFIG_FILE")"
 
-# Validasi direktori log
-if [[ ! -d "$LOG_DIR" ]]; then
-  log "Direktori log $LOG_DIR tidak ditemukan!"
+# Validasi direktori log root
+if [[ ! -d "$LOG_ROOT" ]]; then
+  log "Direktori log root $LOG_ROOT tidak ditemukan!"
   exit 1
 fi
 
@@ -96,8 +88,8 @@ else
 
 EOF
 
-  # Scan file log di direktori
-  log "Memindai file log di $LOG_DIR..."
+  # Scan semua file log di subdirektori
+  log "Memindai semua file log di $LOG_ROOT..."
   while IFS= read -r LOG_FILE; do
     cat <<EOF >> "$CONFIG_FILE"
 "$LOG_FILE" {
@@ -117,7 +109,7 @@ EOF
 
 EOF
     log "Menambahkan konfigurasi untuk $LOG_FILE"
-  done < <(find "$LOG_DIR" -type f -name "*.log")
+  done < <(find "$LOG_ROOT" -type f -name "*.log")
 
   log "Konfigurasi logrotate selesai. File disimpan di $CONFIG_FILE."
 fi

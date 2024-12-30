@@ -1,135 +1,59 @@
-# Konfigurasi Syslog-ng dengan Logrotate dan Zona Waktu Dinamis
+# Sistem Pengelolaan Log dengan Syslog-ng dan Logrotate
 
-Proyek ini mengatur Syslog-ng untuk pengumpulan log jaringan dan Logrotate untuk manajemen log di dalam container Docker, dengan dukungan konfigurasi zona waktu dinamis.
+## Pendahuluan
+Dokumentasi ini berfokus pada fitur, kelebihan, dan kegunaan sistem pengelolaan log berbasis Docker yang dibangun menggunakan Syslog-ng untuk agregasi log dan Logrotate untuk rotasi log.
 
-## Fitur
-- **Syslog-ng** untuk pengumpulan log dari jaringan melalui UDP/TCP.
-- **Logrotate** untuk rotasi log otomatis dengan threshold yang dapat disesuaikan.
-- **Konfigurasi Zona Waktu Dinamis** menggunakan variabel `TIMEZONE` dan `TZ`.
-- **Pesan Dinamis** melalui file konfigurasi `log_messages.json`.
+## Fitur Utama
 
-## Cara Penggunaan
+| Fitur | Deskripsi | Kelebihan | Kegunaan |
+|-------|-----------|-----------|----------|
+| **Agregasi Log dengan Syslog-ng** | Mengumpulkan log dari berbagai sumber (UDP, TCP, file). Mendukung filter log berbasis level (debug, info, warn, error). Mendukung pencocokan pola log menggunakan regex. | Sistem terpusat untuk semua log aplikasi, firewall, dan sistem. Konfigurasi fleksibel untuk memisahkan log ke subdirektori. | Mengelola log dari banyak layanan dalam satu lokasi terpusat. Membantu analisis dan debugging dengan struktur log yang jelas. |
+| **Rotasi Log Otomatis dengan Logrotate** | Rotasi log berdasarkan ukuran (misalnya, 5 MB) atau waktu (daily). Kompresi log lama untuk menghemat ruang disk. Pembersihan otomatis file log lama setelah jangka waktu tertentu. | Menjaga direktori log tetap rapi dan menghindari disk penuh. Mendukung reload otomatis layanan setelah rotasi. | Memastikan log lama tidak memenuhi kapasitas disk. Menyediakan file log yang relevan untuk audit atau debugging. |
+| **Monitoring dan Notifikasi** | Skrip Python/Bash untuk memantau kapasitas disk. Notifikasi jika kapasitas disk hampir penuh (>90%). | Memberikan peringatan dini untuk mencegah masalah operasional. Dapat diintegrasikan dengan Telegram atau email. | Mempermudah manajemen kapasitas disk secara proaktif. Mengurangi risiko downtime akibat disk penuh. |
+| **Dukungan Multi-Layanan** | Dukungan untuk log dari berbagai sumber seperti Nginx, RTSP, Firewall. Template konfigurasi logrotate yang dihasilkan otomatis berdasarkan direktori log. | Meminimalkan konfigurasi manual untuk layanan baru. Skalabilitas tinggi untuk lingkungan multi-layanan. | Meningkatkan efisiensi pengelolaan log di lingkungan multi-layanan. Memberikan visibilitas yang lebih baik atas kinerja setiap layanan. |
 
-### 1. Edit Environment Variables
-Ubah `docker-compose.yml` untuk mengatur zona waktu:
-```yaml
-environment:
-    TIMEZONE: Asia/Makassar
-    TZ: Asia/Makassar
-```
+## Kelebihan Sistem
 
-### 2. Build dan Jalankan Container
-```bash
-docker-compose build
-docker-compose up -d
-```
+### Efisiensi Operasional
+- Logrotate dan Syslog-ng berjalan di container terpisah untuk meningkatkan modularitas.
+- Rotasi log otomatis menjaga performa sistem tanpa intervensi manual.
 
-### 3. Verifikasi Waktu di Container
-```bash
-docker exec syslog-ng date
-```
+### Konsistensi dan Standarisasi
+- Semua log disimpan dengan format yang konsisten.
+- Penggunaan template logrotate memastikan standar rotasi di semua layanan.
 
-### 4. Melihat Log Syslog-ng
-```bash
-docker logs syslog-ng
-```
+### Keamanan
+- Sistem berbasis Docker memungkinkan isolasi layanan.
+- Hanya IP tertentu yang diizinkan mengirim log ke Syslog-ng.
 
-### 5. Uji Coba Pengiriman Log
-Kirim log uji ke `syslog-ng` untuk memastikan bahwa log diterima dan disimpan di lokasi yang benar:
+### Kemudahan Pengelolaan
+- Konfigurasi logrotate dihasilkan secara otomatis dengan skrip.
+- Direktori log tetap rapi dengan struktur subdirektori yang terorganisir.
 
-#### 5.1. Kirim Log Melalui UDP
-```bash
-logger -n 127.0.0.1 -P 1514 --udp "Test log message over UDP"
-```
+## Kegunaan Sistem
 
-#### 5.2. Kirim Log Melalui TCP
-```bash
-logger -n 127.0.0.1 -P 1514 --tcp "Test log message over TCP"
-```
+### Pengelolaan Log Terpusat
+- Cocok untuk perusahaan yang memiliki banyak layanan atau aplikasi.
+- Mempermudah troubleshooting dengan log terpusat.
 
-### 6. Verifikasi File Log
-Periksa apakah file log telah dibuat dan berisi data yang diharapkan:
+### Pemantauan Operasional
+- Membantu tim DevOps memantau kapasitas disk dan kesehatan sistem.
+- Meningkatkan respons terhadap masalah log berlebih atau disk penuh.
 
-#### 6.1. Periksa Log Test
-```bash
-docker exec -it syslog-ng cat /mnt/Data/Syslog/test/test.log
-```
+### Kompatibilitas Multi-Layanan
+- Mendukung berbagai jenis log seperti aplikasi web (Nginx), streaming video (RTSP), dan firewall.
 
-#### 6.2. Periksa Log Default
-```bash
-docker exec -it syslog-ng cat /mnt/Data/Syslog/default/default.log
-```
+## Studi Kasus
 
-## Struktur Folder
-```bash
-.
-├── docker-compose.yml         # Konfigurasi Docker Compose
-├── Dockerfile                 # Dockerfile untuk Syslog-ng dan Logrotate
-├── app/
-│   ├── config/
-│   │   ├── syslog-ng.conf     # Konfigurasi Syslog-ng
-│   │   └── log_messages.json  # Pesan log dinamis
-│   ├── logrotate/
-│   │   └── syslog-ng          # Konfigurasi Logrotate
-│   └── entrypoint.sh          # Script entrypoint untuk container
-└── logs/                      # Folder untuk menyimpan log
-```
+### Aplikasi di Lingkungan Perusahaan
+- **Kebutuhan:** Log terpusat untuk semua aplikasi. Mengelola kapasitas disk untuk log besar.
+- **Solusi:** Syslog-ng untuk mengumpulkan log dari semua layanan. Logrotate untuk rotasi otomatis log lama.
+- **Hasil:** Penghematan disk 50% dengan kompresi log. Peningkatan efisiensi troubleshooting dengan log terorganisir.
 
-## Catatan
-- Pastikan `log_messages.json` berisi pesan statis yang sesuai.
-- Rotasi log akan berjalan otomatis berdasarkan konfigurasi di `logrotate/syslog-ng`.
-- Jika ada kendala atau pertanyaan, silakan buka issue di repositori ini.
+### Monitoring Infrastruktur
+- **Kebutuhan:** Peringatan dini jika kapasitas disk penuh.
+- **Solusi:** Skrip monitoring disk dengan notifikasi Telegram.
+- **Hasil:** Respon cepat terhadap kapasitas disk kritis.
 
-## Verifikasi File Log yang Dihasilkan
-
-### Lokasi Log Syslog-ng
-Berdasarkan konfigurasi di file `syslog-ng.conf`, log disimpan di:
-- Default log: `/mnt/Data/Syslog/default/default.log`
-
-Untuk melihat log:
-```bash
-cat /mnt/Data/Syslog/default/default.log
-```
-Untuk memantau log secara real-time:
-```bash
-tail -f /mnt/Data/Syslog/default/default.log
-```
-
-### Log Rotasi
-File log yang dirotasi akan berada di lokasi berikut:
-```bash
-/mnt/Data/Syslog/default/logrotate.status
-```
-Untuk memeriksa status rotasi:
-```bash
-cat /mnt/Data/Syslog/default/logrotate.status
-```
-
-## Verifikasi Layanan dan Status
-
-### Cek Kesehatan Container
-Gunakan perintah berikut untuk memeriksa kesehatan container:
-```bash
-docker ps
-```
-Cari kolom `STATUS` untuk memastikan container dalam status `healthy`.
-
-### Cek Konfigurasi Logrotate
-Jalankan logrotate secara manual untuk memverifikasi:
-```bash
-docker exec syslog-ng logrotate -d -s /mnt/Data/Syslog/default/logrotate.status /etc/logrotate.d/syslog-ng
-```
-
-### Cek Zona Waktu
-Untuk memverifikasi zona waktu container:
-```bash
-docker exec syslog-ng date
-```
-Jika zona waktu tidak sesuai, pastikan variabel `TIMEZONE` disetel dengan benar di file `.env` atau `docker-compose.yml`.
-
-## Langkah Tambahan
-- Pastikan folder `/mnt/Data/Syslog` memiliki izin yang benar untuk akses tulis oleh container.
-- Gunakan file `.env` untuk mengatur konfigurasi seperti `TIMEZONE` agar lebih mudah dikelola.
-- Periksa konfigurasi jaringan container jika ada masalah konektivitas.
-
-Jika Anda menghadapi masalah saat menjalankan perintah ini, beri tahu saya untuk analisis lebih lanjut.
+## Kesimpulan
+Sistem ini menawarkan solusi terintegrasi untuk pengelolaan log yang efektif. Dengan fitur seperti agregasi log terpusat, rotasi otomatis, dan notifikasi proaktif, sistem ini cocok untuk lingkungan multi-layanan yang kompleks.
