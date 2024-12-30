@@ -228,7 +228,11 @@
     "run_logrotate": "Menjalankan logrotate manual (force).",
     "logrotate_no_rotation": "Logrotate tidak melakukan rotasi.",
     "logrotate_rotated": "Logrotate melakukan rotasi.",
-    "start_syslog_ng": "Memulai syslog-ng."
+    "start_syslog_ng": "Memulai syslog-ng.",
+    "check_logrotate_config": "Memeriksa keberadaan file konfigurasi logrotate.",
+    "config_found": "File konfigurasi logrotate sudah ada.",
+    "removing_existing_symlink": "Menghapus symlink logrotate yang sudah ada.",
+    "symlink_removed": "Symlink logrotate dihapus."
   },
   "proxy.validation": {
     "files_valid": "Validasi file konfigurasi Nginx.",

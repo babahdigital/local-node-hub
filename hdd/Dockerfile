@@ -13,11 +13,12 @@ RUN apk update && apk add --no-cache \
 WORKDIR /app
 
 # Salin dan install dependencies Python
-COPY requirements.txt /app/
+COPY hdd/requirements.txt /app/
+COPY config/log_messages.json /app/config/log_messages.json
 RUN pip install --prefix=/install --no-cache-dir -r requirements.txt
 
 # Salin script Python
-COPY hdd_monitor.py /app/
+COPY hdd/hdd_monitor.py /app/
 
 # Stage 2: Final
 FROM python:3.11-alpine
@@ -28,7 +29,8 @@ WORKDIR /app
 COPY --from=builder /install /usr/local
 
 # Salin script Python dari stage builder
-COPY hdd_monitor.py /app/
+COPY hdd/hdd_monitor.py /app/
+COPY config/log_messages.json /app/config/log_messages.json
 
 # Buat direktori log
 RUN mkdir -p /mnt/Data/Syslog/rtsp

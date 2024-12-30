@@ -89,27 +89,28 @@ log "$(get_message "entrypoint.ensure_state_dir")"
 mkdir -p "$(dirname "$LOGROTATE_STATE_FILE")"
 log "$(get_message "entrypoint.state_dir_created")"
 
-# Validasi file konfigurasi logrotate
-log "$(get_message "entrypoint.validate_logrotate_config")"
+# **Tambahkan Logika untuk Membuat Konfigurasi Logrotate Jika Tidak Ada**
+log "$(get_message "entrypoint.check_logrotate_config")"
 if [[ ! -f "$CONFIG_SOURCE" ]]; then
   log "$(get_message "entrypoint.config_not_found")"
-  exit 1
+  log "Menjalankan generate_rotate.sh untuk membuat konfigurasi logrotate..."
+  /app/generate_rotate.sh
+  log "generate_rotate.sh selesai dijalankan."
+else
+  log "File konfigurasi logrotate $CONFIG_SOURCE sudah ada. Melanjutkan proses."
+fi
+
+# Menghapus symlink logrotate jika sudah ada
+if [[ -L "$CONFIG_TARGET" ]]; then
+  log "$(get_message "entrypoint.removing_existing_symlink")"
+  rm "$CONFIG_TARGET"
+  log "$(get_message "entrypoint.symlink_removed")"
 fi
 
 # Bersihkan file backup lama (lebih dari 7 hari)
 log "$(get_message "entrypoint.clean_old_backup_files")"
 find "$BACKUP_DIR" -type f -mtime +7 -exec rm -f {} \;
 log "$(get_message "entrypoint.old_backup_files_cleaned")"
-
-# Validasi symlink logrotate
-log "$(get_message "entrypoint.check_symlink")"
-if [[ -L "$CONFIG_TARGET" && "$(readlink -f "$CONFIG_TARGET")" == "$CONFIG_SOURCE" ]]; then
-  log "$(get_message "entrypoint.symlink_valid")"
-else
-  log "$(get_message "entrypoint.create_symlink")"
-  ln -sf "$CONFIG_SOURCE" "$CONFIG_TARGET"
-  log "$(get_message "entrypoint.symlink_created")"
-fi
 
 # Jalankan logrotate manual (force)
 log "$(get_message "entrypoint.run_logrotate")"
