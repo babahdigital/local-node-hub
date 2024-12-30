@@ -1,89 +1,91 @@
-### Dokumentasi Syslog dan Logrotate
+### Sistem Pengelolaan Log dengan Syslog-ng dan Logrotate
 
-## Syslog
+## Pendahuluan
+Dokumentasi ini menjelaskan fitur, kelebihan, fungsi utama, serta langkah uji coba sistem pengelolaan log berbasis Docker menggunakan Syslog-ng dan Logrotate. Sistem ini dirancang untuk mengelola log secara terpusat, efisien, dan otomatis, dengan dukungan waktu dinamis serta rotasi log berdasarkan ukuran atau waktu.
 
-### Deskripsi
-Syslog adalah protokol standar untuk mengirim pesan log dalam jaringan IP. Syslog digunakan untuk mengumpulkan log dari berbagai perangkat dan aplikasi, mengirimkannya ke server log, dan menyimpannya atau memprosesnya lebih lanjut.
+## Kelebihan Sistem
+1. **Modularitas**
+    - Sistem berjalan dalam container terpisah untuk Syslog-ng dan Logrotate, sehingga mempermudah manajemen.
+    - Layanan baru dapat ditambahkan tanpa memengaruhi layanan yang sudah ada.
+2. **Otomatisasi**
+    - Cron job otomatis menjalankan Logrotate untuk rotasi log secara berkala (default setiap jam).
+    - Skrip entrypoint memastikan cron job tidak ditambahkan lebih dari satu kali.
+3. **Efisiensi Penggunaan Disk**
+    - Rotasi log dilakukan berdasarkan ukuran log (default 5 MB) atau waktu (harian, mingguan, bulanan).
+    - Log lama dikompresi otomatis menggunakan gzip untuk menghemat ruang disk.
+    - Pembersihan log lama dilakukan otomatis (default menyimpan log selama 7 hari).
+4. **Fleksibilitas**
+    - Mendukung berbagai jenis log dari layanan seperti Nginx, RTSP, dan Firewall.
+    - Log dikelompokkan dalam subdirektori berdasarkan jenisnya untuk mempermudah analisis.
+5. **Waktu Dinamis**
+    - Sistem menampilkan waktu sesuai zona waktu lokal (WIB, WITA, atau WIT), yang disesuaikan secara otomatis berdasarkan konfigurasi zona waktu pada host.
+6. **Kemudahan Debugging**
+    - Log terpusat dengan format terstruktur.
+    - Pencatatan aktivitas sistem mempermudah debugging.
 
-### Fitur dan Fungsi
-| Fitur | Deskripsi |
-|-------|------------|
-| **Pengumpulan Log Terpusat** | Mengumpulkan log dari berbagai sumber seperti server, perangkat jaringan, dan aplikasi. Mendukung berbagai protokol transportasi seperti UDP, TCP, dan TLS. |
-| **Filter dan Kategori Log** | Memungkinkan penyaringan log berdasarkan tingkat keparahan (debug, info, warning, error, critical). Mendukung filter berbasis pola untuk mengkategorikan log. |
-| **Format Log Kustom** | Mendukung template untuk mengatur format log sesuai kebutuhan. Dapat menambahkan informasi tambahan seperti timestamp, hostname, dan program. |
-| **Penyimpanan dan Rotasi Log** | Menyimpan log ke file dengan dukungan rotasi log otomatis. Mendukung berbagai tujuan penyimpanan seperti file, database, dan remote server. |
-| **Keamanan** | Mendukung enkripsi log menggunakan TLS untuk keamanan data. Mendukung otentikasi dan kontrol akses untuk mengamankan log. |
+## Fungsi Utama
+1. **Syslog-ng**
+    - **Fungsi:** Mengumpulkan log dari berbagai sumber seperti protokol TCP, UDP, dan file.
+    - **Konfigurasi:** Menyimpan log ke direktori yang sesuai berdasarkan sumber log. Mendukung pencocokan pola menggunakan regex untuk memfilter log.
+2. **Logrotate**
+    - **Fungsi:** Melakukan rotasi log berdasarkan ukuran atau waktu.
+    - **Fitur Tambahan:** Reload otomatis layanan Syslog-ng setelah rotasi log. Kompresi log lama dengan gzip.
+3. **Integrasi Cron**
+    - **Fungsi:** Menjadwalkan Logrotate secara otomatis menggunakan cron.
+    - **Penanganan Duplikasi:** Skrip entrypoint memeriksa keberadaan cron job sebelum menambahkannya.
 
-### Kelebihan
-| Kelebihan | Deskripsi |
-|-----------|------------|
-| **Skalabilitas** | Dapat menangani volume log yang besar dari berbagai sumber. |
-| **Fleksibilitas** | Mendukung berbagai format log dan tujuan penyimpanan. |
-| **Keamanan** | Mendukung enkripsi dan otentikasi untuk melindungi data log. |
-| **Kompatibilitas** | Mendukung berbagai sistem operasi dan perangkat jaringan. |
+## Langkah Uji Coba
+1. **Kirim Log Menggunakan Logger**
+    - Gunakan perintah berikut untuk mengirim pesan log ke Syslog-ng melalui TCP:
+      ```bash
+      logger -n 127.0.0.1 -P 1514 --tcp "Pesan log uji coba melalui TCP"
+      ```
+2. **Periksa Log yang Diterima**
+    - Cek log yang disimpan oleh Syslog-ng. Misalnya, log dari protokol TCP disimpan di direktori `/mnt/Data/Syslog/default/default.log`:
+      ```bash
+      tail -f /mnt/Data/Syslog/default/default.log
+      ```
+3. **Simulasi Hasil Log**
+    - Berikut adalah contoh log yang dihasilkan:
+      ```plaintext
+      31-12-2024 03:45:10 WITA 127.0.0.1: Pesan log uji coba melalui TCP
+      ```
 
-## Logrotate
+## Waktu Dinamis
+Sistem secara otomatis mendeteksi zona waktu lokal berdasarkan konfigurasi host. Berikut adalah aturan penyesuaian zona waktu:
+- +7: WIB (Waktu Indonesia Barat)
+- +8: WITA (Waktu Indonesia Tengah)
+- +9: WIT (Waktu Indonesia Timur)
+Waktu ditampilkan secara dinamis dalam log dan output aktivitas sistem.
 
-### Deskripsi
-Logrotate adalah utilitas untuk mengelola file log dengan cara merotasi, mengompresi, dan menghapus log lama secara otomatis. Logrotate membantu menjaga ukuran file log tetap terkendali dan memastikan log terbaru selalu tersedia.
+## Log Aktivitas Sistem
+1. **Log dari Skrip Entrypoint**
+    - Contoh log aktivitas sistem saat inisialisasi:
+      ```plaintext
+      2024-12-31 03:00:01 WITA - Pesan log_messages.json berhasil diload.
+      2024-12-31 03:00:01 WITA - Memastikan direktori backup ada.
+      2024-12-31 03:00:01 WITA - Direktori backup dibuat.
+      2024-12-31 03:00:01 WITA - Memeriksa keberadaan cron job...
+      2024-12-31 03:00:01 WITA - Cron job sudah ada, melewati penambahan.
+      2024-12-31 03:00:01 WITA - Memulai layanan cron...
+      2024-12-31 03:00:01 WITA - Menjalankan logrotate manual untuk verifikasi...
+      2024-12-31 03:00:01 WITA - Logrotate selesai.
+      2024-12-31 03:00:01 WITA - Memulai syslog-ng...
+      ```
+2. **Log dari Logrotate**
+    - Log hasil rotasi logrotate:
+      ```plaintext
+      Rotating log /mnt/Data/Syslog/nginx/error.log, log->rotateCount is 7
+      Compressing log with: /bin/gzip
+      Renaming /mnt/Data/Syslog/nginx/error.log.1.gz to /mnt/Data/Syslog/nginx/error.log.2.gz
+      Copying /mnt/Data/Syslog/nginx/error.log to /mnt/Data/Syslog/nginx/error.log.1
+      Truncating /mnt/Data/Syslog/nginx/error.log
+      ```
 
-### Fitur dan Fungsi
-| Fitur | Deskripsi |
-|-------|------------|
-| **Rotasi Log Otomatis** | Merotasi log berdasarkan ukuran atau waktu (harian, mingguan, bulanan). Mendukung rotasi log berbasis ukuran file. |
-| **Kompresi Log** | Mengompresi log lama untuk menghemat ruang penyimpanan. Mendukung berbagai format kompresi seperti gzip dan bzip2. |
-| **Penghapusan Log Lama** | Menghapus log lama secara otomatis setelah sejumlah rotasi tertentu. Mendukung penghapusan log berdasarkan usia file. |
-| **Konfigurasi Fleksibel** | Mendukung konfigurasi per-file atau per-direktori. Mendukung skrip post-rotate untuk menjalankan perintah setelah rotasi. |
-| **Logging** | Menyimpan log aktivitas rotasi untuk audit dan debugging. |
+## Kesimpulan
+Sistem ini memberikan solusi pengelolaan log yang efisien, fleksibel, dan otomatis. Dengan kemampuan agregasi log, rotasi log otomatis, dan pemantauan kapasitas disk, sistem ini sangat cocok untuk lingkungan produksi yang kompleks.
 
-### Kelebihan
-| Kelebihan | Deskripsi |
-|-----------|------------|
-| **Otomatisasi** | Mengelola log secara otomatis tanpa intervensi manual. |
-| **Penghematan Ruang** | Mengompresi log lama untuk menghemat ruang penyimpanan. |
-| **Fleksibilitas** | Mendukung berbagai skenario rotasi dan konfigurasi. |
-| **Keandalan** | Menjaga log tetap terkendali dan memastikan log terbaru selalu tersedia. |
-
-### Simulasi Hasil Log
-
-#### Hasil Log dari `syslog-ng`
-
-Setelah mengirim pesan log, berikut adalah contoh hasil log yang dihasilkan oleh `syslog-ng`:
-
-**/mnt/Data/Syslog/test/test.log**
-```
-30-12-2024 12:34:56 127.0.0.1 logger: Test log message over UDP
-```
-
-**/mnt/Data/Syslog/rtsp/rtsp.log**
-```
-30-12-2024 12:34:57 127.0.0.1 logger: RTSP log message over TCP
-```
-
-**/mnt/Data/Syslog/debug/debug.log**
-```
-30-12-2024 12:34:58 127.0.0.1 logger: Debug log message over UDP
-```
-
-#### Hasil Log setelah `logrotate`
-
-Setelah menjalankan `logrotate`, log akan dirotasi dan dikompresi jika memenuhi kondisi rotasi (misalnya ukuran file mencapai 10M). Berikut adalah contoh hasil setelah rotasi:
-
-**/mnt/Data/Syslog/test/test.log.1.gz**
-```
-30-12-2024 12:34:56 127.0.0.1 logger: Test log message over UDP
-```
-
-**/mnt/Data/Syslog/rtsp/rtsp.log.1.gz**
-```
-30-12-2024 12:34:57 127.0.0.1 logger: RTSP log message over TCP
-```
-
-**/mnt/Data/Syslog/debug/debug.log.1.gz**
-```
-30-12-2024 12:34:58 127.0.0.1 logger: Debug log message over UDP
-```
-
-### Kesimpulan
-
-Dengan konfigurasi `syslog-ng` dan `logrotate` yang tepat, kita dapat mengelola log secara efisien dengan format timestamp yang diinginkan dan memastikan log tetap terkendali melalui rotasi otomatis. Kombinasi ini memberikan solusi lengkap untuk manajemen log yang efisien dan andal.
+**Manfaat Utama:**
+- Mengelola log dari berbagai sumber dalam satu lokasi terpusat.
+- Memastikan kapasitas disk tetap terjaga dengan pembersihan log lama.
+- Mempermudah troubleshooting dengan log yang terstruktur.
