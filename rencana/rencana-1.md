@@ -183,3 +183,58 @@ Berdasarkan alur yang diusulkan, tahapannya adalah:
 3. Optimalkan Backup Manager untuk memeriksa kapasitas disk dan memproses backup dalam batch kecil.
 
 Jika setuju, saya dapat menyusun rencana lebih rinci atau langsung menyesuaikan script untuk setiap tahap.
+
+### Langkah 1: HDD Monitoring
+
+**Dockerize HDD Monitoring**:
+- Menyiapkan Dockerfile untuk menjalankan skrip `hdd_monitor.py` dalam container terpisah.
+- Memastikan script berjalan terus-menerus memantau kapasitas disk.
+
+**Sinkronisasi Log**:
+- Mengarahkan log dari HDD Monitoring ke Syslog-ng.
+- Menyimpan log kapasitas disk di lokasi yang mudah diakses oleh Backup Manager.
+
+**Menambahkan Endpoint (Opsional)**:
+- Endpoint sederhana untuk melaporkan status kapasitas disk secara real-time.
+
+### Langkah 2: Validasi CCTV
+
+**Integrasi ke Backup Manager**:
+- Memastikan fungsi `validate_rtsp_stream` dan `check_black_frames` dipanggil untuk setiap channel sebelum backup dimulai.
+- Menambahkan log hasil validasi (berhasil/gagal) ke Syslog-ng dan Report Manager.
+
+**Efisiensi Proses**:
+- Memproses validasi dalam batch kecil untuk menghindari penggunaan resource berlebihan.
+
+### Langkah 3: Backup Manager
+
+**Integrasi dengan HDD Monitoring**:
+- Backup Manager memeriksa log HDD Monitoring untuk memastikan kapasitas disk mencukupi sebelum backup dimulai.
+
+**Optimasi Proses Backup**:
+- Backup dilakukan hanya untuk channel yang telah divalidasi.
+- Menangani batch backup paralel dengan jumlah thread yang disesuaikan dengan resource.
+
+**Pelaporan Log**:
+- Hasil backup dilaporkan ke Syslog-ng dan Report Manager, termasuk keberhasilan atau kegagalan backup.
+
+### Langkah 4: Sinkronisasi Log
+
+**Syslog-ng**:
+- Semua komponen (HDD Monitoring, Validasi CCTV, dan Backup Manager) mencatat log ke Syslog-ng untuk monitoring terpusat.
+
+**Report Manager**:
+- Mengirimkan log yang relevan ke kantor pusat untuk analisis.
+
+### Implementasi
+
+**Dockerfile HDD Monitoring**:
+- Membuat Dockerfile untuk `hdd_monitor.py`.
+
+**Backup Manager**:
+- Memodifikasi script agar hanya memproses backup jika validasi dan kapasitas disk memenuhi syarat.
+
+**Sinkronisasi dengan Syslog-ng**:
+- Mengintegrasikan logging untuk semua komponen ke Syslog-ng.
+
+Jika setuju, saya akan mulai dari HDD Monitoring terlebih dahulu. Anda akan menerima script yang dimodifikasi, Dockerfile, dan konfigurasi terkait. Mari kita lanjutkan?
