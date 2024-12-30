@@ -16,6 +16,7 @@ RUN sed -i "s|http://dl-cdn.alpinelinux.org/alpine/|${APK_MIRROR}|g" /etc/apk/re
         logrotate \
         docker-cli \
         jq \
+        dcron \
         bash
 
 # Atur kemampuan untuk syslog-ng agar dapat mengikat port yang dilindungi
@@ -52,6 +53,7 @@ RUN sed -i "s|http://dl-cdn.alpinelinux.org/alpine/|${APK_MIRROR}|g" /etc/apk/re
         logrotate \
         docker-cli \
         jq \
+        dcron \
         bash
 
 # Buat pengguna non-root bernama 'abdullah'

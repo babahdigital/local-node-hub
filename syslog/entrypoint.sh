@@ -20,7 +20,6 @@ log() {
     if (sign == "-") {
       total = -total
     }
-    # Membulatkan ke angka bulat terdekat
     printf "%.0f", total
   }')
 
@@ -48,24 +47,22 @@ load_messages() {
   fi
 }
 
-# Ambil pesan berdasarkan path. Misal "entrypoint.configure_timezone"
+# Ambil pesan berdasarkan path
 get_message() {
   local key="$1"
-  # Gunakan 'jq' dengan aman; jika path tidak ada, kembalikan string kosong.
   echo "$MESSAGES" | jq -r ".$key // \"\""
 }
 
-# Fungsi untuk mengganti placeholder sederhana seperti {timezone} dengan isi variabel
+# Fungsi untuk mengganti placeholder sederhana
 replace_placeholder() {
   local text="$1"
   local placeholder="$2"
   local replacement="$3"
-  # Ganti {placeholder} dengan replacement
   echo "${text//\{$placeholder\}/$replacement}"
 }
 
 #####################################
-# Variabel Logrotate & Syslog-ng
+# Variabel Logrotate, Cron, & Syslog-ng
 #####################################
 CONFIG_SOURCE="/app/logrotate/syslog-ng"
 CONFIG_TARGET="/etc/logrotate.d/syslog-ng"
@@ -73,9 +70,11 @@ BACKUP_DIR="/etc/logrotate.d/backup"
 SYSLOG_CONF="/app/config/syslog-ng.conf"
 LOGROTATE_STATE_FILE="/mnt/Data/Syslog/default/logrotate/logrotate.status"
 LOGROTATE_LOG="/mnt/Data/Syslog/default/logrotate/logrotate.log"
+CRON_JOB="0 * * * * /usr/bin/docker compose up logrotate >> /var/log/cron-custom.log 2>&1"
+CRON_FILE="/var/spool/cron/crontabs/root"
 
 #####################################
-# Eksekusi utama
+# Eksekusi Utama
 #####################################
 load_messages
 
@@ -89,7 +88,7 @@ log "$(get_message "entrypoint.ensure_state_dir")"
 mkdir -p "$(dirname "$LOGROTATE_STATE_FILE")"
 log "$(get_message "entrypoint.state_dir_created")"
 
-# **Tambahkan Logika untuk Membuat Konfigurasi Logrotate Jika Tidak Ada**
+# Tambahkan Logika untuk Membuat Konfigurasi Logrotate Jika Tidak Ada
 log "$(get_message "entrypoint.check_logrotate_config")"
 if [[ ! -f "$CONFIG_SOURCE" ]]; then
   log "$(get_message "entrypoint.config_not_found")"
@@ -111,6 +110,22 @@ fi
 log "$(get_message "entrypoint.clean_old_backup_files")"
 find "$BACKUP_DIR" -type f -mtime +7 -exec rm -f {} \;
 log "$(get_message "entrypoint.old_backup_files_cleaned")"
+
+# Menambahkan atau Memeriksa Cron Job
+log "Memeriksa keberadaan cron job..."
+if [[ -f "$CRON_FILE" ]] && grep -Fxq "$CRON_JOB" "$CRON_FILE"; then
+  log "Cron job sudah ada, melewati penambahan."
+else
+  log "Menambahkan cron job baru..."
+  mkdir -p "$(dirname "$CRON_FILE")"
+  echo "$CRON_JOB" >> "$CRON_FILE"
+  chmod 600 "$CRON_FILE"
+  log "Cron job berhasil ditambahkan."
+fi
+
+# Memulai layanan dcron
+log "Memulai layanan cron..."
+crond -b -l 2
 
 # Jalankan logrotate manual (force)
 log "$(get_message "entrypoint.run_logrotate")"
