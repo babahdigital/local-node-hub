@@ -111,25 +111,6 @@ services:
       timeout: 10s
       retries: 3
 
-  backend-api:
-    build: ./backend
-    container_name: backend-api
-    restart: always
-    volumes:
-      - ./backend/scripts:/app/scripts
-    ports:
-      - "5001:5001"
-    environment:
-      API_PORT: 5001
-    healthcheck:
-      test: ["CMD", "curl", "--silent", "--fail", "http://backend-api:5001/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    networks:
-      rtsp-syslog-network:
-        ipv4_address: 172.16.31.6
-
 networks:
   rtsp-syslog-network:
     driver: bridge
