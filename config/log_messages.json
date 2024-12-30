@@ -4,7 +4,14 @@
     "process_terminated": "Proses backup dihentikan oleh pengguna.",
     "process_finished": "RTSP Backup Manager dihentikan dengan bersih.",
     "unexpected_error": "Terjadi kesalahan umum: {error}.",
-    "server_start": "Memulai Livestream server pada port: {port}."
+    "server_start": "Memulai Livestream server pada port: {port}.",
+    "load_log_messages_failed": "Gagal memuat pesan log dari {file_path}: {error}",
+    "invalid_backend_url": "URL backend tidak valid: {url}",
+    "local_time_failed": "Gagal mendapatkan waktu lokal untuk zona waktu {timezone}: {error}"
+  },
+  "logger": {
+    "syslog_not_configured": "Handler Syslog tidak dikonfigurasi dengan benar.",
+    "file_handler_error": "Gagal membuat handler file log di {path}."
   },
   "backup_manager": {
     "init_start": "RTSP Backup Manager dimulai.",
@@ -101,6 +108,10 @@
     "service_starting": "Memulai layanan RTSP Health Check pada port {port}.",
     "service_failed": "Gagal memulai layanan RTSP Health Check: {error}.",
     "backend_error": "Kesalahan saat mengirim status ke backend: {error}.",
+    "livestream_healthy": "Livestream dalam kondisi sehat.",
+    "livestream_unhealthy": "Livestream tidak sehat. Status kode: {status_code}.",
+    "livestream_error": "Terjadi kesalahan saat memeriksa livestream: {error}.",
+  
     "backend_report": {
       "success": "Berhasil mengirim status health check ke backend: {payload}.",
       "failed": "Gagal mengirim status ke backend. HTTP {status}: {error}.",
