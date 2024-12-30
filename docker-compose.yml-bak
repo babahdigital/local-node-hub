@@ -1,22 +1,4 @@
 services:
-  hdd-monitor:
-    build: ./hdd
-    image: hdd-monitor:latest
-    container_name: hdd-monitor
-    restart: always
-    volumes:
-      - /etc/localtime:/etc/localtime:ro
-      - ./config/log_messages.json:/app/config/log_messages.json:ro
-      - /mnt/Data/Backup:/mnt/Data/Backup
-      - /mnt/Data/Syslog:/mnt/Data/Syslog
-    environment:
-      BACKUP_DIR: "/mnt/Data/Backup"
-      MAX_CAPACITY_PERCENT: 90
-      ROTATE_THRESHOLD: 5
-      MONITOR_INTERVAL: 60
-    ports:
-      - "5000:5000"  # Jika menggunakan endpoint status
-
   logrotate-setup:
     image: alpine:latest
     container_name: logrotate-setup
@@ -75,6 +57,56 @@ services:
         ipv4_address: 172.16.31.3
     healthcheck:
       test: ["CMD", "pgrep", "syslog-ng"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  rtsp-backup:
+    build: ./rtsp
+    container_name: rtsp-backup
+    restart: always
+    volumes:
+      - ./scripts/validate_cctv.py:/app/scripts/validate_cctv.py
+      - ./scripts/utils.py:/app/scripts/utils.py
+      - /mnt/Data/Backup:/mnt/Data/Backup
+      - ./rtsp/scripts:/app/scripts
+      - ./config/log_messages.json:/app/config/log_messages.json:ro
+      - ./config/credentials.sh:/app/config/credentials.sh:ro
+      - /mnt/Data/Syslog/rtsp:/mnt/Data/Syslog/rtsp
+    ports:
+      - "127.0.0.1:8080:8080"
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "curl", "--silent", "--fail", "http://rtsp-backup:8080/health"]
+      interval: 120s
+      timeout: 60s
+      retries: 5
+    command: ["bash", "/app/entrypoint.sh"]
+    networks:
+      rtsp-syslog-network:
+        ipv4_address: 172.16.31.4
+
+  proxy:
+    build:
+      context: ./proxy
+    container_name: nginx-proxy
+    restart: always
+    volumes:
+      - ./proxy/config:/app/config
+      - ./config/credentials.sh:/app/config/credentials.sh:ro
+      - ./config/log_messages.json:/app/config/log_messages.json:ro
+      - /mnt/Data/Syslog/nginx:/mnt/Data/Syslog/nginx
+    ports:
+      - "8554:8554"
+    env_file:
+      - .env
+    networks:
+      rtsp-syslog-network:
+        aliases:
+          - nginx-proxy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8554"]
       interval: 30s
       timeout: 10s
       retries: 3

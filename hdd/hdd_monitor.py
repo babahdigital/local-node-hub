@@ -6,90 +6,102 @@ import shutil
 import time
 import logging
 from logging.handlers import SysLogHandler, RotatingFileHandler
-import pytz
-import datetime
-import requests
 import json
+from flask import Flask, jsonify
+from threading import Thread
+from datetime import datetime
+import subprocess
+import heapq
 
-from report_manager import send_report_to_backend  # Pastikan module ini ada atau sesuaikan import-nya
+def get_local_time_with_zone():
+    now = datetime.now()
+    offset_hours = now.astimezone().utcoffset().total_seconds() / 3600
+    if offset_hours == 8:
+        zone = "WITA"
+    elif offset_hours == 7:
+        zone = "WIB"
+    else:
+        zone = "UTC"
+    return now.strftime("%d-%m-%Y %H:%M:%S") + f" {zone}"
 
-# Zona waktu lokal
-local_tz = pytz.timezone("Asia/Makassar")
+def format_size(bytes):
+    for unit in ['B', 'KiB', 'MiB', 'GiB']:
+        if bytes < 1024:
+            return f"{bytes:.0f} {unit}"
+        bytes /= 1024
+    return f"{bytes:.2f} GiB"
 
-def get_local_time():
-    """Fungsi untuk mendapatkan waktu lokal."""
-    return datetime.datetime.now(local_tz).strftime("%d-%m-%Y %H:%M:%S") + \
-           (" WITA" if local_tz.zone == "Asia/Makassar" else " WIB")
+def format_percent(value):
+    return f"{int(value)}%"
 
-def bytes_to_gib(bytes):
-    """Konversi byte ke GiB."""
-    return bytes / (1024 ** 3)
+def calculate_dynamic_max_capacity(total_gb):
+    if total_gb > 500:
+        return 95
+    elif total_gb > 100:
+        return 92
+    return 90
 
-def calculate_max_capacity():
-    """
-    Menghitung kapasitas maksimum disk yang diperbolehkan secara dinamis.
-    Mengadaptasi untuk HDD fisik dan quota di TrueNAS.
-    """
-    min_limit = 90  # Minimum kapasitas yang dapat diterima
-    max_limit = 95  # Maksimum kapasitas yang dapat diterima
+def calculate_dynamic_rotate_threshold(usage_percent):
+    if usage_percent > 85:
+        return 10
+    elif usage_percent > 80:
+        return 7
+    return 5
 
-    # Pastikan BACKUP_DIR ada sebelum penghitungan
-    if not os.path.exists(BACKUP_DIR):
-        logger.warning(
-            "Direktori backup {} tidak ditemukan. Menggunakan nilai default "
-            "MAX_CAPACITY_PERCENT.".format(BACKUP_DIR)
+def calculate_dynamic_monitor_interval(usage_percent):
+    if usage_percent > 90:
+        return 30
+    elif usage_percent > 85:
+        return 45
+    return 60
+
+def get_zfs_quota_info(dataset):
+    try:
+        result = subprocess.run(
+            ["zfs", "get", "-Hp", "quota,used,available", dataset],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True
         )
-        return min_limit  # Gunakan nilai default jika direktori tidak ditemukan
+        lines = result.stdout.strip().split("\n")
+        quota = None
+        used = None
+        available = None
+        for line in lines:
+            fields = line.split()
+            if "quota" in fields:
+                quota = int(fields[2])
+            elif "used" in fields:
+                used = int(fields[2])
+            elif "available" in fields:
+                available = int(fields[2])
+        return quota, used, available
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to get ZFS quota info: {e}")
+        return None, None, None
 
-    total, _, _ = shutil.disk_usage(BACKUP_DIR)
-    total_gb = bytes_to_gib(total)
-
-    # Tentukan batas berdasarkan ukuran disk atau quota
-    if total_gb > 500:  # Jika kapasitas > 500GB, tetapkan batas 95%
-        return max_limit
-    elif total_gb > 100:  # Jika kapasitas > 100GB, tetapkan batas 92%
-        return min_limit + 2
-    else:  # Untuk disk kecil, gunakan nilai minimum 90%
-        return min_limit
-
-# Variabel lingkungan
 BACKUP_DIR = os.getenv("BACKUP_DIR", "/mnt/Data/Backup")
-MONITOR_INTERVAL = int(os.getenv("MONITOR_INTERVAL", "60"))
-MAX_CAPACITY_PERCENT = (
-    calculate_max_capacity() if not os.getenv("MAX_CAPACITY_PERCENT")
-    else int(os.getenv("MAX_CAPACITY_PERCENT"))
-)
-ROTATE_THRESHOLD = int(os.getenv("ROTATE_THRESHOLD", "5"))
+DATASET_NAME = os.getenv("DATASET_NAME", None)
+LOG_MESSAGES_FILE = os.getenv("LOG_MESSAGES_FILE", "/app/config/log_messages.json")
+LOG_FILE = "/mnt/Data/Syslog/rtsp/hdd_monitor.log"
 SYSLOG_SERVER = os.getenv("SYSLOG_SERVER", "syslog-ng")
 SYSLOG_PORT = int(os.getenv("SYSLOG_PORT", "1514"))
 ENABLE_SYSLOG = os.getenv("ENABLE_SYSLOG", "true").lower() == "true"
-BACKEND_ENDPOINT = os.getenv("BACKEND_ENDPOINT", "http://127.0.0.1:5001/api/disk_status")
-HEALTH_CHECK_URL = os.getenv("HEALTH_CHECK_URL", "http://127.0.0.1:8080/health")
-HEALTH_CHECK_TIMEOUT = int(os.getenv("HEALTH_CHECK_TIMEOUT", "50"))
-LOG_MESSAGES_FILE = os.getenv("LOG_MESSAGES_FILE", "/app/config/log_messages.json")
+SYSLOG_DIR = os.getenv("SYSLOG_DIR", "/mnt/Data/Syslog")
 
-# Batas jumlah file yang dihapus per siklus rotasi
-MAX_DELETE_PER_CYCLE = 500
+if not os.path.exists(BACKUP_DIR):
+    raise ValueError(f"Invalid backup dir: {BACKUP_DIR}")
 
-# Umur file untuk retensi (HAPUS KOMENTAR jika ingin retensi by age, opsional)
-FILE_RETENTION_DAYS = 7
-
-# Pastikan file log_messages.json ada
 if not os.path.exists(LOG_MESSAGES_FILE):
-    raise FileNotFoundError(
-        f"File log_messages.json tidak ditemukan di {LOG_MESSAGES_FILE}"
-    )
+    raise FileNotFoundError(f"Log messages file not found: {LOG_MESSAGES_FILE}")
 
 def load_log_messages(file_path):
-    """Muat pesan log dari file JSON."""
     try:
         with open(file_path, "r") as f:
             return json.load(f)
     except Exception as e:
-        raise RuntimeError(f"Gagal memuat pesan log dari {file_path}: {e}")
+        raise RuntimeError(f"Failed to load log messages: {e}")
 
-# Konfigurasi Logging
-LOG_FILE = "/mnt/Data/Syslog/rtsp/hdd_monitor.log"
+log_messages = load_log_messages(LOG_MESSAGES_FILE)
+
 logger = logging.getLogger("HDD-Monitor")
 logger.setLevel(logging.INFO)
 
@@ -104,154 +116,101 @@ if ENABLE_SYSLOG:
     syslog_handler.setFormatter(syslog_formatter)
     logger.addHandler(syslog_handler)
 
-# Muat file JSON yang berisi pesan log
-log_messages = load_log_messages(LOG_MESSAGES_FILE)
-
-def wait_for_health_check(url, timeout):
-    """Periksa apakah layanan health check aktif."""
-    logger.info(log_messages["hdd_monitor"]["health_check"]["start"].format(url=url))
-    start_time = time.time()
-    retries = 0
-    while time.time() - start_time < timeout:
-        try:
-            response = requests.get(url, timeout=5)
-            if (
-                response.status_code == 200
-                and response.json().get("status")
-                == log_messages["health_check"]["healthy"]
-            ):
-                logger.info(log_messages["hdd_monitor"]["health_check"]["ready"])
-                return True
-        except requests.exceptions.RequestException as e:
-            retries += 1
-            logger.warning(
-                log_messages["hdd_monitor"]["health_check"]["warning"].format(
-                    error=e, retries=retries
-                )
-            )
-        time.sleep(5)
-
-    logger.error(log_messages["hdd_monitor"]["health_check"]["failed"].format(timeout=timeout))
-    payload = {
-        "type": "system_status",
-        "status": "unhealthy",
-        "message": log_messages["hdd_monitor"]["health_check"]["unhealthy"],
-        "timestamp": get_local_time(),
-    }
-    send_report_to_backend(BACKEND_ENDPOINT, payload)
-    return False
-
 def monitor_disk_usage():
-    """
-    Fungsi utama untuk memantau disk usage, menghapus file lama
-    jika melampaui ambang batas kapasitas, dan menghapus folder kosong.
-    """
-    logger.info(log_messages["hdd_monitor"]["disk_usage"]["monitor_running"])  # "Monitoring disk berjalan."
     try:
         while True:
-            try:
-                # Contoh logging penggunaan disk
-                total, used, free = shutil.disk_usage(BACKUP_DIR)
-                usage_percent = (used / total) * 100
-                logger.info(log_messages["hdd_monitor"]["disk_usage"]["usage"].format(
-                    usage_percent=usage_percent,
-                    total=bytes_to_gib(total),
-                    used=bytes_to_gib(used),
-                    free=bytes_to_gib(free)
-                ))
-
-                # Jika kapasitas belum mencapai threshold, tidak ada file dihapus
-                if usage_percent < MAX_CAPACITY_PERCENT - ROTATE_THRESHOLD:
-                    logger.info(log_messages["hdd_monitor"]["disk_usage"]["no_deletion_needed"].format(
-                        usage_percent=usage_percent,
-                        threshold_percent=MAX_CAPACITY_PERCENT
-                    ))
-                    time.sleep(MONITOR_INTERVAL)
+            if DATASET_NAME:
+                total, used, free = get_zfs_quota_info(DATASET_NAME)
+                if not total or not used or not free:
+                    logger.error("Failed to retrieve ZFS quota info.")
+                    time.sleep(60)
                     continue
+            else:
+                total, used, free = shutil.disk_usage(BACKUP_DIR)
 
-                logger.info(log_messages["hdd_monitor"]["disk_usage"]["rotation_start"].format(
-                    usage_percent=usage_percent,
-                    threshold_percent=MAX_CAPACITY_PERCENT
-                ))
+            usage_percent = (used / total) * 100
+            max_capacity = calculate_dynamic_max_capacity(total / (1024**3))
+            rotate_threshold = calculate_dynamic_rotate_threshold(usage_percent)
+            monitor_interval = calculate_dynamic_monitor_interval(usage_percent)
 
-                # Kumpulkan semua file di BACKUP_DIR
-                all_files = []
-                for root, _, files in os.walk(BACKUP_DIR):
-                    for f in files:
-                        full_path = os.path.join(root, f)
-                        all_files.append(full_path)
+            logger.info(log_messages["hdd_monitor"]["disk_usage"]["usage"].format(
+                usage_percent=format_percent(usage_percent),
+                total=format_size(total),
+                used=format_size(used),
+                free=format_size(free)
+            ))
 
-                # Retensi berbasis umur file
-                now_ts = time.time()
-                retention_seconds = FILE_RETENTION_DAYS * 24 * 3600
-                all_files = [
-                    f for f in all_files
-                    if (now_ts - os.path.getmtime(f)) > retention_seconds
-                ]
+            if usage_percent < max_capacity - rotate_threshold:
+                time.sleep(monitor_interval)
+                continue
 
-                # Urutkan file berdasarkan waktu modifikasi tertua
-                all_files.sort(key=lambda x: os.path.getmtime(x))
+            all_files = []
+            for root, _, files in os.walk(BACKUP_DIR):
+                for file in files:
+                    all_files.append(os.path.join(root, file))
 
-                deleted_count = 0
-                for file in all_files:
-                    _, used_new, _ = shutil.disk_usage(BACKUP_DIR)
-                    usage_percent = (used_new / total) * 100
-                    if usage_percent < MAX_CAPACITY_PERCENT - ROTATE_THRESHOLD:
-                        break
-                    if deleted_count >= MAX_DELETE_PER_CYCLE:
-                        break
-                    try:
-                        os.remove(file)
-                        # Log penghapusan file
-                        rel_path = os.path.relpath(file, BACKUP_DIR)
-                        logger.info(log_messages["hdd_monitor"]["disk_usage"]["file_deleted"].format(
-                            relative_path=rel_path
-                        ))
-                        deleted_count += 1
-                    except Exception as err:
-                        logger.warning(log_messages["hdd_monitor"]["disk_usage"]["file_deletion_failed"].format(
-                            file_path=file,
-                            error=err
-                        ))
+            heapq.heapify(all_files)
+            oldest_files = heapq.nsmallest(500, all_files, key=os.path.getmtime)
 
-                _, used_after, _ = shutil.disk_usage(BACKUP_DIR)
-                usage_after = (used_after / total) * 100
-                logger.info(log_messages["hdd_monitor"]["disk_usage"]["rotation_complete"].format(
-                    usage_percent=usage_after
-                ))
-
-                # Jika setelah rotasi masih di atas threshold, log peringatan
-                if usage_after > MAX_CAPACITY_PERCENT:
-                    logger.warning(log_messages["hdd_monitor"]["disk_usage"]["rotation_insufficient"].format(
-                        usage_percent=usage_after
+            for file in oldest_files:
+                try:
+                    os.remove(file)
+                    logger.info(log_messages["hdd_monitor"]["disk_usage"]["file_deleted"].format(
+                        relative_path=os.path.relpath(file, BACKUP_DIR)
                     ))
-
-                # Hapus folder kosong
-                for root_dir, dirs, _ in os.walk(BACKUP_DIR, topdown=False):
-                    for d in dirs:
-                        dir_path = os.path.join(root_dir, d)
-                        if not os.listdir(dir_path):
-                            os.rmdir(dir_path)
-                            logger.info(f"Folder kosong dihapus: {dir_path}")
-
-                # Tunggu sebelum iterasi berikutnya
-                time.sleep(MONITOR_INTERVAL)
-
-            except Exception as e:
-                logger.error(f"Terjadi kesalahan saat monitoring disk: {e}")
-
+                except Exception as e:
+                    logger.warning(log_messages["hdd_monitor"]["disk_usage"]["file_deletion_failed"].format(
+                        file_path=file,
+                        error=e
+                    ))
+            time.sleep(monitor_interval)
     except KeyboardInterrupt:
-        # Gunakan pesan "monitor_stopped" dari JSON
         logger.info(log_messages["hdd_monitor"]["monitor_stopped"])
-        sys.exit(0)
+        exit(0)
+
+def monitor_directory_usage(directory):
+    total, used, free = shutil.disk_usage(directory)
+    usage_percent = (used / total) * 100
+    return {
+        "total": format_size(total),
+        "used": format_size(used),
+        "free": format_size(free),
+        "usage_percent": format_percent(usage_percent)
+    }
+
+app = Flask(__name__)
+
+@app.route('/status', methods=['GET'])
+def status():
+    current_time = get_local_time_with_zone()
+    backup_status = monitor_directory_usage(BACKUP_DIR)
+    syslog_status = monitor_directory_usage(SYSLOG_DIR)
+    return jsonify({
+        "current_time": current_time,
+        "backup": backup_status,
+        "syslog": syslog_status
+    })
+
+@app.route('/status/backup', methods=['GET'])
+def status_backup():
+    current_time = get_local_time_with_zone()
+    backup_status = monitor_directory_usage(BACKUP_DIR)
+    return jsonify({
+        "current_time": current_time,
+        "backup": backup_status
+    })
+
+@app.route('/status/syslog', methods=['GET'])
+def status_syslog():
+    current_time = get_local_time_with_zone()
+    syslog_status = monitor_directory_usage(SYSLOG_DIR)
+    return jsonify({
+        "current_time": current_time,
+        "syslog": syslog_status
+    })
 
 if __name__ == "__main__":
-    # Pastikan health check service sudah siap
-    if not wait_for_health_check(HEALTH_CHECK_URL, HEALTH_CHECK_TIMEOUT):
-        logger.error(log_messages["hdd_monitor"]["health_check"]["failed"].format(
-            timeout=HEALTH_CHECK_TIMEOUT
-        ))
-        exit(1)
-
-    # Mulai monitoring disk
+    flask_thread = Thread(target=lambda: app.run(host="0.0.0.0", port=5000))
+    flask_thread.daemon = True
+    flask_thread.start()
     monitor_disk_usage()
