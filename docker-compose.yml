@@ -66,6 +66,27 @@ services:
     networks:
       rtsp-syslog-network:
         ipv4_address: 172.16.31.4
+        
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    image: api:babah
+    container_name: api-monitor
+    restart: always
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      - /mnt/Data/Backup:/mnt/Data/Backup
+      - /mnt/Data/Syslog:/mnt/Data/Syslog
+      - ./api/data:/app/data
+    environment:
+      LOG_DIR: "/app/data"
+    ports:
+      - "5001:5001"
+    networks:
+      rtsp-syslog-network:
+        ipv4_address: 172.16.31.5
 
 networks:
   rtsp-syslog-network:

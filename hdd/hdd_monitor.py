@@ -5,251 +5,307 @@ import os
 import shutil
 import time
 import logging
-import socket  # Ditambahkan untuk pengecekan resolvable server
-from logging.handlers import SysLogHandler, RotatingFileHandler
+import socket
 import json
-from flask import Flask, jsonify
-from threading import Thread
-from datetime import datetime
 import subprocess
 import heapq
+from datetime import datetime
+from flask import Flask, jsonify
+from threading import Thread
+from logging.handlers import SysLogHandler, RotatingFileHandler
+from dotenv import load_dotenv
 
-def get_local_time_with_zone():
-    now = datetime.now()
-    offset_hours = now.astimezone().utcoffset().total_seconds() / 3600
-    if offset_hours == 8:
-        zone = "WITA"
-    elif offset_hours == 7:
-        zone = "WIB"
-    else:
-        zone = "UTC"
-    return now.strftime("%d-%m-%Y %H:%M:%S") + f" {zone}"
+load_dotenv()
 
-def format_size(bytes):
-    for unit in ['B', 'KiB', 'MiB', 'GiB', 'TiB']:
-        if bytes < 1024:
-            return f"{bytes:.2f} {unit}"
-        bytes /= 1024
-    return f"{bytes:.2f} PiB"
-
-def format_percent(value):
-    return f"{int(value)}%"
-
-def calculate_dynamic_max_capacity(total_gb):
-    if total_gb > 500:
-        return 95
-    elif total_gb > 100:
-        return 92
-    return 90
-
-def calculate_dynamic_rotate_threshold(usage_percent):
-    if usage_percent > 85:
-        return 10
-    elif usage_percent > 80:
-        return 7
-    return 5
-
-def calculate_dynamic_monitor_interval(usage_percent):
-    if usage_percent > 90:
-        return 30
-    elif usage_percent > 85:
-        return 45
-    return 60
-
-def get_zfs_quota_info(dataset):
-    try:
-        result = subprocess.run(
-            ["zfs", "get", "-Hp", "quota,used,available", dataset],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True
-        )
-        lines = result.stdout.strip().split("\n")
-        quota = used = available = None
-        for line in lines:
-            fields = line.split()
-            if "quota" in fields:
-                quota = int(fields[2])
-            elif "used" in fields:
-                used = int(fields[2])
-            elif "available" in fields:
-                available = int(fields[2])
-        return quota, used, available
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Failed to get ZFS quota info: {e}")
-        return None, None, None
-
-# Fungsi untuk menghitung ukuran direktori
-def get_directory_size(directory):
-    total_size = 0
-    for dirpath, dirnames, filenames in os.walk(directory):
-        for f in filenames:
-            fp = os.path.join(dirpath, f)
-            # Hindari error jika file telah dihapus
-            if os.path.exists(fp):
-                total_size += os.path.getsize(fp)
-    return total_size
-
-# Mengambil variabel lingkungan
+# Konfigurasi variabel lingkungan
+POOL_NAME = os.getenv("POOL_NAME", "/mnt/Data")
 BACKUP_DIR = os.getenv("BACKUP_DIR", "/mnt/Data/Backup")
-DATASET_NAME = os.getenv("DATASET_NAME", None)
+SYSLOG_DIR = os.getenv("SYSLOG_DIR", "/mnt/Data/Syslog")
 LOG_MESSAGES_FILE = os.getenv("LOG_MESSAGES_FILE", "/app/config/log_messages.json")
-LOG_FILE = "/mnt/Data/Syslog/rtsp/hdd_monitor.log"
+LOG_FILE = os.getenv("LOG_FILE", "/mnt/Data/Syslog/rtsp/hdd_monitor.log")
 SYSLOG_SERVER = os.getenv("SYSLOG_SERVER", "syslog-ng")
 SYSLOG_PORT = int(os.getenv("SYSLOG_PORT", "1514"))
 ENABLE_SYSLOG = os.getenv("ENABLE_SYSLOG", "true").lower() == "true"
-SYSLOG_DIR = os.getenv("SYSLOG_DIR", "/mnt/Data/Syslog")
+AUTO_DELETE = os.getenv("AUTO_DELETE", "")  # Contoh: "/mnt/Data/Backup,/mnt/Data/Syslog"
 
-# Validasi direktori backup dan file log
 if not os.path.exists(BACKUP_DIR):
-    raise ValueError(f"Invalid backup dir: {BACKUP_DIR}")
+    raise ValueError(f"Direktori backup tidak valid: {BACKUP_DIR}")
 
-if not os.path.exists(LOG_MESSAGES_FILE):
-    raise FileNotFoundError(f"Log messages file not found: {LOG_MESSAGES_FILE}")
+if not os.path.isfile(LOG_MESSAGES_FILE):
+    raise FileNotFoundError(f"File log_messages.json tidak ditemukan: {LOG_MESSAGES_FILE}")
 
-def load_log_messages(file_path):
+# Muat pesan log
+def muat_log_pesan(file_path):
     try:
         with open(file_path, "r") as f:
             return json.load(f)
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"Kesalahan decode JSON: {e}")
     except Exception as e:
-        raise RuntimeError(f"Failed to load log messages: {e}")
+        raise RuntimeError(f"Gagal memuat log_messages: {e}")
 
-log_messages = load_log_messages(LOG_MESSAGES_FILE)
+log_messages = muat_log_pesan(LOG_MESSAGES_FILE)
 
-# Konfigurasi Logger
+# Konfigurasi logger
 logger = logging.getLogger("HDD-Monitor")
 logger.setLevel(logging.INFO)
+handler_file = RotatingFileHandler(LOG_FILE, maxBytes=10 * 1024 * 1024, backupCount=5)
+formatter_file = logging.Formatter('%(message)s')
+handler_file.setFormatter(formatter_file)
+logger.addHandler(handler_file)
 
-# Handler File
-file_handler = RotatingFileHandler(LOG_FILE, maxBytes=10 * 1024 * 1024, backupCount=5)
-file_formatter = logging.Formatter('%(message)s')
-file_handler.setFormatter(file_formatter)
-logger.addHandler(file_handler)
-
-# Fungsi untuk memeriksa apakah hostname dapat di-resolve
-def is_resolvable(host):
+def dapatkan_apakah_resolvable(host):
     try:
         socket.getaddrinfo(host, None)
         return True
     except socket.gaierror:
         return False
 
-# Inisialisasi SysLogHandler hanya jika server dapat di-resolve
-if ENABLE_SYSLOG and SYSLOG_SERVER and is_resolvable(SYSLOG_SERVER):
+# Opsional: Tambahkan SyslogHandler jika diaktifkan
+if ENABLE_SYSLOG and SYSLOG_SERVER and dapatkan_apakah_resolvable(SYSLOG_SERVER):
     try:
-        syslog_handler = SysLogHandler(address=(SYSLOG_SERVER, SYSLOG_PORT))
-        syslog_formatter = logging.Formatter('[HDD-MONITOR] %(message)s')
-        syslog_handler.setFormatter(syslog_formatter)
-        logger.addHandler(syslog_handler)
+        handler_syslog = SysLogHandler(address=(SYSLOG_SERVER, SYSLOG_PORT))
+        formatter_syslog = logging.Formatter('[HDD-MONITOR] %(message)s')
+        handler_syslog.setFormatter(formatter_syslog)
+        logger.addHandler(handler_syslog)
     except Exception as e:
-        logger.error(f"Unable to enable syslog: {e}")
-else:
-    logger.warning("Syslog disabled atau server tidak dapat di-resolve.")
-
-def monitor_disk_usage():
-    try:
-        while True:
-            if DATASET_NAME:
-                total, used, free = get_zfs_quota_info(DATASET_NAME)
-                if not total or not used or not free:
-                    logger.error("Failed to retrieve ZFS quota info.")
-                    time.sleep(60)
-                    continue
-            else:
-                total, used, free = shutil.disk_usage(BACKUP_DIR)
-
-            usage_percent = (used / total) * 100
-            max_capacity = calculate_dynamic_max_capacity(total / (1024**3))
-            rotate_threshold = calculate_dynamic_rotate_threshold(usage_percent)
-            monitor_interval = calculate_dynamic_monitor_interval(usage_percent)
-
-            logger.info(log_messages["hdd_monitor"]["disk_usage"]["usage"].format(
-                usage_percent=format_percent(usage_percent),
-                total=format_size(total),
-                used=format_size(used),
-                free=format_size(free)
-            ))
-
-            if usage_percent < max_capacity - rotate_threshold:
-                time.sleep(monitor_interval)
-                continue
-
-            all_files = []
-            for root, _, files in os.walk(BACKUP_DIR):
-                for file in files:
-                    all_files.append(os.path.join(root, file))
-
-            heapq.heapify(all_files)
-            oldest_files = heapq.nsmallest(500, all_files, key=os.path.getmtime)
-
-            for file in oldest_files:
-                try:
-                    os.remove(file)
-                    logger.info(log_messages["hdd_monitor"]["disk_usage"]["file_deleted"].format(
-                        relative_path=os.path.relpath(file, BACKUP_DIR)
-                    ))
-                except Exception as e:
-                    logger.warning(log_messages["hdd_monitor"]["disk_usage"]["file_deletion_failed"].format(
-                        file_path=file,
-                        error=e
-                    ))
-            time.sleep(monitor_interval)
-    except KeyboardInterrupt:
-        logger.info(log_messages["hdd_monitor"]["monitor_stopped"])
-        exit(0)
-
-def monitor_directory_usage(directory):
-    try:
-        # Menghitung ukuran direktori
-        dir_size = get_directory_size(directory)
-        
-        # Mengambil penggunaan disk dari filesystem
-        fs_total, fs_used, fs_free = shutil.disk_usage(directory)
-        
-        # Menghitung persentase penggunaan filesystem
-        usage_percent = (fs_used / fs_total) * 100
-        
-        return {
-            "total": format_size(dir_size),
-            "used": format_size(fs_used),
-            "free": format_size(fs_free),
-            "usage_percent": format_percent(usage_percent)
-        }
-    except Exception as e:
-        logger.error(f"Failed to monitor directory {directory}: {e}")
-        return None
+        logger.error(f"Gagal mengaktifkan syslog: {e}")
 
 app = Flask(__name__)
 
+def dapatkan_waktu_lokal_dengan_zona():
+    sekarang = datetime.now().astimezone()
+    offset_detik = sekarang.utcoffset().total_seconds()
+    offset_jam = int(offset_detik // 3600)
+    offset_menit = int((offset_detik % 3600) // 60)
+    if offset_jam == 8 and offset_menit == 0:
+        zona = "WITA"
+    elif offset_jam == 7 and offset_menit == 0:
+        zona = "WIB"
+    elif offset_jam == 9 and offset_menit == 0:
+        zona = "WIT"
+    else:
+        zona = sekarang.tzname()
+    return sekarang.strftime("%d-%m-%Y %H:%M:%S") + f" {zona}"
+
+def format_ukuran(bytes_):
+    for unit in ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB']:
+        if bytes_ < 1024:
+            return f"{int(bytes_)} {unit}"
+        bytes_ /= 1024
+    return f"{int(bytes_)} PiB"
+
+def format_persentase(value):
+    return f"{int(value)}%"
+
+def hitung_interval_monitor_dinamis(persentase):
+    if persentase > 90:
+        return 30
+    elif persentase > 85:
+        return 45
+    return 60
+
+def deteksi_dataset_zfs():
+    try:
+        hasil = subprocess.run(
+            ["zfs", "list", "-H", "-o", "name"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True
+        )
+        dataset_list = hasil.stdout.strip().split("\n")
+        dataset_under_pool = [ds for ds in dataset_list if ds.startswith(POOL_NAME)]
+        if not dataset_under_pool:
+            logger.warning("Tidak ada dataset di bawah POOL_NAME, pakai disk usage standar.")
+            return None
+        logger.info(f"Dataset ZFS terdeteksi: {dataset_under_pool}")
+        return dataset_under_pool
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Gagal deteksi dataset ZFS: {e.stderr.strip()}")
+        return None
+    except Exception as e:
+        logger.error(f"Kesalahan deteksi dataset ZFS: {e}")
+        return None
+
+def parse_size(ukuran_str):
+    satuan_ukuran = {"B":1, "K":1024, "M":1024**2, "G":1024**3, "T":1024**4, "P":1024**5}
+    try:
+        ukuran_str = ukuran_str.strip()
+        if ukuran_str[-1].upper() in satuan_ukuran:
+            return float(ukuran_str[:-1]) * satuan_ukuran[ukuran_str[-1].upper()]
+        return float(ukuran_str)
+    except:
+        logger.error(f"Tidak dapat mengurai ukuran: {ukuran_str}")
+        return 0
+
+def parse_zfs_output(output):
+    properti = {}
+    for baris_item in output.strip().split("\n"):
+        fields = baris_item.split("\t")
+        if len(fields) >= 3:
+            prop, nilai, _ = fields[:3]
+            properti[prop] = parse_size(nilai)
+    return properti
+
+def dapatkan_info_quota_zfs(dataset):
+    try:
+        hasil = subprocess.run(
+            ["zfs", "get", "-Hp", "quota,used,available", dataset],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True
+        )
+        properti = parse_zfs_output(hasil.stdout)
+        quota = properti.get("quota")
+        used = properti.get("used")
+        available = properti.get("available")
+        if None in (quota, used, available):
+            logger.error("Informasi quota ZFS tidak lengkap.")
+            return shutil.disk_usage(BACKUP_DIR)
+        return quota, used, available
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Gagal info quota ZFS: {e.stderr.strip()}")
+        return shutil.disk_usage(BACKUP_DIR)
+    except Exception as e:
+        logger.error(f"Kesalahan ZFS: {e}")
+        return shutil.disk_usage(BACKUP_DIR)
+
+def monitor_penggunaan_direktori(direktori):
+    try:
+        total_fs, digunakan_fs, bebas_fs = shutil.disk_usage(direktori)
+        persentase_pemakaian = (digunakan_fs / total_fs * 100) if total_fs else 0
+        return {
+            "kapasitas": format_ukuran(total_fs),
+            "digunakan": format_ukuran(digunakan_fs),
+            "bebas": format_ukuran(bebas_fs),
+            "pemakaian": format_persentase(persentase_pemakaian),
+            "sisa": format_persentase(100 - persentase_pemakaian if persentase_pemakaian < 100 else 0)
+        }
+    except Exception as e:
+        logger.error(f"Gagal memantau {direktori}: {e}")
+        return {
+            "kapasitas": "0 B",
+            "digunakan": "0 B",
+            "bebas": "0 B",
+            "pemakaian": "0%",
+            "sisa": "100%"
+        }
+
+def hapus_file_terlama(directory, jumlah=500):
+    """Menghapus file-file lama berdasarkan mtime, jumlah default 500 file terlama."""
+    def file_mtimes(root_dir):
+        for root, _, files in os.walk(root_dir):
+            for f_ in files:
+                try:
+                    path_ = os.path.join(root, f_)
+                    yield (os.path.getmtime(path_), path_)
+                except Exception as e:
+                    logger.warning(f"Gagal akses {path_}: {e}")
+
+    oldest_files = heapq.nsmallest(jumlah, file_mtimes(directory), key=lambda x: x[0])
+    for _, file_path in oldest_files:
+        try:
+            os.remove(file_path)
+            logger.info(log_messages["hdd_monitor"]["disk_usage"]["file_deleted"].format(
+                relative_path=os.path.relpath(file_path, directory)
+            ))
+        except Exception as e:
+            logger.warning(log_messages["hdd_monitor"]["disk_usage"]["file_deletion_failed"].format(
+                file_path=file_path,
+                error=str(e)
+            ))
+
+def monitor_penggunaan_disk():
+    try:
+        dataset_backup = deteksi_dataset_zfs()
+        auto_delete_dirs = [d.strip() for d in AUTO_DELETE.split(",") if d.strip()]
+        logger.info(f"Direktori auto-delete: {auto_delete_dirs}")
+
+        while True:
+            if dataset_backup:
+                # Mode ZFS
+                for dataset in dataset_backup:
+                    info_quota = dapatkan_info_quota_zfs(dataset)
+                    if isinstance(info_quota, tuple):
+                        total, used, free = info_quota
+                    else:
+                        total, used, free = shutil.disk_usage(BACKUP_DIR)
+                    pemakaian = (used / total * 100) if total else 0
+
+                    logger.info(log_messages["hdd_monitor"]["disk_usage"]["usage"].format(
+                        usage_percent=format_persentase(pemakaian),
+                        total=format_ukuran(total),
+                        used=format_ukuran(used),
+                        free=format_ukuran(free)
+                    ))
+
+                    if pemakaian >= 90:
+                        logger.warning(f"Pemakaian di atas 90%: {format_persentase(pemakaian)}. Memulai penghapusan file terlama.")
+                        for dir_ in auto_delete_dirs:
+                            if os.path.isdir(dir_):
+                                hapus_file_terlama(dir_)
+                    interval = hitung_interval_monitor_dinamis(pemakaian)
+            else:
+                # Mode Fisik
+                total, used, free = shutil.disk_usage(BACKUP_DIR)
+                pemakaian = (used / total * 100) if total else 0
+
+                logger.info(log_messages["hdd_monitor"]["disk_usage"]["usage"].format(
+                    usage_percent=format_persentase(pemakaian),
+                    total=format_ukuran(total),
+                    used=format_ukuran(used),
+                    free=format_ukuran(free)
+                ))
+
+                if pemakaian >= 90:
+                    logger.warning(f"Pemakaian di atas 90%: {format_persentase(pemakaian)}. Memulai penghapusan file terlama.")
+                    for dir_ in auto_delete_dirs:
+                        if os.path.isdir(dir_):
+                            hapus_file_terlama(dir_)
+                interval = hitung_interval_monitor_dinamis(pemakaian)
+
+            # Monitor syslog
+            syslog_status = monitor_penggunaan_direktori(SYSLOG_DIR)
+            logger.info(log_messages["hdd_monitor"]["disk_usage"]["syslog_usage"].format(
+                usage_percent=syslog_status["pemakaian"],
+                total=syslog_status["kapasitas"],
+                used=syslog_status["digunakan"],
+                free=syslog_status["bebas"]
+            ))
+
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        logger.info(log_messages["hdd_monitor"]["monitor_stopped"])
+        exit(0)
+    except Exception as ee:
+        logger.error(f"Kesalahan monitor: {ee}")
+
 @app.route('/status', methods=['GET'])
 def status():
-    current_time = get_local_time_with_zone()
-    backup_status = monitor_directory_usage(BACKUP_DIR)
-    syslog_status = monitor_directory_usage(SYSLOG_DIR)
+    sekarang = dapatkan_waktu_lokal_dengan_zona()
     return jsonify({
-        "current_time": current_time,
-        "backup": backup_status,
-        "syslog": syslog_status
+        "current_time": sekarang,
+        "backup": monitor_penggunaan_direktori(BACKUP_DIR),
+        "syslog": monitor_penggunaan_direktori(SYSLOG_DIR)
     })
 
 @app.route('/status/backup', methods=['GET'])
-def status_backup():
-    current_time = get_local_time_with_zone()
-    backup_status = monitor_directory_usage(BACKUP_DIR)
+def status_backup_route():
+    sekarang = dapatkan_waktu_lokal_dengan_zona()
     return jsonify({
-        "current_time": current_time,
-        "backup": backup_status
+        "current_time": sekarang,
+        "backup": monitor_penggunaan_direktori(BACKUP_DIR)
     })
 
 @app.route('/status/syslog', methods=['GET'])
-def status_syslog():
-    current_time = get_local_time_with_zone()
-    syslog_status = monitor_directory_usage(SYSLOG_DIR)
+def status_syslog_route():
+    sekarang = dapatkan_waktu_lokal_dengan_zona()
     return jsonify({
-        "current_time": current_time,
-        "syslog": syslog_status
+        "current_time": sekarang,
+        "syslog": monitor_penggunaan_direktori(SYSLOG_DIR)
     })
 
+def jalankan_aplikasi_flask():
+    app.run(host="0.0.0.0", port=5000, threaded=True)
+
 if __name__ == "__main__":
-    flask_thread = Thread(target=lambda: app.run(host="0.0.0.0", port=5000))
-    flask_thread.daemon = True
-    flask_thread.start()
-    monitor_disk_usage()
+    thread_flask = Thread(target=jalankan_aplikasi_flask)
+    thread_flask.daemon = True
+    thread_flask.start()
+    monitor_penggunaan_disk()
