@@ -5,11 +5,34 @@ set -e
 # Fungsi-fungsi bantu
 #####################################
 
-# Fungsi untuk mencatat log dengan format waktu
+# Fungsi untuk mencatat log dengan format waktu dan label zona waktu
 log() {
-  local timezone=$(date +%Z)
+  local offset_hours
+  local zone
   local time_format="%d-%m-%Y %H:%M:%S"
-  echo "$(date +"$time_format $timezone") - $1"
+
+  # Mendapatkan offset UTC dalam jam
+  offset_hours=$(date +%z | awk '{
+    sign = substr($0,1,1)
+    hours = substr($0,2,2)
+    minutes = substr($0,4,2)
+    total = hours + (minutes / 60)
+    if (sign == "-") {
+      total = -total
+    }
+    printf "%.0f", total
+  }')
+
+  # Menentukan label zona waktu berdasarkan offset
+  if [[ "$offset_hours" -eq 8 ]]; then
+    zone="WITA"
+  elif [[ "$offset_hours" -eq 7 ]]; then
+    zone="WIB"
+  else
+    zone="UTC"
+  fi
+
+  echo "$(date +"$time_format") $zone - $1"
 }
 
 # Memuat isi file JSON ke variabel MESSAGES
@@ -39,38 +62,6 @@ replace_placeholder() {
 }
 
 #####################################
-# Konfigurasi Zona Waktu
-#####################################
-configure_timezone() {
-  local default_timezone="UTC"
-  local msg
-
-  msg=$(get_message "entrypoint.configure_timezone")
-  msg=$(replace_placeholder "$msg" "timezone" "$TIMEZONE")
-  log "$msg"
-
-  if [[ -n "$TIMEZONE" ]]; then
-    if [[ -f "/usr/share/zoneinfo/$TIMEZONE" ]]; then
-      default_timezone="$TIMEZONE"
-    else
-      msg=$(get_message "entrypoint.timezone_invalid")
-      msg=$(replace_placeholder "$msg" "timezone" "$TIMEZONE")
-      log "$msg"
-    fi
-  else
-    log "$(get_message "entrypoint.timezone_missing")"
-  fi
-
-  export TZ="$default_timezone"
-  ln -sf "/usr/share/zoneinfo/$default_timezone" /etc/localtime
-  echo "$default_timezone" > /etc/timezone
-
-  msg=$(get_message "entrypoint.timezone_set_custom")
-  msg=$(replace_placeholder "$msg" "timezone" "$default_timezone")
-  log "$msg"
-}
-
-#####################################
 # Variabel
 #####################################
 LOG_DIR="/mnt/Data/Syslog/default/logrotate"
@@ -82,7 +73,6 @@ GROUP="abdullah"
 # Eksekusi utama
 #####################################
 load_messages
-configure_timezone
 
 # Pastikan direktori konfigurasi logrotate ada
 log "Memastikan direktori konfigurasi logrotate ada..."

@@ -6,37 +6,26 @@ services:
     restart: always
     volumes:
       - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
       - ./config/log_messages.json:/app/config/log_messages.json:ro
       - /mnt/Data/Backup:/mnt/Data/Backup
       - /mnt/Data/Syslog:/mnt/Data/Syslog
     environment:
       BACKUP_DIR: "/mnt/Data/Backup"
-      MAX_CAPACITY_PERCENT: 90
-      ROTATE_THRESHOLD: 5
-      MONITOR_INTERVAL: 60
     ports:
-      - "5000:5000"  # Jika menggunakan endpoint status
+      - "5000:5000"
 
   logrotate-setup:
     image: alpine:latest
     container_name: logrotate-setup
-    environment:
-      - TIMEZONE=Asia/Makassar
-      - TZ=Asia/Makassar
     volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
       - ./config/generate_logrotate.sh:/app/generate_logrotate.sh
       - /mnt/Data/Syslog/default/logrotate:/mnt/Data/Syslog/default/logrotate
       - ./syslog/logrotate:/app/logrotate
       - ./config/log_messages.json:/app/config/log_messages.json:ro
     user: root
-    entrypoint: ["/bin/sh", "-c", "
-      chmod +x /app/generate_logrotate.sh &&
-      sed -i 's|http://dl-cdn.alpinelinux.org/alpine/|http://mirror.leaseweb.com/alpine/|g' /etc/apk/repositories &&
-      rm -rf /var/cache/apk/* &&
-      apk update --no-cache &&
-      apk add --no-cache bash jq tzdata &&
-      /app/generate_logrotate.sh
-    "]
     depends_on:
       - syslog-ng
     restart: "no"
@@ -68,16 +57,9 @@ services:
     environment:
       SYSLOG_USER: ${SYSLOG_USER:-root}
       SYSLOG_PORT: ${SYSLOG_PORT:-1514}
-      TIMEZONE: Asia/Makassar
-      TZ: Asia/Makassar
     networks:
       rtsp-syslog-network:
         ipv4_address: 172.16.31.3
-    healthcheck:
-      test: ["CMD", "pgrep", "syslog-ng"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
 networks:
   rtsp-syslog-network:
