@@ -5,7 +5,7 @@ import os
 import shutil
 import time
 import logging
-import socket  # Added for server name resolution check
+import socket  # Ditambahkan untuk pengecekan resolvable server
 from logging.handlers import SysLogHandler, RotatingFileHandler
 import json
 from flask import Flask, jsonify
@@ -26,11 +26,11 @@ def get_local_time_with_zone():
     return now.strftime("%d-%m-%Y %H:%M:%S") + f" {zone}"
 
 def format_size(bytes):
-    for unit in ['B', 'KiB', 'MiB', 'GiB']:
+    for unit in ['B', 'KiB', 'MiB', 'GiB', 'TiB']:
         if bytes < 1024:
-            return f"{bytes:.0f} {unit}"
+            return f"{bytes:.2f} {unit}"
         bytes /= 1024
-    return f"{bytes:.2f} GiB"
+    return f"{bytes:.2f} PiB"
 
 def format_percent(value):
     return f"{int(value)}%"
@@ -77,6 +77,18 @@ def get_zfs_quota_info(dataset):
         logger.error(f"Failed to get ZFS quota info: {e}")
         return None, None, None
 
+# Fungsi untuk menghitung ukuran direktori
+def get_directory_size(directory):
+    total_size = 0
+    for dirpath, dirnames, filenames in os.walk(directory):
+        for f in filenames:
+            fp = os.path.join(dirpath, f)
+            # Hindari error jika file telah dihapus
+            if os.path.exists(fp):
+                total_size += os.path.getsize(fp)
+    return total_size
+
+# Mengambil variabel lingkungan
 BACKUP_DIR = os.getenv("BACKUP_DIR", "/mnt/Data/Backup")
 DATASET_NAME = os.getenv("DATASET_NAME", None)
 LOG_MESSAGES_FILE = os.getenv("LOG_MESSAGES_FILE", "/app/config/log_messages.json")
@@ -86,6 +98,7 @@ SYSLOG_PORT = int(os.getenv("SYSLOG_PORT", "1514"))
 ENABLE_SYSLOG = os.getenv("ENABLE_SYSLOG", "true").lower() == "true"
 SYSLOG_DIR = os.getenv("SYSLOG_DIR", "/mnt/Data/Syslog")
 
+# Validasi direktori backup dan file log
 if not os.path.exists(BACKUP_DIR):
     raise ValueError(f"Invalid backup dir: {BACKUP_DIR}")
 
@@ -101,15 +114,17 @@ def load_log_messages(file_path):
 
 log_messages = load_log_messages(LOG_MESSAGES_FILE)
 
+# Konfigurasi Logger
 logger = logging.getLogger("HDD-Monitor")
 logger.setLevel(logging.INFO)
 
+# Handler File
 file_handler = RotatingFileHandler(LOG_FILE, maxBytes=10 * 1024 * 1024, backupCount=5)
 file_formatter = logging.Formatter('%(message)s')
 file_handler.setFormatter(file_formatter)
 logger.addHandler(file_handler)
 
-# Check if SYSLOG_SERVER is resolvable before creating syslog handler
+# Fungsi untuk memeriksa apakah hostname dapat di-resolve
 def is_resolvable(host):
     try:
         socket.getaddrinfo(host, None)
@@ -117,6 +132,7 @@ def is_resolvable(host):
     except socket.gaierror:
         return False
 
+# Inisialisasi SysLogHandler hanya jika server dapat di-resolve
 if ENABLE_SYSLOG and SYSLOG_SERVER and is_resolvable(SYSLOG_SERVER):
     try:
         syslog_handler = SysLogHandler(address=(SYSLOG_SERVER, SYSLOG_PORT))
@@ -126,7 +142,7 @@ if ENABLE_SYSLOG and SYSLOG_SERVER and is_resolvable(SYSLOG_SERVER):
     except Exception as e:
         logger.error(f"Unable to enable syslog: {e}")
 else:
-    logger.warning("Syslog disabled or server not resolvable.")
+    logger.warning("Syslog disabled atau server tidak dapat di-resolve.")
 
 def monitor_disk_usage():
     try:
@@ -181,14 +197,25 @@ def monitor_disk_usage():
         exit(0)
 
 def monitor_directory_usage(directory):
-    total, used, free = shutil.disk_usage(directory)
-    usage_percent = (used / total) * 100
-    return {
-        "total": format_size(total),
-        "used": format_size(used),
-        "free": format_size(free),
-        "usage_percent": format_percent(usage_percent)
-    }
+    try:
+        # Menghitung ukuran direktori
+        dir_size = get_directory_size(directory)
+        
+        # Mengambil penggunaan disk dari filesystem
+        fs_total, fs_used, fs_free = shutil.disk_usage(directory)
+        
+        # Menghitung persentase penggunaan filesystem
+        usage_percent = (fs_used / fs_total) * 100
+        
+        return {
+            "total": format_size(dir_size),
+            "used": format_size(fs_used),
+            "free": format_size(fs_free),
+            "usage_percent": format_percent(usage_percent)
+        }
+    except Exception as e:
+        logger.error(f"Failed to monitor directory {directory}: {e}")
+        return None
 
 app = Flask(__name__)
 
