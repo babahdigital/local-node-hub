@@ -37,12 +37,12 @@ log() {
 
 # Memuat isi file JSON ke variabel MESSAGES
 load_messages() {
-  local filepath="/app/config/log_messages.json"
+  local filepath="/app/syslog/config/log_messages.json"
   if [[ -f "$filepath" ]]; then
     MESSAGES="$(cat "$filepath")"
     log "Pesan log_messages.json berhasil diload."
   else
-    log "Error: File log_messages.json tidak ditemukan. Pastikan file tersedia di /app/config."
+    log "Error: File log_messages.json tidak ditemukan. Pastikan file tersedia di /app/syslog/config."
     exit 1
   fi
 }
@@ -53,25 +53,18 @@ get_message() {
   echo "$MESSAGES" | jq -r ".$key // \"\""
 }
 
-# Fungsi untuk mengganti placeholder sederhana
-replace_placeholder() {
-  local text="$1"
-  local placeholder="$2"
-  local replacement="$3"
-  echo "${text//\{$placeholder\}/$replacement}"
-}
-
 #####################################
 # Variabel Logrotate, Cron, & Syslog-ng
 #####################################
-CONFIG_SOURCE="/app/logrotate/syslog-ng"
+CONFIG_SOURCE="/app/syslog/logrotate/syslog-ng"
 CONFIG_TARGET="/etc/logrotate.d/syslog-ng"
 BACKUP_DIR="/etc/logrotate.d/backup"
-SYSLOG_CONF="/app/config/syslog-ng.conf"
+SYSLOG_CONF="/app/syslog/config/syslog-ng.conf"
 LOGROTATE_STATE_FILE="/mnt/Data/Syslog/default/logrotate/logrotate.status"
 LOGROTATE_LOG="/mnt/Data/Syslog/default/logrotate/logrotate.log"
 CRON_JOB="0 * * * * /usr/bin/docker compose up logrotate >> /var/log/cron-custom.log 2>&1"
-CRON_FILE="/var/spool/cron/crontabs/root"
+CRON_FILE="/app/syslog/crontabs/root" # Path cron file
+CRON_BINARY="/app/syslog/crond"       # Path crond untuk non-root
 
 #####################################
 # Eksekusi Utama
@@ -93,7 +86,7 @@ log "$(get_message "entrypoint.check_logrotate_config")"
 if [[ ! -f "$CONFIG_SOURCE" ]]; then
   log "$(get_message "entrypoint.config_not_found")"
   log "Menjalankan generate_rotate.sh untuk membuat konfigurasi logrotate..."
-  /app/generate_rotate.sh
+  /app/syslog/generate_rotate.sh
   log "generate_rotate.sh selesai dijalankan."
 else
   log "File konfigurasi logrotate $CONFIG_SOURCE sudah ada. Melanjutkan proses."
@@ -113,11 +106,11 @@ log "$(get_message "entrypoint.old_backup_files_cleaned")"
 
 # Menambahkan atau Memeriksa Cron Job
 log "Memeriksa keberadaan cron job..."
+mkdir -p "$(dirname "$CRON_FILE")"
 if [[ -f "$CRON_FILE" ]] && grep -Fxq "$CRON_JOB" "$CRON_FILE"; then
   log "Cron job sudah ada, melewati penambahan."
 else
   log "Menambahkan cron job baru..."
-  mkdir -p "$(dirname "$CRON_FILE")"
   echo "$CRON_JOB" >> "$CRON_FILE"
   chmod 600 "$CRON_FILE"
   log "Cron job berhasil ditambahkan."
@@ -125,7 +118,12 @@ fi
 
 # Memulai layanan dcron
 log "Memulai layanan cron..."
-crond -b -l 2
+if [[ -x "$CRON_BINARY" ]]; then
+  "$CRON_BINARY" -c "$(dirname "$CRON_FILE")" -b -l 2 -p /mnt/Data/Syslog/var-run/crond.pid
+else
+  log "Error: Binary crond tidak ditemukan atau tidak dapat dijalankan."
+  exit 1
+fi
 
 # Jalankan logrotate manual (force)
 log "$(get_message "entrypoint.run_logrotate")"

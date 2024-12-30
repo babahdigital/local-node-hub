@@ -13,20 +13,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Set working directory
 WORKDIR /app
 
+# Buat direktori yang diperlukan
+RUN mkdir -p /app/api/
+
 # Salin file requirements terlebih dahulu
-COPY api/requirements.txt /app/requirements.txt
+COPY api/requirements.txt /app/api/requirements.txt
 
 # Install dependensi Python
-RUN pip install --no-cache-dir -r /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/api/requirements.txt
 
 # Salin seluruh aplikasi
-COPY api/ /app
+COPY api/ /app/api/
 
 # Buat direktori data
-RUN mkdir -p /app/data
+RUN mkdir -p /app/api/data
 
 # Memberikan izin eksekusi
-RUN chmod -R 755 /app
+RUN chmod -R 755 /app/api/
 
 # Jalankan Gunicorn
 CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:5001", "--timeout", "60", "backend_api:app"]

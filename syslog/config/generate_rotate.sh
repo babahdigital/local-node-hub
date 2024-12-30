@@ -37,12 +37,12 @@ log() {
 
 # Memuat isi file JSON ke variabel MESSAGES
 load_messages() {
-  local filepath="/app/config/log_messages.json"
+  local filepath="/app/syslog/config/log_messages.json"
   if [[ -f "$filepath" ]]; then
     MESSAGES="$(cat "$filepath")"
     log "Pesan log_messages.json berhasil diload."
   else
-    log "Error: File log_messages.json tidak ditemukan. Pastikan file tersedia di /app/config."
+    log "Error: File log_messages.json tidak ditemukan. Pastikan file tersedia di /app/syslog/config."
     exit 1
   fi
 }
@@ -57,7 +57,7 @@ get_message() {
 # Variabel
 #####################################
 LOG_ROOT="/mnt/Data/Syslog"
-CONFIG_FILE="/app/logrotate/syslog-ng"
+CONFIG_FILE="/app/syslog/logrotate/syslog-ng"
 OWNER="abdullah"
 GROUP="abdullah"
 
