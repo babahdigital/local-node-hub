@@ -34,7 +34,7 @@ Logrotate adalah utilitas untuk mengelola file log dengan cara merotasi, mengomp
 | **Kompresi Log** | Mengompresi log lama untuk menghemat ruang penyimpanan. Mendukung berbagai format kompresi seperti gzip dan bzip2. |
 | **Penghapusan Log Lama** | Menghapus log lama secara otomatis setelah sejumlah rotasi tertentu. Mendukung penghapusan log berdasarkan usia file. |
 | **Konfigurasi Fleksibel** | Mendukung konfigurasi per-file atau per-direktori. Mendukung skrip post-rotate untuk menjalankan perintah setelah rotasi. |
-| **Notifikasi dan Logging** | Mendukung notifikasi email setelah rotasi log. Menyimpan log aktivitas rotasi untuk audit dan debugging. |
+| **Logging** | Menyimpan log aktivitas rotasi untuk audit dan debugging. |
 
 ### Kelebihan
 | Kelebihan | Deskripsi |
