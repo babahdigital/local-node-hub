@@ -20,19 +20,23 @@ CLLMH adalah sistem terpusat yang mengintegrasikan:
 - **Monitoring dan Live Stream:**
     - Memantau kapasitas HDD di node lokal dan mengelola file lama secara otomatis.
     - Menyediakan live stream melalui DDNS MikroTik dengan opsi konversi ke HLS untuk kompatibilitas browser.
+- **Penggunaan Server Stream untuk Standby:**
+    - RTSP dari kamera CCTV dikirimkan ke server stream (Nginx RTMP).
+    - Server menyediakan RTMP/HLS untuk akses live stream kantor pusat dan analisis lokal.
 
 ## Struktur dan Komponen Proyek
 
 | Komponen      | Fungsi                                                                      | Teknologi                                 |
 |---------------|-----------------------------------------------------------------------------|-------------------------------------------|
-| Node Lokal    | - Redirect RTSP ke pusat atau simpan backup lokal berbasis gerakan.         | RTSP, DDNS MikroTik, FFmpeg, OpenCV, TensorFlow |
+| Node Lokal    | - Redirect RTSP ke pusat atau simpan backup lokal berbasis gerakan.         | RTSP, DDNS MikroTik, FFmpeg, OpenCV, TensorFlow Lite |
 |               | - Monitoring kapasitas HDD dan pengelolaan file lama.                       | Flask, Psutil, Logrotate                  |
 |               | - Pengelolaan log perangkat lokal.                                          | Syslog-ng, Python                         |
+| Server Stream | - Menyediakan RTMP/HLS untuk live stream dan analisis backup.               | Nginx RTMP, FFmpeg                        |
 | Kantor Pusat  | - Menyediakan API terpusat untuk menerima data dari node.                   | Flask API, Promtail, Grafana Loki         |
 |               | - Penyimpanan log untuk analitik dan troubleshooting.                       | Grafana Loki, Promtail, Elasticsearch     |
 |               | - Menampilkan live stream, status perangkat, dan analitik log di dashboard. | Vue.js, Grafana                           |
-| Backup        | - Merekam video hanya saat gerakan atau objek terdeteksi.                   | OpenCV, TensorFlow, FFmpeg                |
-| Live Stream   | - Redirect RTSP menggunakan DDNS atau konversi ke HLS jika diperlukan.      | RTSP, FFmpeg                              |
+| Backup        | - Merekam video hanya saat gerakan atau objek terdeteksi.                   | OpenCV, TensorFlow Lite, FFmpeg           |
+| Live Stream   | - Redirect RTSP menggunakan DDNS atau konversi ke HLS jika diperlukan.      | RTSP, FFmpeg, Nginx RTMP                  |
 
 ## Struktur Folder Proyek
 
@@ -80,20 +84,20 @@ CLLMH adalah sistem terpusat yang mengintegrasikan:
 
 ### 1. Workflow Backup Berdasarkan Gerakan
 
-- **Ambil Stream RTSP dari NVR/DVR:**
-    - Stream diteruskan ke node lokal melalui DDNS MikroTik.
-- **Jalankan Frame Differencing:**
-    - Deteksi gerakan menggunakan OpenCV.
-- **Opsional: Jalankan MobileNet:**
-    - Deteksi objek penting seperti manusia atau kendaraan.
-- **Simpan Segmen Video:**
-    - Segmen video disimpan di node lokal atau dikirim ke pusat menggunakan FFmpeg.
+- **RTSP ke Server Stream:**
+    - Kamera CCTV mengirim stream RTSP ke Nginx RTMP.
+- **Frame Differencing:**
+    - Mendeteksi gerakan pada stream RTMP.
+- **MobileNet:**
+    - Mendeteksi objek penting seperti manusia atau kendaraan.
+- **Backup:**
+    - Segmen video disimpan hanya jika objek penting terdeteksi.
 
 ### 2. Workflow Log dan Monitoring
 
 - **Node Lokal:**
     - **Syslog-ng:**
-        - Mengelola log dari perangkat seperti NVR dan MikroTik, lalu mengirimnya ke pusat.
+        - Mengelola log dari perangkat seperti NVR dan MikroTik.
     - **Monitoring HDD:**
         - Memantau kapasitas disk dan menghapus file lama jika penuh.
 - **Kantor Pusat:**
@@ -104,10 +108,10 @@ CLLMH adalah sistem terpusat yang mengintegrasikan:
 
 ### 3. Workflow Live Stream
 
-- **Redirect RTSP Stream:**
-    - Gunakan DDNS MikroTik untuk mengakses RTSP stream dari NVR/DVR.
-- **Kompatibilitas Browser (Opsional):**
-    - Konversi stream RTSP ke HLS menggunakan FFmpeg jika diperlukan.
+- **RTSP ke RTMP/HLS:**
+    - Nginx RTMP menyediakan link RTMP/HLS untuk kantor pusat.
+- **Akses melalui DDNS Mikrotik:**
+    - Link live stream dapat diakses oleh kantor pusat kapan saja.
 
 ## Kebutuhan Infrastruktur
 
@@ -120,12 +124,14 @@ CLLMH adalah sistem terpusat yang mengintegrasikan:
 
 ## Masukan untuk Pengembangan
 
-- **Optimasi Pipeline Backup:**
+- **Optimasi Backup:**
     - Gunakan Frame Differencing untuk memfilter frame sebelum menjalankan MobileNet.
     - Backup hanya dilakukan jika gerakan dan objek penting terdeteksi.
-- **Keamanan API:**
-    - Batasi akses API dengan IP whitelist dan autentikasi sederhana.
-- **Retensi Log:**
-    - Terapkan kebijakan retensi log berdasarkan prioritas (misalnya, log kritis disimpan lebih lama).
+- **Keamanan Stream:**
+    - Lindungi akses RTMP/HLS menggunakan autentikasi.
+    - Gunakan protokol HTTPS untuk komunikasi yang aman.
+- **Pengelolaan Log:**
+    - Terapkan kebijakan retensi log berdasarkan prioritas (log kritis disimpan lebih lama).
+    - Integrasikan log dari server stream ke pusat untuk monitoring.
 
 Dengan struktur ini, sistem dapat memanfaatkan teknologi seperti OpenCV, TensorFlow Lite, dan FFmpeg secara efisien untuk memenuhi kebutuhan pengawasan dan pengelolaan log terpusat.
