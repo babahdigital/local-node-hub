@@ -52,8 +52,7 @@ services:
     user: root
     cap_add:
       - CAP_NET_BIND_SERVICE
-    #command: ["syslog-ng", "--foreground", "-f", "/app/syslog/config/syslog-ng.conf", "--persist-file=/mnt/Data/Syslog/var-run/syslog-ng.persist"]
-    command: ["syslog-ng", "--foreground", "--verbose", "-f", "/app/syslog/config/syslog-ng.conf", "--persist-file=/mnt/Data/Syslog/var-run/syslog-ng.persist"]
+    command: ["syslog-ng", "--foreground", "-f", "/app/syslog/config/syslog-ng.conf", "--persist-file=/mnt/Data/Syslog/var-run/syslog-ng.persist"]
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
@@ -106,6 +105,3 @@ networks:
       config:
         - subnet: "172.16.31.0/28"
           gateway: "172.16.31.1"
-
-volumes:
-  syslog-docker-socket:
