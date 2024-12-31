@@ -2,9 +2,9 @@
 
 CLLMH adalah sistem terpusat yang mengintegrasikan:
 
-- Pemantauan CCTV berbasis gerakan.
-- Pengelolaan log dari semua node lokal.
-- Penyimpanan video dan backup hanya saat diperlukan.
+- Pemantauan CCTV berbasis gerakan menggunakan teknologi Frame Differencing dan MobileNet.
+- Pengelolaan log dari semua node lokal dengan forwarding ke pusat untuk analitik.
+- Penyimpanan video dan backup hanya saat diperlukan, menghemat kapasitas HDD.
 - Dashboard untuk memantau status perangkat, analitik log, dan live stream.
 
 ## Konsep Utama Proyek
@@ -12,26 +12,27 @@ CLLMH adalah sistem terpusat yang mengintegrasikan:
 **Tujuan:**
 - Efisiensi Backup:
     - Menggunakan Frame Differencing untuk mendeteksi gerakan pada CCTV.
+    - Mengintegrasikan MobileNet untuk mendeteksi objek spesifik seperti manusia dan kendaraan.
     - Menghemat kapasitas HDD dengan merekam hanya aktivitas penting.
 - Manajemen Log Terpusat:
     - Semua log dari node lokal dikirim ke pusat untuk analitik dan troubleshooting.
-    - Menyediakan retry logic untuk mencegah kehilangan log.
+    - Menyediakan retry logic untuk mencegah kehilangan log jika terjadi kegagalan jaringan.
 - Monitoring dan Live Stream:
-    - Memantau kapasitas HDD di node lokal.
-    - Menyediakan live stream melalui DDNS dengan kompatibilitas browser (opsional HLS).
+    - Memantau kapasitas HDD di node lokal dan mengelola file lama secara otomatis.
+    - Menyediakan live stream melalui DDNS MikroTik dengan opsi konversi ke HLS untuk kompatibilitas browser.
 
 ## Struktur dan Komponen Proyek
 
 | Komponen      | Fungsi                                                                      | Teknologi                                 |
 |---------------|-----------------------------------------------------------------------------|-------------------------------------------|
-| Node Lokal    | - Redirect RTSP ke pusat atau simpan backup lokal berbasis gerakan.         | RTSP, DDNS MikroTik, FFmpeg, OpenCV       |
+| Node Lokal    | - Redirect RTSP ke pusat atau simpan backup lokal berbasis gerakan.         | RTSP, DDNS MikroTik, FFmpeg, OpenCV, TensorFlow |
 |               | - Monitoring kapasitas HDD dan pengelolaan file lama.                       | Flask, Psutil, Logrotate                  |
 |               | - Pengelolaan log perangkat lokal.                                          | Syslog-ng, Python                         |
-| Kantor Pusat  | - Menyediakan API terpusat untuk menerima data dari node.                   | Flask API, Google Cloud Run               |
+| Kantor Pusat  | - Menyediakan API terpusat untuk menerima data dari node.                   | Flask API, Promtail, Grafana Loki         |
 |               | - Penyimpanan log untuk analitik dan troubleshooting.                       | Grafana Loki, Promtail, Elasticsearch     |
 |               | - Menampilkan live stream, status perangkat, dan analitik log di dashboard. | Vue.js, Grafana                           |
-| Live Stream   | - Redirect RTSP menggunakan DDNS atau konversi ke HLS jika diperlukan.      | RTSP, FFmpeg                              |
 | Backup        | - Merekam video hanya saat gerakan atau objek terdeteksi.                   | OpenCV, TensorFlow, FFmpeg                |
+| Live Stream   | - Redirect RTSP menggunakan DDNS atau konversi ke HLS jika diperlukan.      | RTSP, FFmpeg                              |
 
 ## Struktur Folder Proyek
 
@@ -42,7 +43,7 @@ CLLMH adalah sistem terpusat yang mengintegrasikan:
 │   ├── app/                    # Aplikasi utama API
 │   ├── tests/                  # Pengujian API
 ├── backup/                     # Skrip untuk backup RTSP stream
-│   ├── scripts/                # Pipeline backup berbasis gerakan
+│   ├── scripts/                # Pipeline backup berbasis gerakan dan MobileNet
 │   ├── Dockerfile              # Dockerfile untuk kontainer backup
 ├── config/                     # Pengaturan umum proyek
 │   ├── log_messages.json       # Pesan log dinamis
@@ -67,11 +68,10 @@ CLLMH adalah sistem terpusat yang mengintegrasikan:
     - Stream diteruskan ke node lokal melalui DDNS MikroTik.
 - **Jalankan Frame Differencing:**
     - Deteksi gerakan menggunakan OpenCV.
-    - Jika gerakan terdeteksi, simpan segmen video menggunakan FFmpeg.
 - **Opsional: Jalankan MobileNet:**
     - Deteksi objek penting seperti manusia atau kendaraan.
 - **Simpan Segmen Video:**
-    - Segmen video disimpan di node lokal atau dikirim ke pusat.
+    - Segmen video disimpan di node lokal atau dikirim ke pusat menggunakan FFmpeg.
 
 ### 2. Workflow Log dan Monitoring
 
@@ -97,7 +97,7 @@ CLLMH adalah sistem terpusat yang mengintegrasikan:
 
 | Transaksi       | Deskripsi                                                   | Aktivitas                                |
 |-----------------|-------------------------------------------------------------|------------------------------------------|
-| Backup Stream   | Node lokal merekam segmen video berbasis gerakan.           | Frame Differencing, FFmpeg               |
+| Backup Stream   | Node lokal merekam segmen video berbasis gerakan.           | Frame Differencing, MobileNet, FFmpeg    |
 | Log Management  | Node lokal mengirim log ke pusat untuk analitik.            | Syslog-ng, Promtail                      |
 | Monitoring HDD  | Node lokal memantau kapasitas disk dan menghapus file lama. | Psutil, Flask API                        |
 | Live Stream     | Stream RTSP diteruskan ke pusat untuk monitoring.           | RTSP, DDNS MikroTik                      |
@@ -108,7 +108,7 @@ CLLMH adalah sistem terpusat yang mengintegrasikan:
 | Komponen      | Kebutuhan Teknis                                               |
 |---------------|----------------------------------------------------------------|
 | Node Lokal    | - DVR/NVR dengan RTSP dan MikroTik dengan DDNS.                |
-|               | - Kontainer untuk Frame Differencing dan monitoring HDD.       |
+|               | - Kontainer untuk Frame Differencing, MobileNet, dan monitoring HDD. |
 | Kantor Pusat  | - Server untuk Grafana Loki, Promtail, dan Elasticsearch.      |
 |               | - Backend Flask API dan Vue.js untuk dashboard.                |
 
@@ -125,4 +125,4 @@ CLLMH adalah sistem terpusat yang mengintegrasikan:
 - **Redundansi:**
     - Pastikan ada retry logic untuk pengiriman log dari node lokal ke pusat untuk menghindari kehilangan data.
 
-Dengan pendekatan ini, pengawasan CCTV menjadi efisien, log terpusat, dan manajemen kapasitas HDD lebih mudah.
+Dengan pendekatan ini, pengawasan CCTV menjadi efisien, log terpusat, dan manajemen kapasitas HDD lebih mudah. Teknologi seperti OpenCV, TensorFlow, dan FFmpeg memastikan pemrosesan data yang optimal.
