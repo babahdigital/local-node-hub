@@ -136,5 +136,3 @@ Berikut adalah langkah-langkah detail untuk memastikan semua komponen bekerja di
 - Pastikan semua log dicatat ke `/mnt/Data/Syslog` untuk monitoring terpusat.
 - Tambahkan dokumentasi detail untuk log format dan fungsionalitas di folder `doc/`.
 - Uji integrasi penuh di lingkungan lokal sebelum dipindahkan ke server pusat.
-
-Beri tahu saya jika Anda membutuhkan detail tambahan untuk salah satu langkah!
