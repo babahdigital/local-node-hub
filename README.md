@@ -44,7 +44,11 @@ CLLMH adalah sistem terpusat yang mengintegrasikan:
 │   ├── tests/                  # Pengujian API
 ├── backup/                     # Skrip untuk backup RTSP stream
 │   ├── scripts/                # Pipeline backup berbasis gerakan dan MobileNet
-│   ├── Dockerfile              # Dockerfile untuk kontainer backup
+│   │   ├── frame_differencing.py   # Script utama untuk Frame Differencing
+│   │   ├── mobilenet.py            # Script utama untuk MobileNet
+│   │   ├── utils.py                # Fungsi pendukung
+│   ├── backup_manager.py           # Script utama untuk orchestrasi backup
+│   ├── Dockerfile                  # Dockerfile untuk kontainer backup
 ├── config/                     # Pengaturan umum proyek
 │   ├── log_messages.json       # Pesan log dinamis
 │   ├── syslog/                 # Konfigurasi syslog-ng di node lokal
@@ -55,6 +59,12 @@ CLLMH adalah sistem terpusat yang mengintegrasikan:
 ├── syslog/                     # Konfigurasi syslog-ng untuk node lokal
 │   ├── syslog-ng.conf          # Konfigurasi utama syslog-ng
 │   ├── logrotate.conf          # Rotasi log untuk menghemat disk
+├── ai/                         # Direktori baru untuk model AI dan skrip pendukung
+│   ├── models/                 # Folder untuk menyimpan model MobileNet
+│   │   ├── mobilenet_v2.tflite # File model MobileNet dalam format TensorFlow Lite
+│   ├── inference.py            # Script inferensi untuk MobileNet
+│   ├── requirements.txt        # Dependensi AI (TensorFlow Lite, NumPy, dll.)
+│   ├── Dockerfile              # Dockerfile untuk kontainer AI (opsional jika terpisah)
 ├── README.md                   # Deskripsi proyek
 ├── LICENSE                     # Lisensi proyek
 └── docker-compose.yml          # File utama Docker Compose
