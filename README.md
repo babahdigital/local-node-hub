@@ -50,6 +50,9 @@ CLLMH adalah sistem terpusat yang mengintegrasikan:
 │   │   ├── validate_cctv.py        # Script untuk validasi RTSP stream
 │   ├── backup_manager.py           # Script utama untuk orchestrasi backup
 │   ├── Dockerfile                  # Dockerfile untuk kontainer backup
+├── stream_server/              # Konfigurasi dan skrip untuk server stream
+│   ├── nginx.conf              # Konfigurasi untuk Nginx RTMP
+│   ├── Dockerfile              # Dockerfile untuk kontainer server stream
 ├── config/                     # Pengaturan umum proyek
 │   ├── log_messages.json       # Pesan log dinamis
 │   ├── syslog/                 # Konfigurasi syslog-ng di node lokal
