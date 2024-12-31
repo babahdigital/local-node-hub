@@ -3,35 +3,35 @@
 CLLMH adalah sistem terpusat yang mengintegrasikan:
 
 - Pemantauan CCTV berbasis gerakan.
-- Pengelolaan log dari semua node.
-- Penyimpanan video dan backup hanya ketika benar-benar diperlukan.
-- Dashboard untuk monitoring status perangkat, analitik log, dan live stream.
+- Pengelolaan log dari semua node lokal.
+- Penyimpanan video dan backup hanya saat diperlukan.
+- Dashboard untuk memantau status perangkat, analitik log, dan live stream.
 
 ## Konsep Utama Proyek
 
 **Tujuan:**
 - Efisiensi Backup:
     - Menggunakan Frame Differencing untuk mendeteksi gerakan pada CCTV.
-    - Menghemat kapasitas HDD dengan merekam hanya saat ada aktivitas penting.
+    - Menghemat kapasitas HDD dengan merekam hanya aktivitas penting.
 - Manajemen Log Terpusat:
     - Semua log dari node lokal dikirim ke pusat untuk analitik dan troubleshooting.
-    - Menyediakan retry logic untuk menghindari kehilangan log.
+    - Menyediakan retry logic untuk mencegah kehilangan log.
 - Monitoring dan Live Stream:
     - Memantau kapasitas HDD di node lokal.
-    - Menyediakan live stream melalui DDNS dan kompatibilitas browser (opsional HLS).
+    - Menyediakan live stream melalui DDNS dengan kompatibilitas browser (opsional HLS).
 
 ## Struktur dan Komponen Proyek
 
 | Komponen      | Fungsi                                                                      | Teknologi                                 |
 |---------------|-----------------------------------------------------------------------------|-------------------------------------------|
-| Node Lokal    | - Redirect RTSP ke pusat atau simpan backup lokal berdasarkan gerakan (Frame Differencing). | RTSP, DDNS MikroTik, FFmpeg, OpenCV       |
+| Node Lokal    | - Redirect RTSP ke pusat atau simpan backup lokal berbasis gerakan.         | RTSP, DDNS MikroTik, FFmpeg, OpenCV       |
 |               | - Monitoring kapasitas HDD dan pengelolaan file lama.                       | Flask, Psutil, Logrotate                  |
-|               | - Pengelolaan log perangkat lokal (syslog-ng).                              | Syslog-ng, Python                         |
-| Kantor Pusat  | - Menyediakan API terpusat untuk menerima data node.                        | Flask API, Google Cloud Run               |
+|               | - Pengelolaan log perangkat lokal.                                          | Syslog-ng, Python                         |
+| Kantor Pusat  | - Menyediakan API terpusat untuk menerima data dari node.                   | Flask API, Google Cloud Run               |
 |               | - Penyimpanan log untuk analitik dan troubleshooting.                       | Grafana Loki, Promtail, Elasticsearch     |
 |               | - Menampilkan live stream, status perangkat, dan analitik log di dashboard. | Vue.js, Grafana                           |
 | Live Stream   | - Redirect RTSP menggunakan DDNS atau konversi ke HLS jika diperlukan.      | RTSP, FFmpeg                              |
-| Backup        | - Merekam video hanya saat gerakan atau objek terdeteksi (Frame Differencing + MobileNet). | OpenCV, TensorFlow, FFmpeg               |
+| Backup        | - Merekam video hanya saat gerakan atau objek terdeteksi.                   | OpenCV, TensorFlow, FFmpeg                |
 
 ## Struktur Folder Proyek
 
@@ -69,22 +69,20 @@ CLLMH adalah sistem terpusat yang mengintegrasikan:
     - Deteksi gerakan menggunakan OpenCV.
     - Jika gerakan terdeteksi, simpan segmen video menggunakan FFmpeg.
 - **Opsional: Jalankan MobileNet:**
-    - Deteksi objek relevan seperti manusia atau kendaraan untuk menghindari penyimpanan gerakan yang tidak penting.
+    - Deteksi objek penting seperti manusia atau kendaraan.
 - **Simpan Segmen Video:**
-    - Segmen video disimpan di node lokal atau langsung dikirim ke pusat.
+    - Segmen video disimpan di node lokal atau dikirim ke pusat.
 
 ### 2. Workflow Log dan Monitoring
 
 - **Node Lokal:**
     - **Syslog-ng:**
-        - Mengelola log dari perangkat seperti NVR, MikroTik, dan aplikasi lokal.
-        - Mengirim log ke pusat menggunakan TCP/UDP.
+        - Mengelola log dari perangkat seperti NVR dan MikroTik, lalu mengirimnya ke pusat.
     - **Monitoring HDD:**
-        - Memantau kapasitas disk.
-        - Menghapus file lama jika kapasitas hampir penuh.
+        - Memantau kapasitas disk dan menghapus file lama jika penuh.
 - **Kantor Pusat:**
     - **Promtail:**
-        - Membaca log dari syslog-ng dan mengirimkannya ke Grafana Loki.
+        - Membaca log dari Syslog-ng dan mengirimkan ke Grafana Loki.
     - **Grafana:**
         - Menampilkan log berbasis waktu untuk analitik dan troubleshooting.
 
@@ -101,9 +99,9 @@ CLLMH adalah sistem terpusat yang mengintegrasikan:
 |-----------------|-------------------------------------------------------------|------------------------------------------|
 | Backup Stream   | Node lokal merekam segmen video berbasis gerakan.           | Frame Differencing, FFmpeg               |
 | Log Management  | Node lokal mengirim log ke pusat untuk analitik.            | Syslog-ng, Promtail                      |
-| Monitoring HDD  | Node lokal memantau kapasitas disk dan menghapus file lama secara otomatis. | Psutil, Flask API                        |
+| Monitoring HDD  | Node lokal memantau kapasitas disk dan menghapus file lama. | Psutil, Flask API                        |
 | Live Stream     | Stream RTSP diteruskan ke pusat untuk monitoring.           | RTSP, DDNS MikroTik                      |
-| Analitik di Pusat | Pusat mengelola data dari semua node dan menampilkannya di dashboard. | Grafana Loki, Elasticsearch, Vue.js      |
+| Analitik di Pusat | Pusat mengelola data dari semua node dan menampilkan di dashboard. | Grafana Loki, Elasticsearch, Vue.js      |
 
 ## Kebutuhan Infrastruktur
 
@@ -113,5 +111,18 @@ CLLMH adalah sistem terpusat yang mengintegrasikan:
 |               | - Kontainer untuk Frame Differencing dan monitoring HDD.       |
 | Kantor Pusat  | - Server untuk Grafana Loki, Promtail, dan Elasticsearch.      |
 |               | - Backend Flask API dan Vue.js untuk dashboard.                |
+
+## Masukan untuk Pengembangan
+
+- **Skalabilitas Log:**
+    - Gunakan Promtail untuk distribusi log berbasis waktu jika jumlah node bertambah banyak.
+    - Pertimbangkan retensi log berbasis prioritas (misalnya, log kritis disimpan lebih lama).
+- **Optimasi Backup:**
+    - Pastikan backup dilakukan hanya saat kapasitas HDD mencukupi.
+    - Gunakan strategi rotasi file otomatis jika kapasitas hampir penuh.
+- **Keamanan API:**
+    - Batasi akses API dengan IP whitelist dan autentikasi sederhana.
+- **Redundansi:**
+    - Pastikan ada retry logic untuk pengiriman log dari node lokal ke pusat untuk menghindari kehilangan data.
 
 Dengan pendekatan ini, pengawasan CCTV menjadi efisien, log terpusat, dan manajemen kapasitas HDD lebih mudah.
