@@ -10,14 +10,14 @@ CLLMH adalah sistem terpusat yang mengintegrasikan:
 ## Konsep Utama Proyek
 
 **Tujuan:**
-- Efisiensi Backup:
+- **Efisiensi Backup:**
     - Menggunakan Frame Differencing untuk mendeteksi gerakan pada CCTV.
     - Mengintegrasikan MobileNet untuk mendeteksi objek spesifik seperti manusia dan kendaraan.
     - Menghemat kapasitas HDD dengan merekam hanya aktivitas penting.
-- Manajemen Log Terpusat:
+- **Manajemen Log Terpusat:**
     - Semua log dari node lokal dikirim ke pusat untuk analitik dan troubleshooting.
     - Menyediakan retry logic untuk mencegah kehilangan log jika terjadi kegagalan jaringan.
-- Monitoring dan Live Stream:
+- **Monitoring dan Live Stream:**
     - Memantau kapasitas HDD di node lokal dan mengelola file lama secara otomatis.
     - Menyediakan live stream melalui DDNS MikroTik dengan opsi konversi ke HLS untuk kompatibilitas browser.
 
@@ -103,16 +103,6 @@ CLLMH adalah sistem terpusat yang mengintegrasikan:
 - **Kompatibilitas Browser (Opsional):**
     - Konversi stream RTSP ke HLS menggunakan FFmpeg jika diperlukan.
 
-## Model Transaksi
-
-| Transaksi       | Deskripsi                                                   | Aktivitas                                |
-|-----------------|-------------------------------------------------------------|------------------------------------------|
-| Backup Stream   | Node lokal merekam segmen video berbasis gerakan.           | Frame Differencing, MobileNet, FFmpeg    |
-| Log Management  | Node lokal mengirim log ke pusat untuk analitik.            | Syslog-ng, Promtail                      |
-| Monitoring HDD  | Node lokal memantau kapasitas disk dan menghapus file lama. | Psutil, Flask API                        |
-| Live Stream     | Stream RTSP diteruskan ke pusat untuk monitoring.           | RTSP, DDNS MikroTik                      |
-| Analitik di Pusat | Pusat mengelola data dari semua node dan menampilkan di dashboard. | Grafana Loki, Elasticsearch, Vue.js      |
-
 ## Kebutuhan Infrastruktur
 
 | Komponen      | Kebutuhan Teknis                                               |
@@ -124,15 +114,12 @@ CLLMH adalah sistem terpusat yang mengintegrasikan:
 
 ## Masukan untuk Pengembangan
 
-- **Skalabilitas Log:**
-    - Gunakan Promtail untuk distribusi log berbasis waktu jika jumlah node bertambah banyak.
-    - Pertimbangkan retensi log berbasis prioritas (misalnya, log kritis disimpan lebih lama).
-- **Optimasi Backup:**
-    - Pastikan backup dilakukan hanya saat kapasitas HDD mencukupi.
-    - Gunakan strategi rotasi file otomatis jika kapasitas hampir penuh.
+- **Optimasi Pipeline Backup:**
+    - Gunakan Frame Differencing untuk memfilter frame sebelum menjalankan MobileNet.
+    - Backup hanya dilakukan jika gerakan dan objek penting terdeteksi.
 - **Keamanan API:**
     - Batasi akses API dengan IP whitelist dan autentikasi sederhana.
-- **Redundansi:**
-    - Pastikan ada retry logic untuk pengiriman log dari node lokal ke pusat untuk menghindari kehilangan data.
+- **Retensi Log:**
+    - Terapkan kebijakan retensi log berdasarkan prioritas (misalnya, log kritis disimpan lebih lama).
 
-Dengan pendekatan ini, pengawasan CCTV menjadi efisien, log terpusat, dan manajemen kapasitas HDD lebih mudah. Teknologi seperti OpenCV, TensorFlow, dan FFmpeg memastikan pemrosesan data yang optimal.
+Dengan struktur ini, sistem dapat memanfaatkan teknologi seperti OpenCV, TensorFlow Lite, dan FFmpeg secara efisien untuk memenuhi kebutuhan pengawasan dan pengelolaan log terpusat.
