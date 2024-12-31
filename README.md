@@ -122,7 +122,7 @@ CLLMH adalah sistem terpusat yang mengintegrasikan:
 | Kantor Pusat  | - Server untuk Grafana Loki, Promtail, dan Elasticsearch.      |
 |               | - Backend Flask API dan Vue.js untuk dashboard.                |
 
-## Masukan untuk Pengembangan
+## Pengembangan
 
 - **Optimasi Backup:**
     - Gunakan Frame Differencing untuk memfilter frame sebelum menjalankan MobileNet.
