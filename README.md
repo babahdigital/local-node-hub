@@ -46,7 +46,8 @@ CLLMH adalah sistem terpusat yang mengintegrasikan:
 │   ├── scripts/                # Pipeline backup berbasis gerakan dan MobileNet
 │   │   ├── frame_differencing.py   # Script utama untuk Frame Differencing
 │   │   ├── mobilenet.py            # Script utama untuk MobileNet
-│   │   ├── utils.py                # Fungsi pendukung
+│   │   ├── report_manager.py       # Script untuk pengelolaan pelaporan ke backend
+│   │   ├── validate_cctv.py        # Script untuk validasi RTSP stream
 │   ├── backup_manager.py           # Script utama untuk orchestrasi backup
 │   ├── Dockerfile                  # Dockerfile untuk kontainer backup
 ├── config/                     # Pengaturan umum proyek
@@ -65,6 +66,8 @@ CLLMH adalah sistem terpusat yang mengintegrasikan:
 │   ├── inference.py            # Script inferensi untuk MobileNet
 │   ├── requirements.txt        # Dependensi AI (TensorFlow Lite, NumPy, dll.)
 │   ├── Dockerfile              # Dockerfile untuk kontainer AI (opsional jika terpisah)
+├── scripts/                    # Folder untuk utility scripts
+│   ├── utils.py                # Fungsi pendukung umum untuk seluruh proyek
 ├── README.md                   # Deskripsi proyek
 ├── LICENSE                     # Lisensi proyek
 └── docker-compose.yml          # File utama Docker Compose
