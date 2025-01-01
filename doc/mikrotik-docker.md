@@ -94,13 +94,6 @@ add chain=output action=accept src-address-list=docker comment="Allow output tra
 add chain=output action=drop comment="Drop all other output traffic"
 ```
 
-#### Cegah Akses dari Subnet Lain
-
-```bash
-/ip firewall filter
-add chain=forward action=drop src-address=!172.16.30.0/28
-```
-
 #### Validasi Konfigurasi
 
 ```bash
