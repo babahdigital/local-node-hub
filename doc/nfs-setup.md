@@ -37,7 +37,7 @@ Berikut adalah panduan langkah demi langkah untuk menggunakan skrip ini:
 1. **Persiapan Awal**
     - Pastikan Akses Root: Skrip ini harus dijalankan dengan hak akses root. Anda dapat menggunakan sudo untuk menjalankannya.
       ```bash
-      sudo bash nfs-setup.sh
+      sudo bash ./tool/nfs-setup.sh
       ```
     - Edit Konfigurasi Skrip: Sesuaikan variabel konfigurasi di awal skrip sesuai dengan lingkungan Anda.
       ```bash
@@ -51,11 +51,11 @@ Berikut adalah panduan langkah demi langkah untuk menggunakan skrip ini:
 2. **Menjalankan Skrip**
     - Pastikan skrip memiliki izin eksekusi. Jika belum, tambahkan izin eksekusi menggunakan chmod.
       ```bash
-      chmod +x nfs-setup.sh
+      chmod +x ./tool/nfs-setup.sh
       ```
     - Jalankan skrip sebagai root.
       ```bash
-      sudo ./nfs-setup.sh
+      sudo ./tool/nfs-setup.sh
       ```
 
 3. **Verifikasi Hasil Mount**
@@ -149,8 +149,8 @@ Penjelasan:
 
 ### Langkah Menggunakan Skrip
 1. **Edit Skrip**: Sesuaikan variabel konfigurasi sesuai kebutuhan.
-2. **Beri Izin Eksekusi**: `chmod +x nfs-setup.sh`
-3. **Jalankan Skrip**: `sudo ./nfs-setup.sh`
+2. **Beri Izin Eksekusi**: `chmod +x ./tool/nfs-setup.sh`
+3. **Jalankan Skrip**: `sudo ./tool/nfs-setup.sh`
 4. **Verifikasi**: Pastikan shares ter-mount dengan benar menggunakan `mount` atau `df -h`.
 
 ## Penutup
