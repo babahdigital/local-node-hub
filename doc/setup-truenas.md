@@ -1,6 +1,6 @@
 # Panduan Lengkap Otomatisasi TrueNAS Scale dengan Bash
 
-Skrip ini menggunakan curl untuk berinteraksi dengan API TrueNAS Scale. Pastikan Anda memiliki akses API dan token API TrueNAS. Ganti API_TOKEN, API_URL, dan parameter lain yang sesuai.
+Panduan ini menggunakan skrip Bash dan curl untuk berinteraksi dengan API TrueNAS Scale. Pastikan Anda memiliki akses API dan token API TrueNAS. Ganti API_TOKEN, API_URL, dan parameter lain yang sesuai dengan lingkungan Anda.
 
 ## Langkah 1: Membuat API Token di TrueNAS Scale
 
@@ -37,62 +37,64 @@ API biasanya sudah diaktifkan secara default di TrueNAS Scale. Namun, Anda dapat
       ```
     - Di sini Anda dapat melihat endpoint, metode HTTP, dan parameter yang didukung.
 
-## Langkah 3: Uji Skrip Bash
+## Langkah 3: Skrip Bash Dasar
 
-1. **Instal Dependency:**
-    - Pastikan Anda memiliki curl dan jq terinstal di sistem Anda:
-      ```bash
-      sudo apt update
-      sudo apt install curl jq -y
-      ```
+### Skrip Utama: `truenas_automation.sh`
 
-2. **Uji Skrip Bash:**
-    - Simpan skrip Anda sebagai file, misalnya `truenas_automation.sh`.
-    - Beri izin eksekusi pada skrip:
-      ```bash
-      chmod +x truenas_automation.sh
-      ```
-    - Jalankan skrip:
-      ```bash
-      ./truenas_automation.sh
-      ```
+Buat file Bash dan masukkan kode berikut:
 
-3. **Pantau Hasil:**
-    - Periksa output di terminal untuk memastikan setiap langkah berhasil.
-    - Login ke TrueNAS dan periksa apakah perubahan seperti pembuatan pool, dataset, VLAN, bridge, dan VM berhasil diterapkan.
+```bash
+#!/bin/bash
 
-## Tips Debugging
+API_TOKEN="your_api_token_here"
+API_URL="https://your_truenas_url_here/api/v2.0"
 
-- Tambahkan opsi verbose pada curl jika ada masalah:
-  ```bash
-  curl -v ...
-  ```
-- Periksa log API TrueNAS untuk detail lebih lanjut:
-  - Menu "System Logs" > "API" di Web Interface.
+# Fungsi untuk membuat permintaan API
+api_request() {
+    local endpoint=$1
+    local method=$2
+    local data=$3
+    curl -s -k -X $method \
+        -H "Authorization: Bearer $API_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d "$data" \
+        "$API_URL/$endpoint"
+}
+```
 
-Jika ada langkah tambahan yang Anda butuhkan atau konfigurasi khusus, beri tahu saya!
+### Cara Menjalankan Skrip
+
+1. Simpan skrip dengan nama `truenas_automation.sh`.
+2. Beri izin eksekusi:
+    ```bash
+    chmod +x truenas_automation.sh
+    ```
+3. Jalankan skrip:
+    ```bash
+    ./truenas_automation.sh
+    ```
 
 ## Langkah 4: Hapus Pool Lama dan Buat Pool Baru
 
+Tambahkan ke dalam skrip:
+
 ```bash
-# Hapus pool lama
 POOL_NAME="Data"
 POOL_ID=$(api_request "pool" "GET" | jq -r ".[] | select(.name==\"$POOL_NAME\").id")
 if [ -n "$POOL_ID" ]; then
-     api_request "pool/id/$POOL_ID" "DELETE"
-     echo "Pool $POOL_NAME dihapus."
+    api_request "pool/id/$POOL_ID" "DELETE"
+    echo "Pool $POOL_NAME dihapus."
 fi
 
-# Buat pool baru
 api_request "pool" "POST" '{
   "name": "Data",
   "topology": {
-     "data": [
-        {
-          "type": "STRIPE",
-          "disks": ["da1", "da2"]
-        }
-     ]
+    "data": [
+      {
+        "type": "STRIPE",
+        "disks": ["da1", "da2"]
+      }
+    ]
   },
   "compression": "GZIP-9",
   "sync": "STANDARD"
@@ -101,6 +103,8 @@ echo "Pool Data dibuat dengan konfigurasi STRIPE dan GZIP-9."
 ```
 
 ## Langkah 5: Buat Dataset
+
+Tambahkan dataset sesuai kebutuhan:
 
 ```bash
 # Dataset Backup
@@ -130,8 +134,10 @@ echo "Dataset VMs dibuat."
 
 ## Langkah 6: Konfigurasi Jaringan VLAN dan Bridge
 
+Tambahkan konfigurasi jaringan berikut:
+
 ```bash
-# Buat VLAN 83
+# Buat VLAN
 api_request "network/vlan" "POST" '{
   "name": "vlan83",
   "tag": 83,
@@ -139,7 +145,7 @@ api_request "network/vlan" "POST" '{
 }'
 echo "VLAN 83 dibuat."
 
-# Buat Bridge br0
+# Buat Bridge
 api_request "network/interface" "POST" '{
   "name": "br0",
   "type": "BRIDGE",
@@ -150,23 +156,27 @@ echo "Bridge br0 dibuat."
 # Set IP Address untuk br0
 api_request "network/configuration" "PUT" '{
   "interfaces": [
-     {
-        "name": "br0",
-        "ipv4_dhcp": false,
-        "ipv4_addresses": ["172.16.30.2/28"]
-     }
+    {
+      "name": "br0",
+      "ipv4_dhcp": false,
+      "ipv4_addresses": ["172.16.30.2/28"]
+    }
   ]
 }'
 echo "IP 172.16.30.2/28 diset pada br0."
 ```
 
-## Langkah 7: Buat VM
+## Langkah 7: Buat VM dengan Instalasi Otomatis
+
+### Unduh ISO Debian
 
 ```bash
-# Unduh ISO Debian
 wget -O /mnt/Data/VMs/debian.iso "https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-12.8.0-amd64-netinst.iso"
+```
 
-# Buat VM
+### Buat VM
+
+```bash
 api_request "vm" "POST" '{
   "name": "DebianVM",
   "description": "VM Debian untuk testing",
@@ -174,34 +184,60 @@ api_request "vm" "POST" '{
   "memory": 2048,
   "bootloader": "UEFI",
   "devices": [
-     {
-        "dtype": "DISK",
-        "attributes": {
-          "path": "/mnt/Data/VMs/debian.img",
-          "type": "VIRTIO",
-          "size": 50
-        }
-     },
-     {
-        "dtype": "NIC",
-        "attributes": {
-          "type": "VIRTIO",
-          "nic_attach": "br0"
-        }
-     },
-     {
-        "dtype": "CDROM",
-        "attributes": {
-          "path": "/mnt/Data/VMs/debian.iso"
-        }
-     }
+    {
+      "dtype": "DISK",
+      "attributes": {
+        "path": "/mnt/Data/VMs/debian.img",
+        "type": "VIRTIO",
+        "size": 50
+      }
+    },
+    {
+      "dtype": "NIC",
+      "attributes": {
+        "type": "VIRTIO",
+        "nic_attach": "br0"
+      }
+    },
+    {
+      "dtype": "CDROM",
+      "attributes": {
+        "path": "/mnt/Data/VMs/debian.iso"
+      }
+    }
   ]
 }'
 echo "VM Debian dibuat."
 ```
 
-## Langkah 8: Instalasi Otomatis VM
+## Langkah 8: Instalasi Otomatis VM dengan Preseed
 
-Buat konfigurasi pra-pengaturan untuk instalasi Debian minimal dengan SSH, lalu tambahkan perintah untuk menyalakan VM dan menyelesaikan instalasi otomatis.
+### Buat File Preseed
 
-Skrip di atas adalah kerangka utama untuk otomatisasi TrueNAS Scale dengan bash. Pastikan perangkat dan konfigurasi sesuai dengan lingkungan Anda. Jika Anda membutuhkan penyesuaian lebih lanjut, beri tahu saya.
+Buat file `preseed.cfg` dengan konfigurasi otomatis Debian.
+
+### Host File Preseed
+
+Host file ini menggunakan server HTTP:
+
+```bash
+python3 -m http.server 8000 --directory /mnt/Data/VMs/
+```
+
+### Integrasikan ke ISO atau Boot Parameter
+
+Tambahkan parameter preseed:
+
+```bash
+auto=true priority=critical url=http://<truenas_ip>:8000/preseed.cfg
+```
+
+### Jalankan VM
+
+```bash
+VM_ID=$(api_request "vm" "GET" | jq -r '.[] | select(.name=="DebianVM").id')
+api_request "vm/id/$VM_ID/start" "POST"
+echo "VM Debian dinyalakan."
+```
+
+Dengan skrip ini, semua langkah mulai dari konfigurasi TrueNAS Scale hingga pembuatan dan instalasi VM Debian bisa diotomatisasi sepenuhnya. Jika ada bagian yang masih perlu penyesuaian, beri tahu saya!
