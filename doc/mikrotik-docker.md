@@ -10,8 +10,7 @@ Dokumentasi ini menjelaskan langkah-langkah lengkap untuk mengonfigurasi MikroTi
 |----------------|----------------|
 | 172.16.10.0/24 | IP TrueNAS     |
 | 172.16.30.0/28 | IP VM TrueNAS  |
-| 172.16.31.0/24 | IP Container   |
-| 10.5.0.0/24    | IP Docker      |
+
 
 ---
 
@@ -22,9 +21,7 @@ Dokumentasi ini menjelaskan langkah-langkah lengkap untuk mengonfigurasi MikroTi
 #### 2.1.1 Buat Bridge di MikroTik
 ```bash
 /interface bridge
-add name=docker-10
 add name=docker-30
-add name=docker-31
 ```
 
 #### 2.1.2 Tambahkan VLAN 83 ke interface fisik MikroTik
@@ -43,8 +40,6 @@ add bridge=docker-30 interface=vlan83
 ```bash
 /ip address
 add address=172.16.30.1/28 interface=docker-30
-add address=172.16.31.1/28 interface=docker-31
-add address=10.5.0.1/24 interface=docker-10
 ```
 > Biarkan bridge docker-31 tanpa client (ethernet/vlan, biarkan kosong)
 
@@ -53,9 +48,7 @@ add address=10.5.0.1/24 interface=docker-10
 #### 2.2.1 Tambahkan Address List
 ```bash
 /ip firewall address-list
-add address=10.5.0.0/24 list=allowed-subnets
 add address=172.16.30.0/28 list=allowed-subnets
-add address=172.16.31.0/28 list=allowed-subnets
 ```
 
 #### 2.2.2 Izinkan Traffic Antar-Subnet
