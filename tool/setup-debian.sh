@@ -35,7 +35,7 @@ error_exit() {
 info "Memperbarui repositori dan menginstal alat dasar..."
 apt update && apt upgrade -y
 apt update && apt install -y \
-    curl tcpdump jq net-tools openssh-server telnet netcat traceroute nmap dnsutils iputils-ping mtr whois iftop ethtool iperf3 \
+    curl nfs-common tcpdump jq net-tools openssh-server telnet netcat traceroute nmap dnsutils iputils-ping mtr whois iftop ethtool iperf3 \
     htop iotop sysstat git build-essential vim tmux python3 python3-pip strace lsof gdb ncdu zip unzip tree \
     ca-certificates gnupg lsb-release screen || error_exit "Gagal menginstal paket dasar."
 
