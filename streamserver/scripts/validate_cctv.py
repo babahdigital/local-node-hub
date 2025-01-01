@@ -1,9 +1,20 @@
+import os
 import subprocess
+from datetime import datetime
 from utils import load_log_messages, setup_logger
 
 # Load log messages for logging
 log_messages = load_log_messages("/app/config/log_messages.json")
-logger = setup_logger("RTSP-Backup")
+logger = setup_logger("RTSP-Validation", "/mnt/Data/Syslog/cctv/cctv_status.log")
+
+def write_status_log(channel, status):
+    """
+    Menulis status kamera (Online/Offline) ke file log.
+    """
+    log_file = "/mnt/Data/Syslog/cctv/cctv_status.log"
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with open(log_file, "a") as f:
+        f.write(f"{timestamp} - Channel {channel}: {status}\n")
 
 def check_black_frames(rtsp_url):
     """
@@ -25,17 +36,16 @@ def check_black_frames(rtsp_url):
             timeout=10
         )
         if b"black_start" in result.stderr:
-            # Frame hitam terdeteksi
-            return False
+            return False  # Frame hitam terdeteksi
         return True
     except subprocess.TimeoutExpired:
-        logger.error(log_messages["backup_manager"]["validation"]["stream_invalid"].format(channel=rtsp_url))
+        logger.error(log_messages["validation"]["stream_invalid"].format(channel=rtsp_url))
         return False
     except Exception as e:
         logger.error(log_messages["general"]["unexpected_error"].format(error=str(e)))
         return False
 
-def validate_rtsp_stream(rtsp_url):
+def validate_rtsp_stream(rtsp_url, channel):
     """
     Validasi RTSP stream menggunakan ffprobe lalu memeriksa frame hitam.
     """
@@ -54,18 +64,22 @@ def validate_rtsp_stream(rtsp_url):
             timeout=5
         )
         if result.returncode == 0 and result.stdout:
-            logger.info(log_messages["backup_manager"]["validation"]["success"].format(channel=rtsp_url))
-            # Cek frame hitam
+            # Stream valid, cek frame hitam
             if not check_black_frames(rtsp_url):
-                logger.error(log_messages["backup_manager"]["validation"]["camera_down"].format(channel=rtsp_url))
+                logger.error(log_messages["validation"]["camera_down"].format(channel=rtsp_url))
+                write_status_log(channel, "Offline (Black Frames Detected)")
                 return False
+            write_status_log(channel, "Online")
             return True
         else:
-            logger.error(log_messages["backup_manager"]["validation"]["stream_invalid"].format(channel=rtsp_url))
+            logger.error(log_messages["validation"]["stream_invalid"].format(channel=rtsp_url))
+            write_status_log(channel, "Offline")
             return False
     except subprocess.TimeoutExpired:
-        logger.error(log_messages["backup_manager"]["validation"]["stream_invalid"].format(channel=rtsp_url))
+        logger.error(log_messages["validation"]["stream_invalid"].format(channel=rtsp_url))
+        write_status_log(channel, "Offline (Timeout)")
         return False
     except Exception as e:
         logger.error(log_messages["general"]["unexpected_error"].format(error=str(e)))
+        write_status_log(channel, f"Offline (Error: {str(e)})")
         return False

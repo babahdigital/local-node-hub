@@ -104,6 +104,8 @@ services:
       - stream-data:/app/streamserver
       - ./streamserver/config/nginx.conf:/etc/nginx/nginx.conf
       - /mnt/Data/Syslog/stream:/var/log/nginx
+      - ./config/log_messages.json:/app/config/log_messages.json:ro
+      - ./config/credentials.sh:/app/config/credentials.sh:ro
     working_dir: /app/streamserver
     ports:
       - "1935:1935" # RTMP

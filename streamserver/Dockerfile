@@ -1,17 +1,27 @@
 # Gunakan base image alfg/nginx-rtmp
 FROM alfg/nginx-rtmp
 
-# Install FFmpeg menggunakan apk (Alpine package manager)
-RUN apk add --no-cache ffmpeg ffmpeg bash jq
+# Install FFmpeg, Bash, jq, dan Python
+RUN apk add --no-cache ffmpeg bash jq python3 py3-pip
 
 # Set WORKDIR ke direktori aplikasi
 WORKDIR /app/streamserver
 
 # Buat direktori HLS
-RUN mkdir -p /tmp/hls && chmod -R 777 /tmp/hls
+RUN mkdir -p /app/streamserver/scripts /app/streamserver/config /tmp/hls && chmod -R 777 /tmp/hls
 
-# Salin konfigurasi nginx
-COPY config/nginx.conf /etc/nginx/nginx.conf
+# Install dependensi Python jika diperlukan
+RUN pip3 install --no-cache-dir python-dotenv
+
+# Salin konfigurasi dari folder
+COPY /config/nginx.conf /etc/nginx/nginx.conf
+COPY /scripts/ /app/streamserver/scripts/
+
+# Salin konfigurasi dari root
+COPY scripts/utils.py /app/streamserver/scripts/utils.py
+COPY . /app/streamserver
+
+RUN chmod +x /app/streamserver/entrypoint.sh
 
 # Jalankan nginx saat container dijalankan
 CMD ["nginx", "-g", "daemon off;"]
