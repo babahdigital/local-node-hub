@@ -17,7 +17,7 @@ services:
       - "5000:5000"
     networks:
       rtsp-syslog-network:
-        ipv4_address: 172.16.31.2
+        ipv4_address: 172.16.30.4
 
   syslog:
     build:
@@ -41,7 +41,7 @@ services:
       - /home/abdullah/config/log_messages.json:/app/syslog/config/log_messages.json:ro
     networks:
       rtsp-syslog-network:
-        ipv4_address: 172.16.31.3
+        ipv4_address: 172.16.30.5
 
   logrotate:
     build:
@@ -71,7 +71,7 @@ services:
       LOGS: 1
     networks:
       rtsp-syslog-network:
-        ipv4_address: 172.16.31.4
+        ipv4_address: 172.16.30.6
 
   api:
     build:
@@ -92,7 +92,7 @@ services:
       - "5001:5001"
     networks:
       rtsp-syslog-network:
-        ipv4_address: 172.16.31.5
+        ipv4_address: 172.16.30.7
 
   stream:
     build:
@@ -110,7 +110,7 @@ services:
       - "8080:8080" # HLS
     networks:
       rtsp-syslog-network:
-        ipv4_address: 172.16.31.6
+        ipv4_address: 172.16.30.8
 
 networks:
   rtsp-syslog-network:
@@ -120,8 +120,8 @@ networks:
       parent: ens3
     ipam:
       config:
-        - subnet: "172.16.31.0/28"
-          gateway: "172.16.31.1"
+        - subnet: "172.16.30.0/28"
+          gateway: "172.16.30.1"
 
 volumes:
   stream-data:
