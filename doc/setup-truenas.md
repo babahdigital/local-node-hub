@@ -2,50 +2,97 @@
 
 Skrip ini menggunakan curl untuk berinteraksi dengan API TrueNAS Scale. Pastikan Anda memiliki akses API dan token API TrueNAS. Ganti API_TOKEN, API_URL, dan parameter lain yang sesuai.
 
-## Langkah 1: Konfigurasi API Token
+## Langkah 1: Membuat API Token di TrueNAS Scale
 
-Ganti API_TOKEN dengan token API TrueNAS Anda, dan API_URL dengan URL server TrueNAS Anda.
+1. **Login ke TrueNAS Scale Web Interface:**
+    - Masukkan IP address TrueNAS Scale Anda di browser.
+    - Login dengan kredensial admin Anda.
 
-```bash
-#!/bin/bash
+2. **Navigasi ke API Keys:**
+    - Klik pada menu "Credentials" di sidebar.
+    - Pilih "API Keys".
 
-API_TOKEN="your_api_token_here"
-API_URL="https://your_truenas_url_here/api/v2.0"
+3. **Buat API Key:**
+    - Klik tombol "Add" atau "+" untuk membuat API Key baru.
+    - Beri nama API Key Anda untuk identifikasi, misalnya, AutomationKey.
+    - Klik "Save". TrueNAS akan menampilkan token API Anda.
 
-# Fungsi untuk membuat permintaan API
-api_request() {
-    local endpoint=$1
-    local method=$2
-    local data=$3
-    curl -s -k -X $method \
-        -H "Authorization: Bearer $API_TOKEN" \
-        -H "Content-Type: application/json" \
-        -d "$data" \
-        "$API_URL/$endpoint"
-}
-```
+4. **Simpan API Key:**
+    - Salin token API tersebut. Pastikan Anda menyimpannya di tempat aman, karena token ini hanya akan ditampilkan sekali.
+    - Gunakan token ini pada variabel API_TOKEN dalam skrip bash Anda.
 
-## Langkah 2: Hapus Pool Lama dan Buat Pool Baru
+## Langkah 2: Mengaktifkan API di TrueNAS (Opsional)
+
+API biasanya sudah diaktifkan secara default di TrueNAS Scale. Namun, Anda dapat memeriksa atau mengaktifkannya dengan langkah berikut:
+
+1. **Periksa Konfigurasi API:**
+    - Masuk ke menu "System Settings".
+    - Pilih "Advanced".
+    - Pastikan "API Key authentication" diaktifkan.
+
+2. **Cek Dokumentasi API TrueNAS:**
+    - Akses dokumentasi bawaan API TrueNAS dengan mengunjungi URL:
+      ```
+      https://<your_truenas_ip>/api/docs/
+      ```
+    - Di sini Anda dapat melihat endpoint, metode HTTP, dan parameter yang didukung.
+
+## Langkah 3: Uji Skrip Bash
+
+1. **Instal Dependency:**
+    - Pastikan Anda memiliki curl dan jq terinstal di sistem Anda:
+      ```bash
+      sudo apt update
+      sudo apt install curl jq -y
+      ```
+
+2. **Uji Skrip Bash:**
+    - Simpan skrip Anda sebagai file, misalnya `truenas_automation.sh`.
+    - Beri izin eksekusi pada skrip:
+      ```bash
+      chmod +x truenas_automation.sh
+      ```
+    - Jalankan skrip:
+      ```bash
+      ./truenas_automation.sh
+      ```
+
+3. **Pantau Hasil:**
+    - Periksa output di terminal untuk memastikan setiap langkah berhasil.
+    - Login ke TrueNAS dan periksa apakah perubahan seperti pembuatan pool, dataset, VLAN, bridge, dan VM berhasil diterapkan.
+
+## Tips Debugging
+
+- Tambahkan opsi verbose pada curl jika ada masalah:
+  ```bash
+  curl -v ...
+  ```
+- Periksa log API TrueNAS untuk detail lebih lanjut:
+  - Menu "System Logs" > "API" di Web Interface.
+
+Jika ada langkah tambahan yang Anda butuhkan atau konfigurasi khusus, beri tahu saya!
+
+## Langkah 4: Hapus Pool Lama dan Buat Pool Baru
 
 ```bash
 # Hapus pool lama
 POOL_NAME="Data"
 POOL_ID=$(api_request "pool" "GET" | jq -r ".[] | select(.name==\"$POOL_NAME\").id")
 if [ -n "$POOL_ID" ]; then
-    api_request "pool/id/$POOL_ID" "DELETE"
-    echo "Pool $POOL_NAME dihapus."
+     api_request "pool/id/$POOL_ID" "DELETE"
+     echo "Pool $POOL_NAME dihapus."
 fi
 
 # Buat pool baru
 api_request "pool" "POST" '{
   "name": "Data",
   "topology": {
-    "data": [
-      {
-        "type": "STRIPE",
-        "disks": ["da1", "da2"]
-      }
-    ]
+     "data": [
+        {
+          "type": "STRIPE",
+          "disks": ["da1", "da2"]
+        }
+     ]
   },
   "compression": "GZIP-9",
   "sync": "STANDARD"
@@ -53,7 +100,7 @@ api_request "pool" "POST" '{
 echo "Pool Data dibuat dengan konfigurasi STRIPE dan GZIP-9."
 ```
 
-## Langkah 3: Buat Dataset
+## Langkah 5: Buat Dataset
 
 ```bash
 # Dataset Backup
@@ -81,7 +128,7 @@ api_request "pool/dataset" "POST" '{
 echo "Dataset VMs dibuat."
 ```
 
-## Langkah 4: Konfigurasi Jaringan VLAN dan Bridge
+## Langkah 6: Konfigurasi Jaringan VLAN dan Bridge
 
 ```bash
 # Buat VLAN 83
@@ -103,17 +150,17 @@ echo "Bridge br0 dibuat."
 # Set IP Address untuk br0
 api_request "network/configuration" "PUT" '{
   "interfaces": [
-    {
-      "name": "br0",
-      "ipv4_dhcp": false,
-      "ipv4_addresses": ["172.16.30.2/28"]
-    }
+     {
+        "name": "br0",
+        "ipv4_dhcp": false,
+        "ipv4_addresses": ["172.16.30.2/28"]
+     }
   ]
 }'
 echo "IP 172.16.30.2/28 diset pada br0."
 ```
 
-## Langkah 5: Buat VM
+## Langkah 7: Buat VM
 
 ```bash
 # Unduh ISO Debian
@@ -127,33 +174,33 @@ api_request "vm" "POST" '{
   "memory": 2048,
   "bootloader": "UEFI",
   "devices": [
-    {
-      "dtype": "DISK",
-      "attributes": {
-        "path": "/mnt/Data/VMs/debian.img",
-        "type": "VIRTIO",
-        "size": 50
-      }
-    },
-    {
-      "dtype": "NIC",
-      "attributes": {
-        "type": "VIRTIO",
-        "nic_attach": "br0"
-      }
-    },
-    {
-      "dtype": "CDROM",
-      "attributes": {
-        "path": "/mnt/Data/VMs/debian.iso"
-      }
-    }
+     {
+        "dtype": "DISK",
+        "attributes": {
+          "path": "/mnt/Data/VMs/debian.img",
+          "type": "VIRTIO",
+          "size": 50
+        }
+     },
+     {
+        "dtype": "NIC",
+        "attributes": {
+          "type": "VIRTIO",
+          "nic_attach": "br0"
+        }
+     },
+     {
+        "dtype": "CDROM",
+        "attributes": {
+          "path": "/mnt/Data/VMs/debian.iso"
+        }
+     }
   ]
 }'
 echo "VM Debian dibuat."
 ```
 
-## Langkah 6: Instalasi Otomatis VM
+## Langkah 8: Instalasi Otomatis VM
 
 Buat konfigurasi pra-pengaturan untuk instalasi Debian minimal dengan SSH, lalu tambahkan perintah untuk menyalakan VM dan menyelesaikan instalasi otomatis.
 
