@@ -1,10 +1,8 @@
 # Tahap 1: Builder
 FROM alpine:3.21 AS builder
 
-# Set variabel lingkungan untuk APK mirror
 ENV APK_MIRROR=http://mirror.leaseweb.com/alpine/
 
-# Update APK mirror dan instal dependensi build
 RUN sed -i "s|http://dl-cdn.alpinelinux.org/alpine/|${APK_MIRROR}|g" /etc/apk/repositories \
     && apk update \
     && apk add --no-cache \
@@ -19,92 +17,52 @@ RUN sed -i "s|http://dl-cdn.alpinelinux.org/alpine/|${APK_MIRROR}|g" /etc/apk/re
         dcron \
         bash
 
-# Atur kemampuan untuk syslog-ng agar dapat mengikat port yang dilindungi
+# Ijinkan syslog-ng bind port <1024
 RUN setcap 'cap_net_bind_service=+ep' /usr/sbin/syslog-ng
 
-# Buat direktori kerja
 WORKDIR /app/syslog
-
-# Membuat struktur direktori
 RUN mkdir -p config logrotate crontabs var-run \
-             /mnt/Data/Syslog/default/logrotate \
-             /mnt/Data/Syslog/var-run \
-             /etc/logrotate.d/backup
+           /mnt/Data/Syslog/default/logrotate \
+           /mnt/Data/Syslog/var-run \
+           /etc/logrotate.d/backup
 
-# Salin file konfigurasi dan skrip
-COPY syslog/ /app/syslog/
-COPY config/log_messages.json /app/syslog/config/
-COPY syslog/config/generate_rotate.sh /app/syslog/
-COPY syslog/config/syslog-ng.conf /app/syslog/config/
-
-# Berikan izin eksekusi pada skrip
-RUN chmod +x /app/syslog/entrypoint.sh /app/syslog/generate_rotate.sh
+COPY ./ /app/syslog/
+RUN chmod +x /app/syslog/entrypoint.sh /app/syslog/config/generate_rotate.sh
 
 # Tahap 2: Final
 FROM alpine:3.21
-
-# Set variabel lingkungan untuk APK mirror
 ENV APK_MIRROR=http://mirror.leaseweb.com/alpine/
 
-# Update APK mirror dan instal dependensi runtime
 RUN sed -i "s|http://dl-cdn.alpinelinux.org/alpine/|${APK_MIRROR}|g" /etc/apk/repositories \
     && apk update \
     && apk add --no-cache \
+        gcc \
+        musl-dev \
+        libcap \
         syslog-ng \
         syslog-ng-json \
-        libcap \
         logrotate \
         docker-cli \
         jq \
         dcron \
-        bash \
-        sudo
+        bash
 
-# Buat pengguna non-root bernama 'abdullah'
-RUN adduser -D -s /bin/bash abdullah \
-    && echo "abdullah ALL=(ALL) NOPASSWD: /usr/sbin/crond" >> /etc/sudoers
+# Pastikan user abdullah ada (buat hanya jika belum ada)
+RUN id -u abdullah &>/dev/null || adduser -D -s /bin/bash abdullah
 
-# Membuat direktori yang diperlukan
-RUN mkdir -p /app/syslog/config \
-             /app/syslog/logrotate \
-             /app/syslog/crontabs \
-             /mnt/Data/Syslog/default/logrotate \
-             /mnt/Data/Syslog/var-run \
-             /etc/logrotate.d/backup \
-    && chown -R abdullah:abdullah /mnt/Data/Syslog/var-run
+# Pastikan crond dapat dieksekusi user biasa
+RUN chmod 755 /usr/sbin/crond
 
-# Salin file dan konfigurasi dari tahap builder
-COPY --from=builder /usr/sbin/syslog-ng /usr/sbin/syslog-ng
+# Tambahkan folder /run dan var-run agar user abdullah dapat menulis
+RUN mkdir -p /run /app/syslog/var-run /mnt/Data/Syslog/var-run \
+ && chown -R root:root /etc/logrotate.d \
+ && chown -R abdullah:abdullah /run /app/syslog/var-run /mnt/Data/Syslog/var-run \
+ && chmod 755 /etc/logrotate.d
+
 COPY --from=builder /app/syslog /app/syslog
-COPY --from=builder /app/syslog/config /app/syslog/config
+RUN chown -R abdullah:abdullah /app/syslog
 
-# Salin crond ke lokasi non-root
-RUN cp /usr/sbin/crond /app/syslog/crond \
-    && chmod +x /app/syslog/crond \
-    && chown abdullah:abdullah /app/syslog/crond
-
-# Berikan izin eksekusi dan atur kepemilikan file
-RUN chmod +x /app/syslog/entrypoint.sh /app/syslog/generate_rotate.sh \
-    && chown -R abdullah:abdullah /app /mnt/Data/Syslog /etc/logrotate.d
-
-# Atur kemampuan untuk syslog-ng agar dapat mengikat port yang dilindungi
-RUN setcap 'cap_net_bind_service=+ep' /usr/sbin/syslog-ng
-
-# Debug Path dan Izin
-RUN ls -l /usr/sbin/crond /app/syslog/crond
-
-# Buka port untuk syslog
-EXPOSE 1514/udp 1514/tcp
-
-# Gunakan pengguna non-root
 USER abdullah
-
-# Definisikan direktori kerja
 WORKDIR /app/syslog
 
-# Definisikan entrypoint
 ENTRYPOINT ["/app/syslog/entrypoint.sh"]
-
-# Tambahkan HEALTHCHECK
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD pgrep syslog-ng || exit 1

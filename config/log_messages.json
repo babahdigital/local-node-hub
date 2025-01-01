@@ -111,7 +111,6 @@
     "livestream_healthy": "Livestream dalam kondisi sehat.",
     "livestream_unhealthy": "Livestream tidak sehat. Status kode: {status_code}.",
     "livestream_error": "Terjadi kesalahan saat memeriksa livestream: {error}.",
-  
     "backend_report": {
       "success": "Berhasil mengirim status health check ke backend: {payload}.",
       "failed": "Gagal mengirim status ke backend. HTTP {status}: {error}.",
@@ -232,18 +231,11 @@
     "check_logrotate_config": "Memeriksa keberadaan file konfigurasi logrotate.",
     "config_found": "File konfigurasi logrotate sudah ada.",
     "removing_existing_symlink": "Menghapus symlink logrotate yang sudah ada.",
-    "symlink_removed": "Symlink logrotate dihapus."
+    "symlink_removed": "Symlink logrotate dihapus.",
+    "start_cron_service": "Memulai layanan cron."
   },
   "proxy.validation": {
     "files_valid": "Validasi file konfigurasi Nginx.",
     "file_missing": "File konfigurasi tidak ditemukan: {file}. Pastikan file tersedia dan dapat diakses."
-  },
-  "proxy.permissions.permissions_set": "Izin telah disetel.",
-  "proxy.validation.files_valid": "Semua file valid.",
-  "proxy.validation.env_valid": "Semua variabel lingkungan valid.",
-  "proxy.config.generate_main": "Menghasilkan konfigurasi utama Nginx.",
-  "proxy.config.generate_rtsp": "Menghasilkan konfigurasi RTSP.",
-  "proxy.config.syntax_failed": "Validasi sintaks gagal.",
-  "proxy.runtime.starting": "Memulai Nginx...",
-  "proxy.runtime.started": "Nginx berjalan."
+  }
 }
