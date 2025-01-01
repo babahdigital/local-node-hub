@@ -18,8 +18,8 @@ COPY /config/nginx.conf /etc/nginx/nginx.conf
 COPY /scripts/ /app/streamserver/scripts/
 
 # Salin konfigurasi dari root
-COPY scripts/utils.py /app/streamserver/scripts/utils.py
-COPY . /app/streamserver
+COPY ./scripts/utils.py /app/streamserver/scripts/utils.py
+COPY ./ /app/streamserver
 
 RUN chmod +x /app/streamserver/entrypoint.sh
 
