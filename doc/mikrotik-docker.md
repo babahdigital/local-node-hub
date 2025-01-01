@@ -9,7 +9,7 @@ Dokumentasi ini menjelaskan langkah-langkah lengkap untuk mengonfigurasi MikroTi
 | Subnet         | Deskripsi      |
 |----------------|----------------|
 | 172.16.10.0/24 | IP TrueNAS     |
-| 172.16.30.0/28 | IP VM TrueNAS  |
+| 172.16.30.0/28 | IP VM & Docker  |
 
 
 ---
