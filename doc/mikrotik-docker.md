@@ -32,6 +32,8 @@ Dokumentasi ini memberikan panduan langkah demi langkah untuk mengintegrasikan M
 
 ### 2.1. Pengaturan VLAN
 
+VLAN (Virtual Local Area Network) adalah teknologi yang memungkinkan segmentasi jaringan secara logis dalam satu perangkat fisik. Tujuannya adalah untuk memisahkan lalu lintas jaringan untuk keamanan dan efisiensi.
+
 #### Buat Bridge
 
 ```bash
@@ -60,6 +62,13 @@ add bridge=docker-30 interface=vlan83
 add address=172.16.30.1/28 interface=docker-30
 ```
 
+#### Validasi Konfigurasi
+
+```bash
+/interface bridge print
+/interface vlan print
+```
+
 ### 2.2. Tambahkan Aturan Firewall
 
 #### Tambahkan Address List
@@ -78,7 +87,22 @@ add chain=input action=accept src-address-list=allowed-subnets
 add chain=output action=accept dst-address-list=allowed-subnets
 ```
 
+#### Cegah Akses dari Subnet Lain
+
+```bash
+/ip firewall filter
+add chain=forward action=drop src-address=!172.16.30.0/28
+```
+
+#### Validasi Konfigurasi
+
+```bash
+/ip firewall filter print
+```
+
 ## 3. Konfigurasi IP Statis di TrueNAS Scale
+
+Bridge penting untuk menghubungkan beberapa jaringan dan gateway berfungsi sebagai pintu gerbang ke jaringan lain.
 
 1. Buka Web Interface TrueNAS Scale.
 2. Navigasi ke Network > Interfaces.
@@ -88,6 +112,7 @@ add chain=output action=accept dst-address-list=allowed-subnets
      - Gateway: 172.16.30.1
      - Interface: VLAN 83
 4. Simpan dan terapkan perubahan.
+5. Verifikasi pengaturan dengan perintah `ping` atau `traceroute`.
 
 ## 4. Membuat dan Mengonfigurasi VM dengan OS Linux
 
@@ -115,14 +140,14 @@ add chain=output action=accept dst-address-list=allowed-subnets
 2. Aktifkan IP Forwarding:
 
 ```bash
-echo 1 > /proc/sys/net/ipv4/ip_forward
-sudo nano /etc/sysctl.conf
+echo "net.ipv4.ip_forward=1" | sudo tee -a /etc/sysctl.conf
+sudo sysctl -p
 ```
 
-Tambahkan:
+3. Verifikasi IP statis setelah konfigurasi:
 
-```ini
-net.ipv4.ip_forward = 1
+```bash
+ip addr
 ```
 
 ## 5. Konfigurasi Jaringan Docker
@@ -174,6 +199,12 @@ Jalankan Kontainer:
 docker run -d --net=macvlan_net --ip=172.16.30.8 --name stream-server nginx
 ```
 
+#### Validasi Konfigurasi
+
+```bash
+docker network inspect macvlan_net
+```
+
 ### 5.3. Konfigurasi di `/etc/network/interfaces`
 
 Edit file:
@@ -207,6 +238,12 @@ Backup konfigurasi MikroTik:
 /export file=mikrotik-config-backup
 ```
 
+Simpan file konfigurasi ke perangkat lokal:
+
+```bash
+/tool fetch address=<ftp_server_ip> src-path=mikrotik-config-backup.rsc user=<username> password=<password>
+```
+
 ## 7. Referensi IP dalam Subnet
 
 | IP Address      | Deskripsi                |
@@ -214,7 +251,7 @@ Backup konfigurasi MikroTik:
 | 172.16.30.1     | Gateway                  |
 | 172.16.30.2     | TrueNAS                  |
 | 172.16.30.3     | VM Host                  |
-| 172.16.30.14    | IP Macvlan pada Host Docker |
+| 172.16.30.4-14  | IP Macvlan Docker Host   |
 
 ## 8. Catatan Tambahan
 
@@ -232,5 +269,17 @@ sudo tcpdump -i macvlan0
 ```bash
 /log print where message~"Docker"
 ```
+
+### Troubleshooting
+
+#### Tidak bisa ping antar subnet
+
+1. Periksa aturan firewall di MikroTik.
+2. Pastikan konfigurasi VLAN dan bridge sudah benar.
+
+#### Docker container tidak dapat diakses dari jaringan lain
+
+1. Verifikasi konfigurasi jaringan Docker.
+2. Pastikan IP forwarding diaktifkan pada host.
 
 Dokumentasi ini dirancang untuk memastikan integrasi sistem berjalan lancar dan dapat disesuaikan dengan kebutuhan spesifik proyek Anda. Pastikan setiap langkah diuji sebelum implementasi penuh di lingkungan produksi.
