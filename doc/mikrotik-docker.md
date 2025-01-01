@@ -75,16 +75,23 @@ add address=172.16.30.1/28 interface=docker-30
 
 ```bash
 /ip firewall address-list
-add address=172.16.30.0/28 list=allowed-subnets
+add address=172.16.30.0/28 list=docker
 ```
 
 #### Izinkan Traffic Antar-Subnet
 
 ```bash
 /ip firewall filter
-add chain=forward action=accept src-address-list=allowed-subnets
-add chain=input action=accept src-address-list=allowed-subnets
-add chain=output action=accept dst-address-list=allowed-subnets
+add chain=input action=accept protocol=icmp comment="Allow ICMP (Ping)"
+add chain=input action=drop comment="Drop all other input traffic"
+
+/ip firewall filter
+add chain=forward action=accept src-address-list=docker dst-address-list=docker comment="Allow traffic between Docker subnets"
+add chain=forward action=drop comment="Drop other forward traffic"
+
+/ip firewall filter
+add chain=output action=accept src-address-list=docker comment="Allow output traffic to Docker subnets"
+add chain=output action=drop comment="Drop all other output traffic"
 ```
 
 #### Cegah Akses dari Subnet Lain
