@@ -1,170 +1,195 @@
-# Dokumentasi Pengaturan Macvlan di Docker
+# Panduan Lengkap Konfigurasi Jaringan MikroTik, TrueNAS, VM, dan Docker dengan Macvlan
 
-## 1. Apa Itu Macvlan?
-Macvlan memungkinkan kontainer Docker untuk mendapatkan IP langsung dari subnet jaringan fisik Anda. Dengan Macvlan, setiap kontainer bertindak seolah-olah seperti perangkat fisik di jaringan, dengan IP unik yang diberikan.
+Dokumentasi ini memberikan langkah-langkah konfigurasi dari awal hingga akhir untuk memungkinkan komunikasi antara MikroTik, TrueNAS, Virtual Machine (VM), dan Docker melalui VLAN, IP routing, dan Macvlan.
 
-## 2. Kebutuhan Awal
-Sebelum mulai, pastikan:
+## Daftar Isi
+1. [Alokasi IP pada Proyek](#alokasi-ip-pada-proyek)
+2. [Konfigurasi Jaringan MikroTik](#konfigurasi-jaringan-mikrotik)
+    1. [Pengaturan VLAN di MikroTik](#pengaturan-vlan-di-mikrotik)
+    2. [Tambahkan Aturan Firewall](#tambahkan-aturan-firewall)
+3. [Konfigurasi IP Statis di TrueNAS Scale](#konfigurasi-ip-statis-di-truenas-scale)
+4. [Membuat dan Mengonfigurasi VM dengan OS Linux](#membuat-dan-mengonfigurasi-vm-dengan-os-linux)
+    1. [Membuat VM di TrueNAS Scale](#membuat-vm-di-truenas-scale)
+5. [Konfigurasi di VM](#konfigurasi-di-vm)
+6. [Konfigurasi Jaringan Docker](#konfigurasi-jaringan-docker)
+7. [Konfigurasi Macvlan di Docker](#konfigurasi-macvlan-di-docker)
+    1. [Membuat Interface Macvlan Secara Manual](#membuat-interface-macvlan-secara-manual)
+    2. [Membuat Jaringan Macvlan di Docker](#membuat-jaringan-macvlan-di-docker)
+8. [Backup Konfigurasi MikroTik](#backup-konfigurasi-mikrotik)
+9. [Catatan Tambahan](#catatan-tambahan)
+10. [Referensi IP dalam Subnet](#referensi-ip-dalam-subnet)
 
-- Anda memiliki akses ke jaringan fisik dengan informasi berikut:
-    - Subnet: `172.16.30.0/28`
-    - Gateway: `172.16.30.1`
-    - Host Docker: `172.16.30.3`
-    - IP untuk Macvlan pada Host: `172.16.30.14`
-- Docker sudah terinstal di sistem Anda.
+## 1. Alokasi IP pada Proyek
 
-## 3. Membuat Macvlan Network
+Berikut adalah alokasi IP yang digunakan dalam proyek ini:
 
-### 3.1. Buat Macvlan Secara Manual
-Buat interface macvlan di host:
+| Subnet         | Deskripsi              |
+|----------------|------------------------|
+| 172.16.10.0/24 | IP untuk TrueNAS       |
+| 172.16.30.0/28 | IP untuk VM dan Docker |
+| 172.16.30.0/28 | Jaringan Docker Bridge |
+| 172.16.30.0/28 | Jaringan Macvlan Docker|
 
+## 2. Konfigurasi Jaringan MikroTik
+
+### 2.1. Pengaturan VLAN di MikroTik
+
+Buat Bridge di MikroTik:
 ```bash
-sudo ip link add macvlan0 link ens3 type macvlan mode bridge
+/interface bridge
+add name=docker-30
 ```
 
-Berikan IP pada interface:
-
+Tambahkan VLAN 83 ke Interface Fisik:
 ```bash
-sudo ip addr add 172.16.30.14/28 dev macvlan0
+/interface vlan
+add name=vlan83 interface=docker-30 vlan-id=83
 ```
 
-Aktifkan interface:
-
+Tambahkan VLAN 83 ke Bridge:
 ```bash
-sudo ip link set macvlan0 up
+/interface bridge port
+add bridge=docker-30 interface=vlan83
 ```
 
-Verifikasi interface:
-
+Berikan IP pada Bridge:
 ```bash
-ip addr show macvlan0
+/ip address
+add address=172.16.30.1/28 interface=docker-30
 ```
+Catatan: Jangan tambahkan client langsung ke bridge ini (biarkan kosong).
 
-Anda akan melihat `macvlan0` dengan IP `172.16.30.14`.
+### 2.2. Tambahkan Aturan Firewall
 
-### 3.2. Membuat Macvlan di Docker
-Buat jaringan Macvlan di Docker:
-
+Tambahkan Address List:
 ```bash
-docker network create \
-        --driver macvlan \
-        --subnet=172.16.30.0/28 \
-        --gateway=172.16.30.1 \
-        -o parent=macvlan0 macvlan_net
+/ip firewall address-list
+add address=172.16.30.0/28 list=allowed-subnets
 ```
 
-Verifikasi jaringan:
-
+Izinkan Traffic Antar-Subnet:
 ```bash
-docker network ls
+/ip firewall filter
+add chain=forward action=accept src-address-list=allowed-subnets
+add chain=input action=accept src-address-list=allowed-subnets
+add chain=output action=accept dst-address-list=allowed-subnets
 ```
 
-Anda akan melihat jaringan `macvlan_net` yang baru saja dibuat.
+## 3. Konfigurasi IP Statis di TrueNAS Scale
 
-## 4. Menjalankan Kontainer di Macvlan
-Jalankan kontainer dengan jaringan `macvlan_net`:
+Masuk ke Antarmuka Web TrueNAS Scale. Tambahkan IP Statis pada Bridge:
+- IP Address: 172.16.30.2/28
+- Interface: vlan83
 
+Simpan dan Terapkan Perubahan.
+
+## 4. Membuat dan Mengonfigurasi VM dengan OS Linux
+
+### 4.1. Membuat VM di TrueNAS Scale
+
+Konfigurasi VM:
+- CPU: 4 vCPU
+- RAM: 8 GB
+- HDD: Virtio 50 GB
+- IP: 172.16.30.3/28
+
+Instal Debian pada VM:
+- Konfigurasi jaringan:
+  - IP Statis: 172.16.30.3
+  - Gateway: 172.16.30.1
+  - DNS: 8.8.8.8
+
+## 5. Konfigurasi di VM
+
+Aktifkan IP Forwarding:
 ```bash
-docker run -d --net=macvlan_net --ip=172.16.30.8 --name stream-server nginx
+echo 1 > /proc/sys/net/ipv4/ip_forward
 ```
 
-Verifikasi kontainer:
-
+Jadikan IP Forwarding Permanen:
 ```bash
-docker ps
+sudo nano /etc/sysctl.conf
+net.ipv4.ip_forward = 1
+sudo sysctl -p
 ```
 
-Pastikan kontainer `stream-server` sedang berjalan.
+## 6. Konfigurasi Jaringan Docker
 
-Cek IP kontainer:
-
-```bash
-docker inspect stream-server | grep IPAddress
-```
-
-## 5. Pengujian
-Ping dari Host ke Kontainer: Pastikan Anda menggunakan interface `macvlan0`:
-
-```bash
-ping -I macvlan0 172.16.30.8
-```
-
-Ping dari Kontainer ke Gateway: Masuk ke dalam kontainer dan uji konektivitas ke gateway:
-
-```bash
-docker exec -it stream-server /bin/bash
-ping 172.16.30.1
-```
-
-Akses Layanan Kontainer: Jika kontainer menjalankan layanan seperti HTTP, coba akses IP kontainer:
-
-```bash
-curl http://172.16.30.8
-```
-
-## 6. Konfigurasi Permanen
-Agar pengaturan tetap ada setelah reboot, ikuti langkah berikut:
-
-### 6.1. Konfigurasi Macvlan di File Jaringan
-Edit file `/etc/network/interfaces` dan tambahkan konfigurasi berikut:
-
-```plaintext
-# Macvlan network interface
-auto macvlan0
-iface macvlan0 inet static
-        address 172.16.30.14/28
-        pre-up ip link add macvlan0 link ens3 type macvlan mode bridge
-        post-down ip link del macvlan0
-```
-
-Restart jaringan:
-
-```bash
-sudo systemctl restart networking
-```
-
-### 6.2. Konfigurasi Jaringan Docker
-Tambahkan konfigurasi berikut ke file `/etc/docker/daemon.json`:
-
+Edit File `/etc/docker/daemon.json`:
 ```json
 {
-        "default-address-pools": [
-                {
-                        "base": "172.16.30.0/16",
-                        "size": 28
-                }
-        ]
+     "default-address-pools": [
+          {
+                "base": "172.16.30.0/28",
+                "size": 28
+          }
+     ]
 }
 ```
 
 Restart Docker:
-
 ```bash
 sudo systemctl restart docker
 ```
 
-## 7. Troubleshooting
+## 7. Konfigurasi Macvlan di Docker
 
-### 7.1. Masalah Koneksi
-- Pastikan IP kontainer unik dan tidak konflik dengan perangkat lain di subnet.
-- Gunakan `tcpdump` untuk memeriksa lalu lintas di `macvlan0`:
+### 7.1. Membuat Interface Macvlan Secara Manual
 
+Buat Macvlan:
+```bash
+sudo ip link add macvlan0 link ens3 type macvlan mode bridge
+```
+
+Berikan IP:
+```bash
+sudo ip addr add 172.16.30.14/28 dev macvlan0
+```
+
+Aktifkan Interface:
+```bash
+sudo ip link set macvlan0 up
+```
+
+### 7.2. Membuat Jaringan Macvlan di Docker
+
+Buat Jaringan:
+```bash
+docker network create \
+     --driver macvlan \
+     --subnet=172.16.30.0/28 \
+     --gateway=172.16.30.1 \
+     -o parent=macvlan0 macvlan_net
+```
+
+Jalankan Kontainer:
+```bash
+docker run -d --net=macvlan_net --ip=172.16.30.8 --name stream-server nginx
+```
+
+## 8. Backup Konfigurasi MikroTik
+
+Backup Konfigurasi MikroTik:
+```bash
+/export file=mikrotik-config-backup
+```
+
+## 9. Catatan Tambahan
+
+Gunakan tcpdump untuk memonitor trafik:
 ```bash
 sudo tcpdump -i macvlan0
 ```
+Pastikan setiap subnet dapat berkomunikasi dengan baik.
 
-### 7.2. Masalah Firewall
-Pastikan firewall tidak memblokir subnet `172.16.30.0/28` atau protokol ICMP (ping):
+## 10. Referensi IP dalam Subnet
 
-```bash
-sudo iptables -L -v -n
-```
+| IP Address     | Deskripsi              |
+|----------------|------------------------|
+| 172.16.30.1    | Gateway                |
+| 172.16.30.2    | TrueNAS                |
+| 172.16.30.3    | Host VM                |
+| 172.16.30.8    | Kontainer (stream-server)|
+| 172.16.30.14   | IP Macvlan pada Host Docker|
 
-## 8. Referensi IP dalam Subnet
-Dalam subnet `172.16.30.0/28`, IP yang tersedia adalah:
-
-- `172.16.30.1`: Gateway
-- `172.16.30.2`: Perangkat lain (misalnya, NAS)
-- `172.16.30.3`: Host Docker
-- `172.16.30.8`: Kontainer 1
-- `172.16.30.14`: IP Macvlan pada Host
+Dokumentasi ini dirancang untuk mempermudah pengaturan jaringan kompleks. Pastikan setiap langkah diikuti dengan hati-hati untuk menghindari konflik konfigurasi.
