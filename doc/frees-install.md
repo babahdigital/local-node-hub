@@ -1,4 +1,4 @@
-# Tutorial Lengkap Penggunaan Skrip fresh-install.sh
+# Tutorial Lengkap Penggunaan Skrip ./tool/setup-debian.sh
 
 Skrip ini digunakan untuk menginstal Docker, Docker Compose, serta alat jaringan dan konfigurasi tambahan pada sistem Debian. Berikut adalah langkah-langkah lengkap penggunaan skrip, termasuk hasil akhir yang diharapkan untuk dokumentasi.
 
@@ -19,7 +19,7 @@ sudo apt update && sudo apt upgrade -y
 ### 2.1. Buat File Skrip
 Buka terminal dan buat file baru untuk menyimpan skrip:
 ```bash
-nano ./tool/fresh-install.sh
+nano ./tool/setup-debian.sh
 ```
 Salin isi skrip berikut ke editor (ini adalah versi lengkap yang Anda berikan atau modifikasi). Simpan dan keluar:
 - Tekan `Ctrl + O`, lalu `Enter` untuk menyimpan.
@@ -28,13 +28,13 @@ Salin isi skrip berikut ke editor (ini adalah versi lengkap yang Anda berikan at
 ### 2.2. Berikan Izin Eksekusi pada Skrip
 Agar skrip dapat dijalankan, tambahkan izin eksekusi:
 ```bash
-chmod +x ./tool/fresh-install.sh
+chmod +x ./tool/setup-debian.sh
 ```
 
 ### 2.3. Menjalankan Skrip
 Jalankan skrip menggunakan sudo untuk memastikan semua langkah berjalan dengan hak akses root:
 ```bash
-sudo ./tool/fresh-install.sh
+sudo ./tool/setup-debian.sh
 ```
 
 ## 3. Apa yang Dilakukan Skrip
@@ -174,7 +174,7 @@ sysctl net.ipv4.ip_forward
 Output harus 1.
 
 ## Kesimpulan
-Skrip ./tool/fresh-install.sh mengotomatiskan proses instalasi Docker, Docker Compose, dan konfigurasi jaringan pada sistem Debian. Dengan dokumentasi ini, Anda dapat dengan mudah mengulang langkah-langkah instalasi dan memverifikasi hasilnya.
+Skrip ./tool/setup-debian.sh mengotomatiskan proses instalasi Docker, Docker Compose, dan konfigurasi jaringan pada sistem Debian. Dengan dokumentasi ini, Anda dapat dengan mudah mengulang langkah-langkah instalasi dan memverifikasi hasilnya.
 
 ## Menentukan Versi Docker
 
@@ -204,7 +204,7 @@ Pilih versi yang Anda inginkan dari daftar output tersebut dan masukkan ke dalam
 ### Langkah-Langkah untuk Menggunakan
 1. Buka Skrip untuk Diedit:
     ```bash
-    nano ./tool/fresh-install.sh
+    nano ./tool/setup-debian.sh
     ```
 2. Temukan dan Ubah Baris DOCKER_VERSION:
     Baris tersebut biasanya ada di bagian awal skrip:
@@ -220,7 +220,7 @@ Pilih versi yang Anda inginkan dari daftar output tersebut dan masukkan ke dalam
     - Tekan `Ctrl + X` untuk keluar dari editor.
 4. Jalankan Skrip: Setelah mengubah versi Docker, jalankan skrip seperti biasa:
     ```bash
-    sudo ././tool/fresh-install.sh
+    sudo ././tool/setup-debian.sh
     ```
 
 ### Apa yang Terjadi di Skrip
