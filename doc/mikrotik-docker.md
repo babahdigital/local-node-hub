@@ -18,6 +18,7 @@ Dokumentasi ini memberikan panduan langkah demi langkah untuk mengintegrasikan M
 6. [Backup Konfigurasi MikroTik](#backup-konfigurasi-mikrotik)
 7. [Referensi IP dalam Subnet](#referensi-ip-dalam-subnet)
 8. [Catatan Tambahan](#catatan-tambahan)
+9. [Script Automasi Setup MikroTik](#script-automasi-setup-mikrotik)
 
 ## 1. Alokasi IP pada Proyek
 
@@ -291,7 +292,124 @@ sudo tcpdump -i macvlan0
 
 Dokumentasi ini dirancang untuk memastikan integrasi sistem berjalan lancar dan dapat disesuaikan dengan kebutuhan spesifik proyek Anda. Pastikan setiap langkah diuji sebelum implementasi penuh di lingkungan produksi.
 
-## Script Automasi Setup MikroTik
+## 9. Script Automasi Setup MikroTik
+
+### Langkah 1: Persiapan
+
+#### Backup Konfigurasi MikroTik
+
+Sebelum menjalankan script, lakukan backup konfigurasi MikroTik untuk berjaga-jaga jika terjadi kesalahan:
+
+```bash
+/export file=backup-config
+```
+
+#### Periksa Parameter
+
+Pastikan parameter dalam script seperti:
+- Nama bridge (docker-30)
+- VLAN ID (83)
+- Alamat IP (172.16.30.1/28)
+
+sudah sesuai dengan topologi jaringan Anda.
+
+#### Akses MikroTik
+
+Anda dapat mengakses MikroTik melalui:
+- Winbox: Aplikasi GUI.
+- Terminal: Akses CLI melalui SSH atau Winbox.
+
+### Langkah 2: Menjalankan Script
+
+#### Salin Script
+
+Salin semua baris script dari editor teks Anda.
+
+#### Buka Terminal MikroTik
+
+Jika menggunakan Winbox:
+- Masuk ke tab New Terminal.
+
+Jika menggunakan SSH:
+- Login ke MikroTik dengan akun administrator.
+
+#### Paste Script
+
+Tempelkan script ke terminal MikroTik, kemudian tekan Enter. Script akan dieksekusi baris demi baris.
+
+### Langkah 3: Validasi Konfigurasi
+
+Setelah script selesai dijalankan, validasi konfigurasi menggunakan perintah berikut:
+
+#### Periksa Bridge dan VLAN
+
+```bash
+/interface bridge print
+/interface vlan print
+```
+
+#### Periksa Alamat IP
+
+```bash
+/ip address print
+```
+
+#### Periksa Aturan Firewall
+
+```bash
+/ip firewall filter print
+/ip firewall address-list print
+```
+
+#### Periksa Log
+
+Jika ada pesan kesalahan, periksa log MikroTik:
+
+```bash
+/log print
+```
+
+### Langkah 4: Uji Fungsi
+
+#### Ping Gateway
+
+Dari perangkat di VLAN 83, coba ping alamat gateway 172.16.30.1 untuk memastikan konektivitas.
+
+#### Periksa Trafik Antar Subnet
+
+Pastikan trafik antar subnet yang menggunakan address-list=docker diizinkan.
+
+#### Verifikasi Firewall
+
+Pastikan trafik selain yang diizinkan pada aturan firewall terblokir.
+
+### Langkah 5: Simpan Konfigurasi
+
+Jika semua berjalan dengan baik, simpan konfigurasi:
+
+```bash
+/system backup save name=konfigurasi-docker
+```
+
+### Tips
+
+#### Debugging
+
+Jika terjadi masalah, gunakan logging tambahan untuk memeriksa perilaku firewall:
+
+```bash
+/ip firewall filter add chain=forward action=log log-prefix="DEBUG_FORWARD"
+```
+
+#### Restore Konfigurasi
+
+Jika perlu mengembalikan konfigurasi sebelumnya:
+
+```bash
+/import file-name=backup-config.rsc
+```
+
+### Script Automasi Setup MikroTik
 
 ```plaintext
 # -----------------------------------------------------------------------------
