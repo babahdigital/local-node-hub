@@ -1,245 +1,208 @@
-# Tutorial Lengkap Penggunaan Skrip ./tool/setup-debian.sh
+# Dokumentasi Lengkap Skrip Setup Debian dengan Docker, Docker Compose, dan NFS
 
-Skrip ini digunakan untuk menginstal Docker, Docker Compose, serta alat jaringan dan konfigurasi tambahan pada sistem Debian. Berikut adalah langkah-langkah lengkap penggunaan skrip, termasuk hasil akhir yang diharapkan untuk dokumentasi.
+## Pendahuluan
+Skrip ini digunakan untuk mengotomatiskan instalasi dan konfigurasi Docker, Docker Compose, pengaturan jaringan, SSH, iptables, serta integrasi NFS pada sistem berbasis Debian. Skrip ini dirancang untuk memudahkan proses instalasi dengan penanganan kesalahan otomatis, fleksibilitas versi perangkat lunak, dan kompatibilitas yang luas.
 
-## 1. Persiapan Awal
+## Bagian 1: Instalasi Docker dan Docker Compose
 
-### 1.1. Pastikan Sistem Sudah Siap
-- Sistem Anda harus berbasis Debian atau turunannya (seperti Ubuntu).
-- Anda memerlukan akses root atau pengguna dengan hak administratif (sudo).
+### Fitur Utama Skrip Docker
 
-### 1.2. Update Sistem
-Sebelum menjalankan skrip, perbarui sistem Anda:
-```bash
-sudo apt update && sudo apt upgrade -y
-```
+#### Instalasi Paket Dasar
+Menginstal alat jaringan dan sistem seperti curl, nfs-common, vim, tmux, htop, dan lainnya.
 
-## 2. Membuat dan Menjalankan Skrip
+#### Repository Docker
+Menambahkan repository resmi Docker untuk memastikan instalasi versi terbaru atau spesifik.
 
-### 2.1. Buat File Skrip
-Buka terminal dan buat file baru untuk menyimpan skrip:
-```bash
-nano ./tool/setup-debian.sh
-```
-Salin isi skrip berikut ke editor (ini adalah versi lengkap yang Anda berikan atau modifikasi). Simpan dan keluar:
-- Tekan `Ctrl + O`, lalu `Enter` untuk menyimpan.
-- Tekan `Ctrl + X` untuk keluar dari editor.
+#### Instalasi Docker
+Menginstal Docker Engine, CLI, dan runtime containerd.
 
-### 2.2. Berikan Izin Eksekusi pada Skrip
-Agar skrip dapat dijalankan, tambahkan izin eksekusi:
-```bash
-chmod +x ./tool/setup-debian.sh
-```
+#### Instalasi Docker Compose
+Mendukung versi v2 sebagai plugin CLI Docker.
 
-### 2.3. Menjalankan Skrip
-Jalankan skrip menggunakan sudo untuk memastikan semua langkah berjalan dengan hak akses root:
-```bash
-sudo ./tool/setup-debian.sh
-```
+#### Konfigurasi Docker
+Membuat file `daemon.json` untuk pengaturan default address pools, DNS, dan buildkit.
 
-## 3. Apa yang Dilakukan Skrip
-Skrip ini secara otomatis melakukan langkah-langkah berikut:
-- **Memperbarui Sistem dan Menginstal Alat Dasar**: Alat seperti curl, tcpdump, net-tools, vim, git, dan lainnya akan diinstal.
-- **Menambahkan Repository Docker**: Repository resmi Docker ditambahkan untuk memastikan versi terbaru atau spesifik dapat diinstal.
-- **Menginstal Docker**: Docker Engine, CLI, dan containerd diinstal.
-- **Menginstal Docker Compose**: Versi Docker Compose yang Anda tentukan akan diinstal sebagai plugin Docker.
-- **Konfigurasi Docker**: File konfigurasi daemon.json akan dibuat dengan pengaturan DNS, default-address-pools, dan fitur buildkit.
-- **Mengonfigurasi Jaringan**: IP statis dan interface macvlan ditambahkan ke file `/etc/network/interfaces`. Forwarding IP diaktifkan untuk mendukung routing.
-- **Mengonfigurasi SSH**: Login root diaktifkan, autentikasi password diaktifkan, dan port diubah ke 1983.
-- **Konfigurasi Iptables**: Aturan iptables direset, dan kebijakan default diatur ke ACCEPT. Aturan iptables disimpan untuk persisten.
-- **Menambahkan Pengguna ke Grup Docker**: Pengguna saat ini ditambahkan ke grup docker untuk memungkinkan penggunaan Docker tanpa sudo.
-- **Reboot Otomatis**: Sistem akan reboot untuk menerapkan semua konfigurasi.
+### Langkah-Langkah Penggunaan Skrip
 
-## 4. Verifikasi Setelah Reboot
+1. **Menyiapkan Skrip**
+    - Buat direktori dan file skrip:
+      ```bash
+      mkdir -p ./tool
+      nano ./tool/setup-debian.sh
+      ```
+    - Salin dan tempelkan isi skrip lengkap ke file tersebut, simpan (Ctrl + O, Enter), lalu keluar (Ctrl + X).
 
-### 4.1. Cek Versi Docker
-Pastikan Docker terinstal dengan benar:
-```bash
-docker --version
-```
-Output yang Diharapkan:
-```plaintext
-Docker version 20.10.25, build abcdefg
-```
+2. **Memberikan Izin Eksekusi**
+    - Tambahkan izin eksekusi ke skrip:
+      ```bash
+      chmod +x ./tool/setup-debian.sh
+      ```
 
-### 4.2. Cek Versi Docker Compose
-Verifikasi bahwa Docker Compose terinstal:
-```bash
-docker compose version
-```
-Output yang Diharapkan:
-```plaintext
-Docker Compose version v2.22.0
-```
+3. **Menjalankan Skrip**
+    - Jalankan skrip menggunakan sudo:
+      ```bash
+      sudo ./tool/setup-debian.sh
+      ```
 
-### 4.3. Tes Jalankan Docker
-Pastikan Docker berjalan dengan baik dengan menjalankan container uji:
-```bash
-docker run hello-world
-```
-Output yang Diharapkan:
-```plaintext
-Hello from Docker!
-This message shows that your installation appears to be working correctly.
-```
+### Apa yang Dilakukan Skrip
 
-## 5. Dokumentasi Hasil
-
-### 5.1. Paket yang Terinstal
-- Alat jaringan: curl, tcpdump, net-tools, dll.
-- Alat pengembangan: git, vim, python3, dll.
-
-### 5.2. Versi Docker dan Docker Compose
-- **Docker**:
-    ```bash
-    docker --version
-    ```
-    Output:
-    ```plaintext
-    Docker version 20.10.25, build abcdefg
-    ```
-- **Docker Compose**:
-    ```bash
-    docker compose version
-    ```
-    Output:
-    ```plaintext
-    Docker Compose version v2.22.0
-    ```
-
-### 5.3. File Konfigurasi
-- **Konfigurasi Docker (/etc/docker/daemon.json)**:
-    ```json
-    {
-        "dns": [
-            "8.8.8.8",
-            "1.1.1.1"
-        ],
-        "default-address-pools": [
-            {
-                "base": "172.16.30.0/16",
-                "size": 28
-            }
-        ],
-        "features": {
-            "buildkit": true
+1. **Instalasi dan Konfigurasi Docker**
+    - **Instalasi Docker**:
+      - Menambahkan repository Docker dan menginstal paket:
+        ```bash
+        apt-get install docker-ce docker-ce-cli containerd.io
+        ```
+    - **Konfigurasi Docker**:
+      - Membuat file `/etc/docker/daemon.json` dengan konfigurasi berikut:
+        ```json
+        {
+            "dns": ["8.8.8.8", "1.1.1.1"],
+            "default-address-pools": [
+                {"base": "172.16.30.0/16", "size": 28}
+            ],
+            "features": {"buildkit": true}
         }
-    }
-    ```
-- **Konfigurasi Jaringan (/etc/network/interfaces)**:
-    ```bash
-    # The loopback network interface
-    auto lo
-    iface lo inet loopback
+        ```
+    - **Instalasi Docker Compose**:
+      - Mengunduh dan menginstal Docker Compose versi v2.22.0 dari repository resmi GitHub.
 
-    # The primary network interface
-    allow-hotplug ens3
-    iface ens3 inet static
-                address 172.16.30.3/28
-                gateway 172.16.30.1
-                dns-nameservers 8.8.8.8 1.1.1.1
-                dns-search docker
+2. **Konfigurasi Jaringan**
+    - **File `/etc/network/interfaces`**:
+      - Menambahkan IP statis dan macvlan:
+        ```bash
+        allow-hotplug ens3
+        iface ens3 inet static
+            address 172.16.30.3/28
+            gateway 172.16.30.1
+            dns-nameservers 8.8.8.8 1.1.1.1
 
-    # Macvlan network interface
-    auto macvlan0
-    iface macvlan0 inet static
-                address 172.16.30.14/28
-                pre-up ip link add macvlan0 link ens3 type macvlan mode bridge
-                post-down ip link del macvlan0
-    ```
-- **Konfigurasi SSH (/etc/ssh/sshd_config)**:
-    ```yaml
-    Port 1983
-    PermitRootLogin yes
-    PasswordAuthentication yes
-    ```
+        auto macvlan0
+        iface macvlan0 inet static
+            address 172.16.30.14/28
+            pre-up ip link add macvlan0 link ens3 type macvlan mode bridge
+            post-down ip link del macvlan0
+        ```
+    - **Aktivasi IP Forwarding**:
+      - Mengaktifkan forwarding untuk IPv4 dan IPv6:
+        ```bash
+        echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
+        echo "net.ipv6.conf.all.forwarding=1" >> /etc/sysctl.conf
+        sysctl -p
+        ```
 
-## 6. Troubleshooting
+3. **Konfigurasi SSH**
+    - Mengaktifkan login root dan autentikasi password:
+      ```plaintext
+      Port 1983
+      PermitRootLogin yes
+      PasswordAuthentication yes
+      ```
 
-### Docker Tidak Berjalan
-Pastikan layanan Docker aktif:
-```bash
-sudo systemctl status docker
-```
-Jika tidak berjalan, coba restart:
-```bash
-sudo systemctl restart docker
-```
+4. **Konfigurasi iptables**
+    - Membersihkan aturan lama:
+      ```bash
+      iptables -F
+      iptables -t nat -F
+      iptables -t mangle -F
+      iptables -X
+      ```
+    - Menyimpan aturan dengan iptables-persistent:
+      ```bash
+      iptables-save > /etc/iptables/rules.v4
+      ip6tables-save > /etc/iptables/rules.v6
+      ```
 
-### Masalah Jaringan
-Pastikan IP forwarding aktif:
-```bash
-sysctl net.ipv4.ip_forward
-```
-Output harus 1.
+5. **Konfigurasi dan Mount NFS**
+    - Menambahkan entri NFS ke `/etc/fstab`:
+      ```plaintext
+      172.16.30.2:/mnt/Data/Syslog /mnt/Data/Syslog nfs4 defaults,_netdev 0 0
+      ```
+    - Membuat direktori mount:
+      ```bash
+      mkdir -p /mnt/Data/Syslog
+      ```
+    - Melakukan mount:
+      ```bash
+      mount -a
+      ```
+
+## Bagian 2: Verifikasi Setelah Reboot
+
+1. **Verifikasi Docker**
+    - Periksa versi Docker:
+      ```bash
+      docker --version
+      ```
+    - Output yang diharapkan:
+      ```plaintext
+      Docker version 20.10.25, build abcdefg
+      ```
+
+2. **Verifikasi Docker Compose**
+    - Periksa versi Docker Compose:
+      ```bash
+      docker compose version
+      ```
+    - Output yang diharapkan:
+      ```plaintext
+      Docker Compose version v2.22.0
+      ```
+
+3. **Verifikasi NFS**
+    - Periksa mount NFS:
+      ```bash
+      mount | grep nfs
+      ```
+
+## Bagian 3: Troubleshooting
+
+1. **Docker Tidak Berjalan**
+    - Periksa status layanan Docker:
+      ```bash
+      sudo systemctl status docker
+      ```
+    - Restart layanan Docker:
+      ```bash
+      sudo systemctl restart docker
+      ```
+
+2. **Masalah NFS**
+    - Pastikan server NFS aktif:
+      ```bash
+      exportfs -v
+      ```
+    - Cek konektivitas ke server:
+      ```bash
+      ping 172.16.30.2
+      ```
+
+3. **Masalah Jaringan**
+    - Periksa forwarding IP:
+      ```bash
+      sysctl net.ipv4.ip_forward
+      ```
+    - Jika tidak aktif, aktifkan:
+      ```bash
+      sudo sysctl -w net.ipv4.ip_forward=1
+      ```
+
+## Bagian 4: Penentuan Versi Docker dan Docker Compose
+
+1. **Default - Versi Terbaru**
+    - Biarkan kosong untuk menggunakan versi terbaru:
+      ```bash
+      DOCKER_VERSION=""
+      ```
+
+2. **Versi Spesifik**
+    - Periksa versi yang tersedia:
+      ```bash
+      apt-cache madison docker-ce
+      ```
+    - Pilih versi dan tambahkan ke skrip:
+      ```bash
+      DOCKER_VERSION="5:20.10.25~3-0~debian-bullseye"
+      ```
 
 ## Kesimpulan
-Skrip ./tool/setup-debian.sh mengotomatiskan proses instalasi Docker, Docker Compose, dan konfigurasi jaringan pada sistem Debian. Dengan dokumentasi ini, Anda dapat dengan mudah mengulang langkah-langkah instalasi dan memverifikasi hasilnya.
-
-## Menentukan Versi Docker
-
-### 1. Tidak Mengisi (Default - Versi Terbaru)
-Jika Anda meninggalkan variabel DOCKER_VERSION kosong seperti ini:
-```bash
-DOCKER_VERSION=""
-```
-Skrip akan secara otomatis menginstal versi Docker terbaru yang tersedia di repository Docker. Tidak perlu melakukan perubahan apa pun jika Anda ingin menggunakan versi terbaru.
-
-### 2. Menentukan Versi Docker
-Untuk menginstal versi Docker tertentu, isi variabel DOCKER_VERSION dengan versi yang Anda inginkan. Misalnya:
-```bash
-DOCKER_VERSION="5:20.10.25~3-0~debian-bullseye"
-```
-Anda bisa mendapatkan versi Docker yang tersedia dengan menjalankan perintah berikut di terminal:
-```bash
-apt-cache madison docker-ce
-```
-Outputnya akan seperti ini:
-```plaintext
-docker-ce | 5:20.10.25~3-0~debian-bullseye | https://download.docker.com/linux/debian bullseye/stable amd64 Packages
-docker-ce | 5:20.10.24~3-0~debian-bullseye | https://download.docker.com/linux/debian bullseye/stable amd64 Packages
-```
-Pilih versi yang Anda inginkan dari daftar output tersebut dan masukkan ke dalam variabel DOCKER_VERSION.
-
-### Langkah-Langkah untuk Menggunakan
-1. Buka Skrip untuk Diedit:
-    ```bash
-    nano ./tool/setup-debian.sh
-    ```
-2. Temukan dan Ubah Baris DOCKER_VERSION:
-    Baris tersebut biasanya ada di bagian awal skrip:
-    ```bash
-    DOCKER_VERSION=""
-    ```
-    Jika Anda ingin menginstal versi tertentu, ubah menjadi, misalnya:
-    ```bash
-    DOCKER_VERSION="5:20.10.25~3-0~debian-bullseye"
-    ```
-3. Simpan Perubahan dan Keluar:
-    - Tekan `Ctrl + O`, lalu `Enter` untuk menyimpan.
-    - Tekan `Ctrl + X` untuk keluar dari editor.
-4. Jalankan Skrip: Setelah mengubah versi Docker, jalankan skrip seperti biasa:
-    ```bash
-    sudo ././tool/setup-debian.sh
-    ```
-
-### Apa yang Terjadi di Skrip
-Skrip akan memeriksa apakah DOCKER_VERSION kosong atau tidak:
-- Jika Kosong (DOCKER_VERSION=""):
-    Perintah berikut akan digunakan untuk menginstal versi terbaru:
-    ```bash
-    apt-get install -y docker-ce docker-ce-cli containerd.io
-    ```
-- Jika Berisi Versi Tertentu (DOCKER_VERSION="5:20.10.25~3-0~debian-bullseye"):
-    Skrip akan menjalankan perintah ini untuk menginstal versi yang spesifik:
-    ```bash
-    apt-get install -y docker-ce="${DOCKER_VERSION}" docker-ce-cli="${DOCKER_VERSION}" containerd.io
-    ```
-
-### Kesimpulan
-- Biarkan DOCKER_VERSION kosong untuk menginstal versi terbaru.
-- Isi DOCKER_VERSION dengan versi spesifik jika Anda membutuhkan versi Docker tertentu.
-- Pastikan versi yang Anda masukkan valid dengan memeriksa daftar versi melalui:
-    ```bash
-    apt-cache madison docker-ce
-    ```
+Skrip ini mencakup semua langkah yang diperlukan untuk menginstal Docker, Docker Compose, mengonfigurasi jaringan, SSH, iptables, dan integrasi NFS pada Debian. Dengan dokumentasi ini, Anda dapat dengan mudah mengotomatiskan tugas konfigurasi server dan memastikan semua komponen terinstal dan terkonfigurasi dengan benar. Reboot otomatis di akhir memastikan semua perubahan diterapkan dengan sempurna.
