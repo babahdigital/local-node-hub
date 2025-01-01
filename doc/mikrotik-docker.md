@@ -158,12 +158,19 @@ Edit `/etc/docker/daemon.json`:
 
 ```json
 {
-      "default-address-pools": [
-            {
-                    "base": "172.16.30.0/28",
-                    "size": 28
-            }
-      ]
+  "dns": [
+    "8.8.8.8",
+    "1.1.1.1"
+  ],
+  "default-address-pools": [
+    {
+      "base": "172.16.30.0/16",
+      "size": 28
+    }
+  ],
+  "features": {
+    "buildkit": true
+  }
 }
 ```
 
