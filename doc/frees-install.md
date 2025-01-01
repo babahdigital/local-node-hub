@@ -175,3 +175,71 @@ Output harus 1.
 
 ## Kesimpulan
 Skrip setup-docker.sh mengotomatiskan proses instalasi Docker, Docker Compose, dan konfigurasi jaringan pada sistem Debian. Dengan dokumentasi ini, Anda dapat dengan mudah mengulang langkah-langkah instalasi dan memverifikasi hasilnya.
+
+## Menentukan Versi Docker
+
+### 1. Tidak Mengisi (Default - Versi Terbaru)
+Jika Anda meninggalkan variabel DOCKER_VERSION kosong seperti ini:
+```bash
+DOCKER_VERSION=""
+```
+Skrip akan secara otomatis menginstal versi Docker terbaru yang tersedia di repository Docker. Tidak perlu melakukan perubahan apa pun jika Anda ingin menggunakan versi terbaru.
+
+### 2. Menentukan Versi Docker
+Untuk menginstal versi Docker tertentu, isi variabel DOCKER_VERSION dengan versi yang Anda inginkan. Misalnya:
+```bash
+DOCKER_VERSION="5:20.10.25~3-0~debian-bullseye"
+```
+Anda bisa mendapatkan versi Docker yang tersedia dengan menjalankan perintah berikut di terminal:
+```bash
+apt-cache madison docker-ce
+```
+Outputnya akan seperti ini:
+```plaintext
+docker-ce | 5:20.10.25~3-0~debian-bullseye | https://download.docker.com/linux/debian bullseye/stable amd64 Packages
+docker-ce | 5:20.10.24~3-0~debian-bullseye | https://download.docker.com/linux/debian bullseye/stable amd64 Packages
+```
+Pilih versi yang Anda inginkan dari daftar output tersebut dan masukkan ke dalam variabel DOCKER_VERSION.
+
+### Langkah-Langkah untuk Menggunakan
+1. Buka Skrip untuk Diedit:
+    ```bash
+    nano setup-docker.sh
+    ```
+2. Temukan dan Ubah Baris DOCKER_VERSION:
+    Baris tersebut biasanya ada di bagian awal skrip:
+    ```bash
+    DOCKER_VERSION=""
+    ```
+    Jika Anda ingin menginstal versi tertentu, ubah menjadi, misalnya:
+    ```bash
+    DOCKER_VERSION="5:20.10.25~3-0~debian-bullseye"
+    ```
+3. Simpan Perubahan dan Keluar:
+    - Tekan `Ctrl + O`, lalu `Enter` untuk menyimpan.
+    - Tekan `Ctrl + X` untuk keluar dari editor.
+4. Jalankan Skrip: Setelah mengubah versi Docker, jalankan skrip seperti biasa:
+    ```bash
+    sudo ./setup-docker.sh
+    ```
+
+### Apa yang Terjadi di Skrip
+Skrip akan memeriksa apakah DOCKER_VERSION kosong atau tidak:
+- Jika Kosong (DOCKER_VERSION=""):
+    Perintah berikut akan digunakan untuk menginstal versi terbaru:
+    ```bash
+    apt-get install -y docker-ce docker-ce-cli containerd.io
+    ```
+- Jika Berisi Versi Tertentu (DOCKER_VERSION="5:20.10.25~3-0~debian-bullseye"):
+    Skrip akan menjalankan perintah ini untuk menginstal versi yang spesifik:
+    ```bash
+    apt-get install -y docker-ce="${DOCKER_VERSION}" docker-ce-cli="${DOCKER_VERSION}" containerd.io
+    ```
+
+### Kesimpulan
+- Biarkan DOCKER_VERSION kosong untuk menginstal versi terbaru.
+- Isi DOCKER_VERSION dengan versi spesifik jika Anda membutuhkan versi Docker tertentu.
+- Pastikan versi yang Anda masukkan valid dengan memeriksa daftar versi melalui:
+    ```bash
+    apt-cache madison docker-ce
+    ```
