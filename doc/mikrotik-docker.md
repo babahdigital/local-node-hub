@@ -290,3 +290,66 @@ sudo tcpdump -i macvlan0
 2. Pastikan IP forwarding diaktifkan pada host.
 
 Dokumentasi ini dirancang untuk memastikan integrasi sistem berjalan lancar dan dapat disesuaikan dengan kebutuhan spesifik proyek Anda. Pastikan setiap langkah diuji sebelum implementasi penuh di lingkungan produksi.
+
+## Script Automasi Setup MikroTik
+
+```plaintext
+# -----------------------------------------------------------------------------
+# Script Konfigurasi MikroTik untuk Integrasi TrueNAS, VM, dan Docker
+# -----------------------------------------------------------------------------
+
+# 1. Membuat Bridge untuk VLAN 83
+/interface bridge
+add name=docker-30 comment="Bridge untuk VLAN 83 (Docker, VM, Macvlan)"
+
+# 2. Menambahkan VLAN 83 ke Interface Fisik
+/interface vlan
+add name=vlan83 interface=docker-30 vlan-id=83 comment="VLAN 83 untuk Docker, VM, dan Macvlan"
+
+# 3. Menambahkan VLAN 83 ke Bridge
+/interface bridge port
+add bridge=docker-30 interface=vlan83 comment="Hubungkan VLAN 83 ke Bridge docker-30"
+
+# 4. Memberikan IP Address ke Bridge
+/ip address
+add address=172.16.30.1/28 interface=docker-30 comment="IP Gateway untuk jaringan VLAN 83"
+
+# 5. Tambahkan Address List untuk Jaringan Docker
+/ip firewall address-list
+add address=172.16.30.0/28 list=docker comment="Subnet untuk jaringan Docker, VM, dan Macvlan"
+
+# 6. Tambahkan Aturan Firewall
+# 6.1 Izinkan ICMP (Ping)
+/ip firewall filter
+add chain=input action=accept protocol=icmp comment="Allow ICMP (Ping)"
+
+# 6.2 Izinkan Traffic Antar Subnet Docker
+/ip firewall filter
+add chain=forward action=accept src-address-list=docker dst-address-list=docker comment="Allow traffic between Docker subnets"
+
+# 6.3 Drop Traffic Lainnya di Input
+/ip firewall filter
+add chain=input action=drop comment="Drop all other input traffic"
+
+# 6.4 Drop Traffic Lainnya di Forward
+/ip firewall filter
+add chain=forward action=drop comment="Drop other forward traffic"
+
+# 6.5 Izinkan Traffic Output ke Subnet Docker
+/ip firewall filter
+add chain=output action=accept src-address-list=docker comment="Allow output traffic to Docker subnets"
+
+# 6.6 Drop Traffic Output Lainnya
+/ip firewall filter
+add chain=output action=drop comment="Drop all other output traffic"
+
+# 7. Validasi Konfigurasi
+:log info "Validasi Konfigurasi:"
+/interface bridge print
+/interface vlan print
+/ip address print
+/ip firewall filter print
+/ip firewall address-list print
+
+:log info "Konfigurasi MikroTik selesai."
+```
