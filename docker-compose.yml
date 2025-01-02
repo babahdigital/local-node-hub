@@ -3,23 +3,24 @@ services:
     build:
       context: .
       dockerfile: hdd/Dockerfile
-    image: hdd:babah
+    image: hdd-monitor
     container_name: hdd-monitor
     restart: always
     volumes:
+      - syslog-data:/mnt/Data/Syslog
+      - /mnt/Data/Backup:/mnt/Data/Backup
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
-      - /mnt/Data/Backup:/mnt/Data/Backup
-      - /mnt/Data/Syslog:/mnt/Data/Syslog
     environment:
       BACKUP_DIR: "/mnt/Data/Backup"
-    network_mode: "host"  # Mode host digunakan
+    networks:
+      - babah-network
 
   syslog:
     build:
       context: ./syslog
       dockerfile: Dockerfile
-    image: syslog-ng:babah
+    image: syslog-ng
     container_name: syslog-ng
     restart: always
     hostname: ${SYSLOG_HOSTNAME:-syslog-ng}
@@ -27,34 +28,75 @@ services:
       - CAP_NET_BIND_SERVICE
     command: ["syslog-ng", "--foreground", "-f", "/app/syslog/config/syslog-ng.conf", "--persist-file=/app/syslog/var-run/syslog-ng.persist"]
     volumes:
-      - syslog-data:/app/syslog
+      - syslog-data:/mnt/Data/Syslog
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
-      - /mnt/Data/Syslog:/mnt/Data/Syslog
       - ./config/log_messages.json:/app/syslog/config/log_messages.json:ro
-    network_mode: "host"  # Mode host digunakan
+    networks:
+      - babah-network
 
   logrotate:
     build:
       context: ./syslog
       dockerfile: Dockerfile
-    image: logrotate:babah
+    image: logrotate
     container_name: logrotate
-    volumes:
-      - syslog-data:/app/syslog
-      - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
-      - /mnt/Data/Syslog/default/logrotate:/mnt/Data/Syslog/default/logrotate
-      - /mnt/Data/Syslog/var-run:/mnt/Data/Syslog/var-run
-      - ./config/log_messages.json:/app/syslog/config/log_messages.json:ro
     depends_on:
       - syslog
-    restart: "no"
-    network_mode: "host"  # Mode host digunakan
+    restart: on-failure
+    volumes:
+      - syslog-data:/mnt/Data/Syslog
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      - ./config/log_messages.json:/app/syslog/config/log_messages.json:ro
+    networks:
+      - babah-network
+
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    image: api-monitor
+    container_name: api-monitor
+    restart: always
+    volumes:
+      - /mnt/Data/Backup:/mnt/Data/Backup
+      - syslog-data:/mnt/Data/Syslog
+      - ./api/data:/app/data
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    environment:
+      LOG_DIR: "/app/data"
+    networks:
+      - babah-network
+
+  stream:
+    build:
+      context: ./
+      dockerfile: streamserver/Dockerfile
+    image: stream-server
+    container_name: stream-server
+    depends_on:
+      - syslog
+    # Jalankan sebagai root (jika masih butuh chown / chmod volume host)
+    # user: "0:0" 
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      - ./streamserver/config/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./config/log_messages.json:/app/streamserver/config/log_messages.json:ro
+      - ./config/credentials.sh:/app/streamserver/config/credentials.sh:ro
+      # Named volume:
+      - stream-temp-data:/app/streamserver/temp/stream
+      # Jika masih mau simpan ke host, pakai ini:
+      # - /mnt/Data/Syslog/stream:/app/streamserver/temp/stream
+    command: ["nginx", "-g", "daemon off;"]
+    networks:
+      - babah-network
 
   docker-socket-proxy:
     image: tecnativa/docker-socket-proxy
-    container_name: docker-socket-proxy
+    container_name: babah-docker-socket-proxy
     privileged: true
     restart: unless-stopped
     volumes:
@@ -62,42 +104,16 @@ services:
     environment:
       CONTAINERS: 1
       LOGS: 1
-    network_mode: "host"  # Mode host digunakan
-
-  api:
-    build:
-      context: .
-      dockerfile: api/Dockerfile
-    image: api:babah
-    container_name: api-monitor
-    restart: always
-    volumes:
-      - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
-      - /mnt/Data/Backup:/mnt/Data/Backup
-      - /mnt/Data/Syslog:/mnt/Data/Syslog
-      - ./api/data:/app/data
-    environment:
-      LOG_DIR: "/app/data"
-    network_mode: "host"  # Mode host digunakan
-
-  stream:
-    build:
-      context: .
-      dockerfile: streamserver/Dockerfile
-    image: streamserver:babah
-    container_name: stream-server
-    volumes:
-      - stream-data:/app/streamserver
-      - ./streamserver/config/nginx.conf:/etc/nginx/nginx.conf
-      - /mnt/Data/Syslog/stream:/var/log/nginx
-      - ./config/log_messages.json:/app/config/log_messages.json:ro
-      - ./config/credentials.sh:/app/config/credentials.sh:ro
-    working_dir: /app/streamserver
-    network_mode: "host"  # Mode host digunakan
+    networks:
+      - babah-network
 
 volumes:
-  stream-data:
-    name: data-stream
   syslog-data:
     name: data-syslog
+  stream-temp-data:
+    name: stream-temp-data
+
+networks:
+  babah-network:
+    name: babah-network
+    driver: bridge

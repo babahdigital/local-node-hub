@@ -59,7 +59,7 @@ CLLMH adalah sistem terpusat yang mengintegrasikan:
 │   ├── Dockerfile              # Dockerfile untuk kontainer server stream
 ├── config/                     # Pengaturan umum proyek
 │   ├── log_messages.json       # Pesan log dinamis
-│   ├── syslog/                 # Konfigurasi syslog-ng di node lokal
+│   ├── credentials.sh          # Kredensial Enskripsi 64
 ├── doc/                        # Dokumentasi proyek
 ├── hdd/                        # Monitoring HDD
 │   ├── hdd_monitor.py          # Monitoring HDD dan pengelolaan file lama
