@@ -4,6 +4,7 @@
 .bashrc
 .profile
 .bash_history
+.github
 
 # Abaikan file sementara dan log
 *.log
