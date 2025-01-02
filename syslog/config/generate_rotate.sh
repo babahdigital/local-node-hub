@@ -13,13 +13,16 @@ log() {
   echo "$(date +"$time_format") $zone - $1"
 }
 
+# Di sini kita ambil path dari ENV; kalau tidak ada, default ke /app/syslog/config/log_messages.json
+LOG_MESSAGES_FILE_PATH="${LOG_MESSAGES_FILE_PATH:-"/app/config/log_messages.json"}"
+
 load_messages() {
-  local filepath="/app/syslog/config/log_messages.json"
+  local filepath="$LOG_MESSAGES_FILE_PATH"
   if [[ -f "$filepath" ]]; then
     MESSAGES="$(cat "$filepath")"
-    log "Pesan log_messages.json berhasil diload."
+    log "Pesan log_messages.json berhasil diload dari $filepath"
   else
-    log "Error: File log_messages.json tidak ditemukan."
+    log "Error: File log_messages.json tidak ditemukan di $filepath"
     exit 1
   fi
 }

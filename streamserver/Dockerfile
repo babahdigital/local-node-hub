@@ -15,7 +15,9 @@ RUN mkdir -p /app/streamserver/temp/client_body_temp \
     /app/streamserver/temp/uwsgi_temp \
     /app/streamserver/temp/stream \
     /app/streamserver/config \
-    /app/streamserver/scripts
+    /app/streamserver/scripts \
+    /app/config \
+    /app/scripts 
 
 # Membuat virtual environment untuk Python
 RUN python3 -m venv /app/streamserver/venv
@@ -24,12 +26,9 @@ RUN python3 -m venv /app/streamserver/venv
 RUN /app/streamserver/venv/bin/pip install --no-cache-dir python-dotenv
 
 # Salin file lainnya (disesuaikan dengan kebutuhan)
-COPY streamserver/scripts/validate_cctv.py /app/streamserver/scripts/validate_cctv.py
-COPY streamserver/config /app/streamserver/config
-COPY ../scripts/utils.py /app/streamserver/scripts/utils.py
+COPY . /app/streamserver
 
 # Salin skrip konfigurasi
-COPY streamserver/entrypoint.sh /app/streamserver/entrypoint.sh
 RUN dos2unix /app/streamserver/entrypoint.sh && \
     chmod +x /app/streamserver/entrypoint.sh
 

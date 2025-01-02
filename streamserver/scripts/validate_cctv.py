@@ -1,10 +1,10 @@
 import os
 import subprocess
 from datetime import datetime
-from utils import load_log_messages, setup_logger
+#from utils import load_log_messages, setup_logger
 
 # Load log messages for logging
-log_messages = load_log_messages("/app/config/log_messages.json")
+LOG_MESSAGES_FILE = os.getenv("LOG_MESSAGES_FILE", "/app/config/log_messages.json")
 logger = setup_logger("RTSP-Validation", "/mnt/Data/Syslog/cctv/cctv_status.log")
 
 def write_status_log(channel, status):

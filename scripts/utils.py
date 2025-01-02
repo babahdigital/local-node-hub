@@ -9,13 +9,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Default configuration
-DEFAULT_LOG_MESSAGES_FILE = "/app/config/log_messages.json"
 DEFAULT_SYSLOG_SERVER = "syslog-ng"
 DEFAULT_SYSLOG_PORT = 1514
 DEFAULT_LOG_DIR = "/mnt/Data/Syslog"
 DEFAULT_BACKUP_LOG_DIR = f"{DEFAULT_LOG_DIR}/backup"
 
-LOG_MESSAGES_FILE = os.getenv("LOG_MESSAGES_FILE", DEFAULT_LOG_MESSAGES_FILE)
+LOG_MESSAGES_FILE = os.getenv("LOG_MESSAGES_FILE", "/app/config/log_messages.json")
 ENABLE_SYSLOG = os.getenv("ENABLE_SYSLOG", "true").lower() == "true"
 SYSLOG_SERVER = os.getenv("SYSLOG_SERVER", DEFAULT_SYSLOG_SERVER)
 SYSLOG_PORT = int(os.getenv("SYSLOG_PORT", DEFAULT_SYSLOG_PORT))
