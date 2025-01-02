@@ -1,3 +1,5 @@
+```bash
+// filepath: /app/syslog/config/generate_rotate.sh
 #!/usr/bin/env bash
 set -e
 
@@ -7,14 +9,21 @@ log() {
     sign=substr($0,1,1);hours=substr($0,2,2);minutes=substr($0,4,2);
     total=hours+(minutes/60); if(sign=="-"){total=-total}; printf "%.0f", total
   }')
-  if [[ "$offset_hours" -eq 8 ]]; then zone="WITA"
-  elif [[ "$offset_hours" -eq 7 ]]; then zone="WIB"
-  else zone="UTC"; fi
+  if [[ "$offset_hours" -eq 8 ]]; then
+    zone="WITA"
+  elif [[ "$offset_hours" -eq 7 ]]; then
+    zone="WIB"
+  else
+    zone="UTC"
+  fi
   echo "$(date +"$time_format") $zone - $1"
 }
 
-# Di sini kita ambil path dari ENV; kalau tidak ada, default ke /app/syslog/config/log_messages.json
 LOG_MESSAGES_FILE_PATH="${LOG_MESSAGES_FILE_PATH:-"/app/syslog/config/log_messages.json"}"
+LOG_ROOT="/mnt/Data/Syslog"
+CONFIG_FILE="/app/syslog/logrotate/syslog-ng"
+OWNER="abdullah"
+GROUP="abdullah"
 
 load_messages() {
   local filepath="$LOG_MESSAGES_FILE_PATH"
@@ -32,12 +41,8 @@ get_message() {
   echo "$MESSAGES" | jq -r ".$key // \"\""
 }
 
-LOG_ROOT="/mnt/Data/Syslog"
-CONFIG_FILE="/app/syslog/logrotate/syslog-ng"
-OWNER="abdullah"
-GROUP="abdullah"
-
 load_messages
+
 log "Memastikan direktori konfigurasi logrotate ada..."
 mkdir -p "$(dirname "$CONFIG_FILE")"
 
@@ -60,8 +65,8 @@ EOF
   while IFS= read -r LOG_FILE; do
     cat <<EOF >> "$CONFIG_FILE"
 "$LOG_FILE" {
-    size 5M
-    rotate 7
+    size  5M
+    rotate  7
     compress
     delaycompress
     missingok

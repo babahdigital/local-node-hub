@@ -1,3 +1,5 @@
+```bash
+// filepath: /app/syslog/entrypoint.sh
 #!/usr/bin/env bash
 set -e
 
@@ -8,14 +10,23 @@ log() {
     sign=substr($0,1,1); hours=substr($0,2,2); minutes=substr($0,4,2);
     total=hours+(minutes/60); if(sign=="-"){total=-total}; printf "%.0f", total
   }')
-  if [[ "$offset_hours" -eq 8 ]]; then zone="WITA"
-  elif [[ "$offset_hours" -eq 7 ]]; then zone="WIB"
-  else zone="UTC"; fi
-  echo "$(date +"$time_format") $zone - "$1""
+  if [[ "$offset_hours" -eq 8 ]]; then
+    zone="WITA"
+  elif [[ "$offset_hours" -eq 7 ]]; then
+    zone="WIB"
+  else
+    zone="UTC"
+  fi
+  echo "$(date +"$time_format") $zone - $1"
 }
 
-# Di sini kita ambil path dari ENV; kalau tidak ada, default ke /app/syslog/config/log_messages.json
 LOG_MESSAGES_FILE_PATH="${LOG_MESSAGES_FILE_PATH:-"/app/syslog/config/log_messages.json"}"
+CONFIG_SOURCE="/app/syslog/config/logrotate/syslog-ng"
+CONFIG_TARGET="/etc/logrotate.d/syslog-ng"
+LOGROTATE_STATE_FILE="/app/syslog/logrotate/logrotate.status"
+LOGROTATE_LOG="/app/syslog/logrotate/logrotate.log"
+CRON_FILE="/app/syslog/crontabs/root"
+CRON_JOB="0 * * * * /usr/sbin/logrotate /app/syslog/logrotate/syslog-ng >> /var/log/cron-custom.log 2>&1"
 
 load_messages() {
   local filepath="$LOG_MESSAGES_FILE_PATH"
@@ -33,16 +44,9 @@ get_message() {
   echo "$MESSAGES" | jq -r ".$key // \"\""
 }
 
-CONFIG_SOURCE="/app/syslog/config/logrotate/syslog-ng"
-CONFIG_TARGET="/etc/logrotate.d/syslog-ng"
-LOGROTATE_STATE_FILE="/app/syslog/logrotate/logrotate.status"
-LOGROTATE_LOG="/app/syslog/logrotate/logrotate.log"
-CRON_JOB="0 * * * * /usr/bin/docker compose up logrotate >> /var/log/cron-custom.log 2>&1"
-CRON_FILE="/app/syslog/crontabs/root"
-
 load_messages
 
-log "Membersihkan /mnt/Data/Syslog dengan user abdullah..."
+log "Membersihkan /mnt/Data/Syslog..."
 sudo -u root bash -c '
 set -x
 rm -rf /mnt/Data/Syslog/*
@@ -52,19 +56,12 @@ touch /mnt/Data/Syslog/test/test.log
 touch /mnt/Data/Syslog/debug/debug.log
 '
 
-log "Verifikasi kepemilikan dan izin file cron..."
-[ -f "$CRON_FILE" ] || touch "$CRON_FILE"
-chown abdullah:abdullah "$CRON_FILE"
-chmod 600 "$CRON_FILE"
-
 log "$(get_message "entrypoint.ensure_state_dir")"
 mkdir -p "$(dirname "$LOGROTATE_STATE_FILE")"
-log "$(get_message "entrypoint.state_dir_created")"
 
 log "$(get_message "entrypoint.check_logrotate_config")"
 if [[ ! -f "$CONFIG_SOURCE" ]]; then
   log "$(get_message "entrypoint.config_not_found")"
-  log "Menjalankan generate_rotate.sh..."
   /app/syslog/config/generate_rotate.sh
   log "generate_rotate.sh selesai."
 else
@@ -79,26 +76,27 @@ fi
 
 log "$(get_message "entrypoint.clean_old_backup_files")"
 find /etc/logrotate.d/backup -type f -mtime +7 -exec rm -f {} \; 2>/dev/null || true
-log "$(get_message "entrypoint.old_backup_files_cleaned")"
 
 log "Memeriksa keberadaan cron job..."
+[ -f "$CRON_FILE" ] || touch "$CRON_FILE"
 if ! grep -Fxq "$CRON_JOB" "$CRON_FILE"; then
-  log "Menambahkan cron job baru..."
   echo "$CRON_JOB" >> "$CRON_FILE"
+  log "Cron job baru ditambahkan."
 fi
 
+chown root:root "$CRON_FILE"
+chmod 600 "$CRON_FILE"
+
 log "Memulai layanan cron..."
-crond -c "$(dirname "$CRON_FILE")" -b -l 2 -p /app/syslog/var-run/crond.pid || {
-  log "Error: crond tidak ditemukan atau tidak dapat dijalankan."
+mkdir -p /var/log
+touch /var/log/cron-custom.log
+crond -c "$(dirname "$CRON_FILE")" -b -l 8 -L /var/log/cron.log -p /app/syslog/var-run/crond.pid || {
+  log "Error: crond tidak dapat dijalankan."
   exit 1
 }
 
-log "$(get_message "entrypoint.run_logrotate")"
-if logrotate -v -f -s "$LOGROTATE_STATE_FILE" "$CONFIG_TARGET" >> "$LOGROTATE_LOG" 2>&1; then
-  log "$(get_message "entrypoint.logrotate_no_rotation")"
-else
-  log "$(get_message "entrypoint.logrotate_rotated")"
-fi
+log "Uji awal logrotate..."
+logrotate -v -f -s "$LOGROTATE_STATE_FILE" "$CONFIG_SOURCE" >> "$LOGROTATE_LOG" 2>&1
 
 log "$(get_message "entrypoint.start_syslog_ng")"
 exec syslog-ng --foreground -f "/app/syslog/config/syslog-ng.conf"
