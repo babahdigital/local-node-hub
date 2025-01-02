@@ -96,8 +96,8 @@ services:
 
   stream:
     build:
-      context: ./streamserver
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: streamserver/Dockerfile
     image: streamserver:babah
     container_name: stream-server
     volumes:

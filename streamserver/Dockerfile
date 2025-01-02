@@ -14,12 +14,13 @@ RUN mkdir -p /app/streamserver/scripts /app/streamserver/config /tmp/hls && chmo
 RUN pip3 install --no-cache-dir python-dotenv
 
 # Salin konfigurasi dari folder
-COPY /config/nginx.conf /etc/nginx/nginx.conf
-COPY /scripts/ /app/streamserver/scripts/
+COPY streamserver/config/nginx.conf /etc/nginx/nginx.conf
+COPY streamserver/scripts/ /app/streamserver/scripts/
+COPY streamserver/entrypoint.sh /app/streamserver/entrypoint.sh
 
 # Salin konfigurasi dari root
-COPY ./scripts/utils.py /app/streamserver/scripts/utils.py
-COPY ./ /app/streamserver
+COPY ../scripts/utils.py /app/streamserver/scripts/utils.py
+COPY streamserver/ /app/streamserver
 
 RUN chmod +x /app/streamserver/entrypoint.sh
 
