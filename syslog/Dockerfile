@@ -3,7 +3,9 @@ FROM alpine:3.21 AS builder
 
 ENV APK_MIRROR=http://mirror.leaseweb.com/alpine/
 
-RUN sed -i "s|http://dl-cdn.alpinelinux.org/alpine/|${APK_MIRROR}|g" /etc/apk/repositories \
+#RUN sed -i "s|http://dl-cdn.alpinelinux.org/alpine/|${APK_MIRROR}|g" /etc/apk/repositories \
+RUN echo "http://mirror.leaseweb.com/alpine/latest-stable/main" > /etc/apk/repositories && \
+    echo "http://mirror.leaseweb.com/alpine/latest-stable/community" >> /etc/apk/repositories \
     && apk update \
     && apk add --no-cache \
         gcc \
@@ -33,7 +35,9 @@ RUN chmod +x /app/syslog/entrypoint.sh /app/syslog/config/generate_rotate.sh
 FROM alpine:3.21
 ENV APK_MIRROR=http://mirror.leaseweb.com/alpine/
 
-RUN sed -i "s|http://dl-cdn.alpinelinux.org/alpine/|${APK_MIRROR}|g" /etc/apk/repositories \
+#RUN sed -i "s|http://dl-cdn.alpinelinux.org/alpine/|${APK_MIRROR}|g" /etc/apk/repositories \
+RUN echo "http://mirror.leaseweb.com/alpine/latest-stable/main" > /etc/apk/repositories && \
+    echo "http://mirror.leaseweb.com/alpine/latest-stable/community" >> /etc/apk/repositories \
     && apk update \
     && apk add --no-cache \
         gcc \
