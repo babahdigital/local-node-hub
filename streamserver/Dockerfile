@@ -1,5 +1,5 @@
 # Menggunakan base image Nginx (atau Alpine jika perlu)
-FROM nginx:alpine
+FROM nginx:stable-alpine
 
 # Install FFmpeg, Bash, jq, Python, dan alat tambahan
 RUN apk add --no-cache ffmpeg bash jq python3 py3-pip dos2unix

@@ -11,11 +11,11 @@ log() {
   if [[ "$offset_hours" -eq 8 ]]; then zone="WITA"
   elif [[ "$offset_hours" -eq 7 ]]; then zone="WIB"
   else zone="UTC"; fi
-  echo "$(date +"$time_format") $zone - $1"
+  echo "$(date +"$time_format") $zone - "$1""
 }
 
 # Di sini kita ambil path dari ENV; kalau tidak ada, default ke /app/syslog/config/log_messages.json
-LOG_MESSAGES_FILE_PATH="${LOG_MESSAGES_FILE_PATH:-"/app/config/log_messages.json"}"
+LOG_MESSAGES_FILE_PATH="${LOG_MESSAGES_FILE_PATH:-"/app/syslog/config/log_messages.json"}"
 
 load_messages() {
   local filepath="$LOG_MESSAGES_FILE_PATH"
@@ -33,14 +33,26 @@ get_message() {
   echo "$MESSAGES" | jq -r ".$key // \"\""
 }
 
-CONFIG_SOURCE="/app/syslog/logrotate/syslog-ng"
+CONFIG_SOURCE="/app/syslog/config/logrotate/syslog-ng"
 CONFIG_TARGET="/etc/logrotate.d/syslog-ng"
-LOGROTATE_STATE_FILE="/mnt/Data/Syslog/default/logrotate/logrotate.status"
-LOGROTATE_LOG="/mnt/Data/Syslog/default/logrotate/logrotate.log"
+LOGROTATE_STATE_FILE="/app/syslog/logrotate/logrotate.status"
+LOGROTATE_LOG="/app/syslog/logrotate/logrotate.log"
 CRON_JOB="0 * * * * /usr/bin/docker compose up logrotate >> /var/log/cron-custom.log 2>&1"
 CRON_FILE="/app/syslog/crontabs/root"
 
 load_messages
+
+log "Membersihkan /mnt/Data/Syslog dengan user abdullah..."
+sudo -u root bash -c '
+set -x
+chown -R abdullah:abdullah /mnt/Data
+rm -rf /mnt/Data/Syslog/*
+mkdir -p /mnt/Data/Syslog/{default,test,debug}
+touch /mnt/Data/Syslog/default/default.log
+touch /mnt/Data/Syslog/test/test.log
+touch /mnt/Data/Syslog/debug/debug.log
+chown -R abdullah:abdullah /mnt/Data/Syslog
+'
 
 log "Verifikasi kepemilikan dan izin file cron..."
 [ -f "$CRON_FILE" ] || touch "$CRON_FILE"
@@ -78,7 +90,7 @@ if ! grep -Fxq "$CRON_JOB" "$CRON_FILE"; then
 fi
 
 log "Memulai layanan cron..."
-crond -c "$(dirname "$CRON_FILE")" -b -l 2 -p /mnt/Data/Syslog/var-run/crond.pid || {
+crond -c "$(dirname "$CRON_FILE")" -b -l 2 -p /app/syslog/var-run/crond.pid || {
   log "Error: crond tidak ditemukan atau tidak dapat dijalankan."
   exit 1
 }

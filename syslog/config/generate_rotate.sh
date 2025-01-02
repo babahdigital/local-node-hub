@@ -14,7 +14,7 @@ log() {
 }
 
 # Di sini kita ambil path dari ENV; kalau tidak ada, default ke /app/syslog/config/log_messages.json
-LOG_MESSAGES_FILE_PATH="${LOG_MESSAGES_FILE_PATH:-"/app/config/log_messages.json"}"
+LOG_MESSAGES_FILE_PATH="${LOG_MESSAGES_FILE_PATH:-"/app/syslog/config/log_messages.json"}"
 
 load_messages() {
   local filepath="$LOG_MESSAGES_FILE_PATH"
