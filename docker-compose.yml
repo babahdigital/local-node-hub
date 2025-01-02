@@ -15,7 +15,6 @@ services:
       BACKUP_DIR: "/mnt/Data/Backup"
     networks:
       rtsp-syslog-network:
-        ipv4_address: 172.16.30.4
 
   syslog:
     build: 
@@ -23,7 +22,7 @@ services:
       dockerfile: Dockerfile
     image: syslog-ng
     container_name: syslog-ng
-    restart: always
+    restart: unless-stopped
     hostname: ${SYSLOG_HOSTNAME:-syslog-ng}
     cap_add:
       - CAP_NET_BIND_SERVICE
@@ -33,16 +32,19 @@ services:
     ports:
       - "1514:1514/tcp"
       - "1514:1514/udp"
-    #user: 1000:1000
     volumes:
-      - syslog-data:/mnt/Data/Syslog
+      - syslog-data:/app/Syslog
       - /mnt/Data/Syslog:/mnt/Data/Syslog
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
       - ./config/log_messages.json:/app/syslog/config/log_messages.json:ro
     networks:
       rtsp-syslog-network:
-        ipv4_address: 172.16.30.5
+    healthcheck:
+      test: ["CMD", "pgrep", "syslog-ng"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   logrotate:
     build:
@@ -56,13 +58,17 @@ services:
     environment:
       LOG_MESSAGES_FILE: "/app/config/log_messages.json"
     volumes:
-      - syslog-data:/mnt/Data/Syslog
+      - syslog-data:/app/Syslog
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
       - ./config/log_messages.json:/app/syslog/config/log_messages.json:ro
     networks:
       rtsp-syslog-network:
-        ipv4_address: 172.16.30.6
+    healthcheck:
+      test: ["CMD", "pgrep", "syslog-ng"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   api:
     build:
@@ -81,7 +87,6 @@ services:
       LOG_DIR: "/app/data"
     networks:
       rtsp-syslog-network:
-        ipv4_address: 172.16.30.7
 
   stream:
     build:
@@ -112,7 +117,6 @@ services:
       - "8080:8080" # HLS
     networks:
       rtsp-syslog-network:
-        ipv4_address: 172.16.30.8
 
   docker-socket-proxy:
     image: tecnativa/docker-socket-proxy
@@ -126,18 +130,11 @@ services:
       LOGS: 1
     networks:
       rtsp-syslog-network:
-        ipv4_address: 172.16.30.9
 
 networks:
   rtsp-syslog-network:
     name: babah-network
-    driver: macvlan
-    driver_opts:
-      parent: ens3
-    ipam:
-      config:
-        - subnet: "172.16.30.0/28"
-          gateway: "172.16.30.1"
+    driver: bridge
 
 volumes:
   syslog-data:

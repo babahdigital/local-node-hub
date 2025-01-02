@@ -45,13 +45,11 @@ load_messages
 log "Membersihkan /mnt/Data/Syslog dengan user abdullah..."
 sudo -u root bash -c '
 set -x
-chown -R abdullah:abdullah /mnt/Data
 rm -rf /mnt/Data/Syslog/*
 mkdir -p /mnt/Data/Syslog/{default,test,debug}
 touch /mnt/Data/Syslog/default/default.log
 touch /mnt/Data/Syslog/test/test.log
 touch /mnt/Data/Syslog/debug/debug.log
-chown -R abdullah:abdullah /mnt/Data/Syslog
 '
 
 log "Verifikasi kepemilikan dan izin file cron..."

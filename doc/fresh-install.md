@@ -189,5 +189,17 @@ Membuat file `daemon.json` untuk pengaturan default address pools, DNS, dan buil
     DOCKER_VERSION="5:20.10.25~3-0~debian-bullseye"
     ```
 
+## Bagian 5: Konfigurasi Crontab untuk Restart Layanan Docker
+
+1. **Edit Crontab Root**
+  - Buka crontab untuk root:
+    ```bash
+    sudo crontab -e
+    ```
+  - Tambahkan baris berikut untuk memastikan layanan container Docker otomatis restart saat server reboot:
+    ```bash
+    @reboot /usr/bin/docker restart syslog-ng logrotate
+    ```
+
 ## Kesimpulan
 Skrip ini mencakup semua langkah yang diperlukan untuk menginstal Docker, Docker Compose, mengonfigurasi jaringan, SSH, iptables, dan integrasi NFS pada Debian. Dengan dokumentasi ini, Anda dapat dengan mudah mengotomatiskan tugas konfigurasi server dan memastikan semua komponen terinstal dan terkonfigurasi dengan benar. Reboot otomatis di akhir memastikan semua perubahan diterapkan dengan sempurna.

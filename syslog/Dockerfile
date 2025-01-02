@@ -16,7 +16,9 @@ RUN sed -i "s|http://dl-cdn.alpinelinux.org/alpine/|${APK_MIRROR}|g" /etc/apk/re
         jq \
         dcron \
         sudo \
-        bash
+        bash \
+        procps \
+        util-linux
 
 # Ijinkan syslog-ng bind port <1024
 RUN setcap 'cap_net_bind_service=+ep' /usr/sbin/syslog-ng
@@ -27,10 +29,7 @@ WORKDIR /app/syslog
 RUN mkdir -p config logrotate crontabs var-run \
            /app/syslog/var-run \
            /app/syslog/config \
-           /etc/logrotate.d/backup \
-           /mnt/Data/Syslog/default \
-           /mnt/Data/Syslog/test \
-           /mnt/Data/Syslog/debug
+           /etc/logrotate.d/backup
 
 COPY . /app/syslog
 RUN chmod +x /app/syslog/entrypoint.sh /app/syslog/config/generate_rotate.sh
@@ -52,7 +51,9 @@ RUN sed -i "s|http://dl-cdn.alpinelinux.org/alpine/|${APK_MIRROR}|g" /etc/apk/re
         jq \
         dcron \
         sudo \
-        bash
+        bash \
+        procps \
+        util-linux
 
 # Pastikan user abdullah ada (buat hanya jika belum ada)
 RUN id -u abdullah &>/dev/null || adduser -D -s /bin/bash abdullah
