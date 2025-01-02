@@ -13,11 +13,7 @@ services:
       - /mnt/Data/Syslog:/mnt/Data/Syslog
     environment:
       BACKUP_DIR: "/mnt/Data/Backup"
-    ports:
-      - "5000:5000"
-    networks:
-      rtsp-syslog-network:
-        ipv4_address: 172.16.30.4
+    network_mode: "host"  # Mode host digunakan
 
   syslog:
     build:
@@ -25,9 +21,6 @@ services:
       dockerfile: Dockerfile
     image: syslog-ng:babah
     container_name: syslog-ng
-    ports:
-      - "1514:1514/tcp"
-      - "1514:1514/udp"
     restart: always
     hostname: ${SYSLOG_HOSTNAME:-syslog-ng}
     cap_add:
@@ -37,11 +30,9 @@ services:
       - syslog-data:/app/syslog
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
-      - TrueNas:/mnt/Data/Syslog
+      - /mnt/Data/Syslog:/mnt/Data/Syslog
       - ./config/log_messages.json:/app/syslog/config/log_messages.json:ro
-    networks:
-      rtsp-syslog-network:
-        ipv4_address: 172.16.30.5
+    network_mode: "host"  # Mode host digunakan
 
   logrotate:
     build:
@@ -53,11 +44,13 @@ services:
       - syslog-data:/app/syslog
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
-      - TrueNas:/mnt/Data/Syslog/default/logrotate
+      - /mnt/Data/Syslog/default/logrotate:/mnt/Data/Syslog/default/logrotate
+      - /mnt/Data/Syslog/var-run:/mnt/Data/Syslog/var-run
       - ./config/log_messages.json:/app/syslog/config/log_messages.json:ro
     depends_on:
       - syslog
     restart: "no"
+    network_mode: "host"  # Mode host digunakan
 
   docker-socket-proxy:
     image: tecnativa/docker-socket-proxy
@@ -69,9 +62,7 @@ services:
     environment:
       CONTAINERS: 1
       LOGS: 1
-    networks:
-      rtsp-syslog-network:
-        ipv4_address: 172.16.30.6
+    network_mode: "host"  # Mode host digunakan
 
   api:
     build:
@@ -83,16 +74,12 @@ services:
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
-      - TrueNas:/mnt/Data/Backup
-      - TrueNas:/mnt/Data/Syslog
+      - /mnt/Data/Backup:/mnt/Data/Backup
+      - /mnt/Data/Syslog:/mnt/Data/Syslog
       - ./api/data:/app/data
     environment:
       LOG_DIR: "/app/data"
-    ports:
-      - "5001:5001"
-    networks:
-      rtsp-syslog-network:
-        ipv4_address: 172.16.30.7
+    network_mode: "host"  # Mode host digunakan
 
   stream:
     build:
@@ -107,32 +94,9 @@ services:
       - ./config/log_messages.json:/app/config/log_messages.json:ro
       - ./config/credentials.sh:/app/config/credentials.sh:ro
     working_dir: /app/streamserver
-    ports:
-      - "1935:1935" # RTMP
-      - "8080:8080" # HLS
-    networks:
-      rtsp-syslog-network:
-        ipv4_address: 172.16.30.8
-
-networks:
-  rtsp-syslog-network:
-    name: babah-network
-    driver: macvlan
-    driver_opts:
-      parent: ens3
-    ipam:
-      config:
-        - subnet: "172.16.30.0/28"
-          gateway: "172.16.30.1"
+    network_mode: "host"  # Mode host digunakan
 
 volumes:
-  TrueNas:
-    name: data-truenas
-    driver: local
-    driver_opts:
-      type: none
-      device: /mnt/Data
-      o: bind
   stream-data:
     name: data-stream
   syslog-data:

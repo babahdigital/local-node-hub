@@ -26,6 +26,12 @@ RUN mkdir -p config logrotate crontabs var-run \
            /mnt/Data/Syslog/var-run \
            /etc/logrotate.d/backup
 
+# Buat user 'abdullah'
+RUN id -u abdullah &>/dev/null || adduser -D -s /bin/bash abdullah
+
+# Ganti kepemilikan direktori ke user 'abdullah'
+RUN chown -R abdullah:abdullah /mnt/Data/Syslog/ /mnt/Data/Syslog/var-run
+
 COPY ./ /app/syslog/
 RUN chmod +x /app/syslog/entrypoint.sh /app/syslog/config/generate_rotate.sh
 
