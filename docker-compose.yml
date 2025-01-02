@@ -37,8 +37,8 @@ services:
       - syslog-data:/app/syslog
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
-      - TrueNas-Syslog:/mnt/syslog
-      - /home/abdullah/config/log_messages.json:/app/syslog/config/log_messages.json:ro
+      - TrueNas:/mnt/Data/Syslog
+      - ./config/log_messages.json:/app/syslog/config/log_messages.json:ro
     networks:
       rtsp-syslog-network:
         ipv4_address: 172.16.30.5
@@ -53,8 +53,8 @@ services:
       - syslog-data:/app/syslog
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
-      - TrueNas:/mnt/syslog/default/logrotate
-      - /home/abdullah/config/log_messages.json:/app/syslog/config/log_messages.json:ro
+      - TrueNas:/mnt/Data/Syslog/default/logrotate
+      - ./config/log_messages.json:/app/syslog/config/log_messages.json:ro
     depends_on:
       - syslog
     restart: "no"
@@ -83,8 +83,8 @@ services:
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
-      - TrueNas:/mnt/backup
-      - TrueNas:/mnt/syslog
+      - TrueNas:/mnt/Data/Backup
+      - TrueNas:/mnt/Data/Syslog
       - ./api/data:/app/data
     environment:
       LOG_DIR: "/app/data"
@@ -103,7 +103,7 @@ services:
     volumes:
       - stream-data:/app/streamserver
       - ./streamserver/config/nginx.conf:/etc/nginx/nginx.conf
-      - /mnt/syslog/stream:/var/log/nginx
+      - /mnt/Data/Syslog/stream:/var/log/nginx
       - ./config/log_messages.json:/app/config/log_messages.json:ro
       - ./config/credentials.sh:/app/config/credentials.sh:ro
     working_dir: /app/streamserver
@@ -131,7 +131,7 @@ volumes:
     driver: local
     driver_opts:
       type: none
-      device: /mnt
+      device: /mnt/Data
       o: bind
   stream-data:
     name: data-stream

@@ -10,12 +10,15 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 ################################################################################
-# 2. Variabel versi Docker & Docker Compose
+# 2. Variabel Konfigurasi
 ################################################################################
 DOCKER_VERSION=""
 DOCKER_COMPOSE_VERSION=${DOCKER_COMPOSE_VERSION:-"v2.22.0"}
 DOCKER_REPO_FILE="/etc/apt/sources.list.d/docker.list"
 DOCKER_GPG_FILE="/usr/share/keyrings/docker-archive-keyring.gpg"
+
+# Variabel Zona Waktu
+TIMEZONE=${TIMEZONE:-"Asia/Makassar"}  # Ganti dengan "Asia/Jakarta" jika perlu
 
 ################################################################################
 # 3. Fungsi bantuan
@@ -40,7 +43,17 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y \
   ca-certificates gnupg lsb-release screen iptables-persistent || error_exit "Gagal menginstal paket dasar."
 
 ################################################################################
-# 5. Tambah user 'abdullah' ke grup 'sudo' (opsional, jika ada)
+# 5. Konfigurasi Zona Waktu
+################################################################################
+info "Mengatur zona waktu ke ${TIMEZONE}..."
+if timedatectl list-timezones | grep -q "^${TIMEZONE}$"; then
+    timedatectl set-timezone "${TIMEZONE}" || error_exit "Gagal mengatur zona waktu ke ${TIMEZONE}."
+else
+    error_exit "Zona waktu ${TIMEZONE} tidak valid. Periksa daftar zona waktu menggunakan 'timedatectl list-timezones'."
+fi
+
+################################################################################
+# 6. Tambah user 'abdullah' ke grup 'sudo' (opsional, jika ada)
 ################################################################################
 if id "abdullah" &>/dev/null; then
   info "Menambahkan user 'abdullah' ke grup sudo..."
@@ -48,7 +61,7 @@ if id "abdullah" &>/dev/null; then
 fi
 
 ################################################################################
-# 6. Instal Docker Engine (dengan pengecekan duplikasi)
+# 7. Instal Docker Engine (dengan pengecekan duplikasi)
 ################################################################################
 if [ ! -f "$DOCKER_GPG_FILE" ]; then
   info "Menambahkan Docker GPG key..."
@@ -83,7 +96,7 @@ if ! command -v docker &> /dev/null; then
 fi
 
 ################################################################################
-# 7. Konfigurasi Docker daemon.json
+# 8. Konfigurasi Docker daemon.json
 ################################################################################
 info "Mengonfigurasi /etc/docker/daemon.json..."
 mkdir -p /etc/docker
@@ -109,7 +122,7 @@ info "Restarting Docker service..."
 systemctl restart docker
 
 ################################################################################
-# 8. Instal Docker Compose v2 (plugin)
+# 9. Instal Docker Compose v2 (plugin)
 ################################################################################
 info "Menginstal Docker Compose versi ${DOCKER_COMPOSE_VERSION} sebagai plugin..."
 
@@ -139,7 +152,7 @@ docker compose version --short &> /dev/null || error_exit "Docker Compose tidak 
 info "Docker Compose versi $(docker compose version --short) berhasil diinstal."
 
 ################################################################################
-# 9. Konfigurasi /etc/network/interfaces (Contoh) & IP forwarding
+# 10. Konfigurasi /etc/network/interfaces (Contoh) & IP forwarding
 ################################################################################
 info "Mengonfigurasi /etc/network/interfaces..."
 # Pastikan tidak double-write
@@ -170,7 +183,7 @@ info "Restarting networking service..."
 systemctl restart networking || info "Service networking tidak selalu tersedia di Debian minimal."
 
 ################################################################################
-# 10. Konfigurasi SSH
+# 11. Konfigurasi SSH
 ################################################################################
 info "Mengonfigurasi SSH agar bisa login root & ubah port ke 1983..."
 sed -i 's/^#\?Port .*/Port 1983/' /etc/ssh/sshd_config
@@ -181,7 +194,7 @@ info "Restarting SSH service..."
 systemctl restart sshd
 
 ################################################################################
-# 11. Konfigurasi iptables & iptables-persistent
+# 12. Konfigurasi iptables & iptables-persistent
 ################################################################################
 info "Membersihkan semua aturan iptables..."
 iptables -F
@@ -220,7 +233,7 @@ ip6tables-save > /etc/iptables/rules.v6
 systemctl enable netfilter-persistent
 
 ################################################################################
-# 12. Contoh Konfigurasi & Mount NFS4 (opsional)
+# 13. Contoh Konfigurasi & Mount NFS4 (opsional)
 ################################################################################
 info "Mengonfigurasi & melakukan mount NFS4..."
 NFS_SERVER="172.16.30.2"
@@ -234,7 +247,7 @@ fi
 mount -a || info "Pastikan server NFS mengekspor /mnt/Data/Syslog dengan NFS4."
 
 ################################################################################
-# 13. Jalankan Tes Docker
+# 14. Jalankan Tes Docker
 ################################################################################
 info "Memastikan layanan Docker aktif..."
 systemctl enable docker
@@ -250,7 +263,7 @@ info "Menjalankan kontainer uji hello-world..."
 docker run --rm hello-world || error_exit "Gagal menjalankan kontainer hello-world."
 
 ################################################################################
-# 14. Reboot Otomatis
+# 15. Reboot Otomatis
 ################################################################################
 info "Instalasi & konfigurasi selesai. Sistem akan reboot dalam 5 detik..."
 sleep 5
