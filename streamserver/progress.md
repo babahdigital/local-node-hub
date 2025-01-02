@@ -13,7 +13,7 @@ Membangun stream server yang mendukung:
 
 # Struktur Proyek
 ```bash
-project/
+/home/abdullah/
 ├── config/
 │   ├── credentials.sh           # Kredensial RTSP (Base64 terenkripsi)
 │   ├── log_messages.json        # Pesan log terpusat
