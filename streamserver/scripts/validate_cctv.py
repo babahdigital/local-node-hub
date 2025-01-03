@@ -2,7 +2,7 @@ import os
 import subprocess
 from datetime import datetime
 import sys
-sys.path.append("/app/script")
+sys.path.append("/app/scripts")
 from utils import load_log_messages, setup_logger
 
 # Load log messages for logging

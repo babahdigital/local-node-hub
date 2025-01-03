@@ -94,17 +94,17 @@ services:
 
   stream:
     build:
-      context: ./streamserver
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./streamserver/Dockerfile
     image: stream-server
     container_name: stream-server
 
     # Pasang bind-mount
     volumes:
       # 1) scripts -> /app/scripts
-      - /home/abdullah/scripts:/app/scripts:rw
+      - ./scripts:/app/scripts:rw
       # 2) log_messages.json -> /app/config/log_messages.json
-      - /home/abdullah/config/log_messages.json:/app/config/log_messages.json:ro
+      - ./config/log_messages.json:/app/config/log_messages.json:ro
 
       # Bind-mount Data Sistem
       - /etc/localtime:/etc/localtime:ro

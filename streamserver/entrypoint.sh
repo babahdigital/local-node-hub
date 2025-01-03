@@ -30,12 +30,12 @@ if [ ! -f /mnt/Data/Syslog/cctv/cctv_status.log ]; then
     touch /mnt/Data/Syslog/cctv/cctv_status.log
 fi
 
-if [ ! -f ./script/__init__.py ]; then
-    touch ../script/__init__.py
+if [ ! -f ./scripts/__init__.py ]; then
+    touch ../scripts/__init__.py
 fi
 
 chmod -R 755 /mnt/Data/Syslog
-chmod -R 755 ../script
+chmod -R 755 ../scripts
 
 # Fungsi untuk validasi RTSP Stream
 validate_and_log() {
