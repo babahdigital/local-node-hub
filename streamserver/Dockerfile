@@ -12,7 +12,8 @@ RUN apk add --no-cache \
 WORKDIR /app/streamserver
 
 # Salin hanya isi folder 'streamserver' (yang memuat Dockerfile, entrypoint, dsb.)
-COPY . /app/streamserver
+COPY /home/abdullah/scripts /app/scripts
+COPY /home/abdullah/config /app/config
 COPY . /app/streamserver
 
 # Convert line-ending & set permission
