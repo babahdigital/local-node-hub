@@ -14,7 +14,7 @@ WORKDIR /app/streamserver
 # Salin hanya isi folder 'streamserver' (yang memuat Dockerfile, entrypoint, dsb.)
 COPY ./scripts /app/scripts
 COPY ./config /app/config
-COPY . /app/streamserver
+COPY ./streamserver /app/streamserver
 
 # Convert line-ending & set permission
 RUN dos2unix entrypoint.sh && \
