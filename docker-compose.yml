@@ -55,8 +55,7 @@ services:
     container_name: logrotate
     ports: []
     depends_on:
-      syslog:
-        condition: service_healthy
+      - syslog
     restart: on-failure
     entrypoint: ["/app/syslog/entrypoint-logrotate.sh"]
     environment:
