@@ -2,8 +2,8 @@ import os
 import subprocess
 from datetime import datetime
 import sys
-sys.path.append("/app/")   # Pastikan /app/ ada di PYTHONPATH
-from scripts.utils import load_log_messages, setup_logger
+sys.path.append("/app/script")
+from utils import load_log_messages, setup_logger
 
 # Load log messages for logging
 LOG_MESSAGES_FILE = os.getenv("LOG_MESSAGES_FILE", "/app/config/log_messages.json")

@@ -30,18 +30,18 @@ if [ ! -f /mnt/Data/Syslog/cctv/cctv_status.log ]; then
     touch /mnt/Data/Syslog/cctv/cctv_status.log
 fi
 
-if [ ! -f ./scripts/__init__.py ]; then
-    touch ./scripts/__init__.py
+if [ ! -f ./script/__init__.py ]; then
+    touch ../script/__init__.py
 fi
 
 chmod -R 755 /mnt/Data/Syslog
-chmod -R 755 ./scripts
+chmod -R 755 ../script
 
 # Fungsi untuk validasi RTSP Stream
 validate_and_log() {
     local channel=$1
     echo "Memulai validasi RTSP untuk channel ${channel}..."
-    python /app/streamserver/scripts/validate_cctv.py \
+    /app/streamserver/venv/bin/python /app/streamserver/scripts/validate_cctv.py \
       "rtsp://${RTSP_USER}:${RTSP_PASSWORD}@${RTSP_IP}:554/cam/realmonitor?channel=${channel}&subtype=1" \
       "${channel}"
     if [ $? -eq 0 ]; then

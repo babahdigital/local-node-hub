@@ -102,9 +102,9 @@ services:
     # Pasang bind-mount
     volumes:
       # 1) scripts -> /app/scripts
-      - ../scripts:/app/scripts:ro
+      - /home/abdullah/scripts:/app/scripts:rw
       # 2) log_messages.json -> /app/config/log_messages.json
-      - ../config/log_messages.json:/app/config/log_messages.json:ro
+      - /home/abdullah/config/log_messages.json:/app/config/log_messages.json:ro
 
       # Bind-mount Data Sistem
       - /etc/localtime:/etc/localtime:ro

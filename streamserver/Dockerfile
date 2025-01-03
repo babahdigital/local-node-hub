@@ -6,13 +6,13 @@ RUN apk add --no-cache \
     jq \
     python3 \
     py3-pip \
-    dos2unix \
-    sudo
+    dos2unix
 
 # Direktori kerja
 WORKDIR /app/streamserver
 
 # Salin hanya isi folder 'streamserver' (yang memuat Dockerfile, entrypoint, dsb.)
+COPY . /app/streamserver
 COPY . /app/streamserver
 
 # Convert line-ending & set permission
