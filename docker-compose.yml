@@ -55,12 +55,14 @@ services:
     depends_on:
       - syslog
     restart: on-failure
+    entrypoint: ["/app/syslog/entrypoint-logrotate.sh"]
     environment:
-      LOG_MESSAGES_FILE: "/app/config/log_messages.json"
+      LOG_MESSAGES_FILE: "/app/config/syslog/log_messages.json"
     volumes:
       - syslog-data:/app/Syslog
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
+      - /mnt/Data/Syslog:/mnt/Data/Syslog
       - ./config/log_messages.json:/app/syslog/config/log_messages.json:ro
     networks:
       rtsp-syslog-network:

@@ -29,7 +29,8 @@ WORKDIR /app/syslog
 RUN mkdir -p config logrotate crontabs var-run \
            /app/syslog/var-run \
            /app/syslog/config \
-           /etc/logrotate.d/backup
+           /etc/logrotate.d/backup \
+           /mnt/Data/Syslog/default/logrotate
 
 COPY . /app/syslog
 RUN chmod +x /app/syslog/entrypoint.sh /app/syslog/entrypoint-logrotate.sh /app/syslog/config/generate_rotate.sh

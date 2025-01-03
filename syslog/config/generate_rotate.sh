@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 set -e
+set -x  # Mode debug untuk debugging lebih mudah
 
 ###############################################################################
 # Konfigurasi Umum
 ###############################################################################
 LOG_MESSAGES_FILE_PATH="${LOG_MESSAGES_FILE_PATH:-"/app/syslog/config/log_messages.json"}"
 LOG_ROOT="/mnt/Data/Syslog"
-CONFIG_FILE="/app/syslog/logrotate/syslog-ng"
+CONFIG_FILE="/app/syslog/config/logrotate/syslog-ng"
 GENERATE_LOG="/mnt/Data/Syslog/default/logrotate/generate.log"
 OWNER="abdullah"
 GROUP="abdullah"
@@ -35,6 +36,7 @@ log() {
 
   local message="$(date +"$time_format") $zone - $*"
   echo "$message"
+  mkdir -p "$(dirname "$GENERATE_LOG")"
   echo "$message" >> "$GENERATE_LOG"
 }
 
