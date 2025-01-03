@@ -98,29 +98,27 @@ services:
       dockerfile: Dockerfile
     image: stream-server
     container_name: stream-server
-    #depends_on:
-    #  - syslog
-    # Jalankan sebagai root (jika masih butuh chown / chmod volume host)
-    # user: "0:0" 
-    environment:
-      LOG_MESSAGES_FILE: "/app/config/log_messages.json"
+
+    # Pasang bind-mount
     volumes:
+      # 1) scripts -> /app/scripts
+      - ../scripts:/app/scripts:ro
+      # 2) log_messages.json -> /app/config/log_messages.json
+      - ../config/log_messages.json:/app/config/log_messages.json:ro
+
+      # Bind-mount Data Sistem
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
-      - ./streamserver/config/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./config/log_messages.json:/app/config/log_messages.json:ro
-      #- ./scripts/utils.py:/app/scripts/utils.py:ro
+      - /mnt/Data/Syslog:/mnt/Data/Syslog
+
+      # Bind-mount Kebutuhan Lainnya
       - ./config/credentials.sh:/app/streamserver/config/credentials.sh:ro
-      # Named volume:
-      - stream-temp-data:/app/streamserver/temp/stream
-      # Jika masih mau simpan ke host, pakai ini:
-      # - /mnt/Data/Syslog/stream:/app/streamserver/temp/stream
-    command: ["nginx", "-g", "daemon off;"]
+
     ports:
-      - "1935:1935" # RTMP
-      - "8080:8080" # HLS
+      - "1935:1935"
+      - "8080:8080"
     networks:
-      rtsp-syslog-network:
+      - rtsp-syslog-network
 
   docker-socket-proxy:
     image: tecnativa/docker-socket-proxy

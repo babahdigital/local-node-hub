@@ -1,7 +1,7 @@
 import os
 import subprocess
 from datetime import datetime
-#from utils import load_log_messages, setup_logger
+from /app/scripts.utils import load_log_messages, setup_logger
 
 # Load log messages for logging
 LOG_MESSAGES_FILE = os.getenv("LOG_MESSAGES_FILE", "/app/config/log_messages.json")

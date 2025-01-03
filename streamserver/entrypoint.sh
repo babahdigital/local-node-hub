@@ -21,6 +21,22 @@ export RTSP_IP=$(echo $RTSP_IP | base64 -d)
 export RTSP_USER=$(echo $RTSP_USER_BASE64 | base64 -d)
 export RTSP_PASSWORD=$(echo $RTSP_PASSWORD_BASE64 | base64 -d)
 
+# Buat Folder dan File
+if [ ! -d /mnt/Data/Syslog/cctv ]; then
+    mkdir -p /mnt/Data/Syslog/cctv
+fi
+
+if [ ! -f /mnt/Data/Syslog/cctv/cctv_status.log ]; then
+    touch /mnt/Data/Syslog/cctv/cctv_status.log
+fi
+
+if [ ! -f ./scripts/__init__.py ]; then
+    touch ./scripts/__init__.py
+fi
+
+chmod -R 755 /mnt/Data/Syslog
+chmod -R 755 ./scripts
+
 # Fungsi untuk validasi RTSP Stream
 validate_and_log() {
     local channel=$1

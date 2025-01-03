@@ -1,36 +1,29 @@
-# Menggunakan base image Nginx (atau Alpine jika perlu)
 FROM nginx:stable-alpine
 
-# Install FFmpeg, Bash, jq, Python, dan alat tambahan
-RUN apk add --no-cache ffmpeg bash jq python3 py3-pip dos2unix
+RUN apk add --no-cache \
+    ffmpeg \
+    bash \
+    jq \
+    python3 \
+    py3-pip \
+    dos2unix \
+    sudo
 
 # Direktori kerja
 WORKDIR /app/streamserver
 
-# Buat folder sebelum runtime
-RUN mkdir -p /app/streamserver/temp/client_body_temp \
-    /app/streamserver/temp/proxy_temp \
-    /app/streamserver/temp/fastcgi_temp \
-    /app/streamserver/temp/scgi_temp \
-    /app/streamserver/temp/uwsgi_temp \
-    /app/streamserver/temp/stream \
-    /app/streamserver/config \
-    /app/streamserver/scripts \
-    /app/config \
-    /app/scripts 
-
-# Membuat virtual environment untuk Python
-RUN python3 -m venv /app/streamserver/venv
-
-# Aktifkan virtual environment dan install dependensi Python
-RUN /app/streamserver/venv/bin/pip install --no-cache-dir python-dotenv
-
-# Salin file lainnya (disesuaikan dengan kebutuhan)
+# Salin hanya isi folder 'streamserver' (yang memuat Dockerfile, entrypoint, dsb.)
 COPY . /app/streamserver
 
-# Salin skrip konfigurasi
-RUN dos2unix /app/streamserver/entrypoint.sh && \
-    chmod +x /app/streamserver/entrypoint.sh
+# Convert line-ending & set permission
+RUN dos2unix entrypoint.sh && \
+    chmod +x entrypoint.sh
 
-# Entry point
+# (Opsional) Buat virtual environment
+RUN python3 -m venv venv && \
+    /app/streamserver/venv/bin/pip install --no-cache-dir --upgrade pip && \
+    /app/streamserver/venv/bin/pip install --no-cache-dir python-dotenv
+
+EXPOSE 1935 8080
+
 ENTRYPOINT ["/app/streamserver/entrypoint.sh"]
