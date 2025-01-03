@@ -28,6 +28,7 @@ WORKDIR /app/syslog
 # Buat struktur direktori untuk aplikasi
 RUN mkdir -p config logrotate crontabs var-run \
            /app/syslog/var-run \
+           /app/syslog/logrotate \
            /app/syslog/config \
            /etc/logrotate.d/backup \
            /mnt/Data/Syslog/default/logrotate
@@ -75,4 +76,4 @@ COPY --from=builder /app/syslog /app/syslog
 WORKDIR /app/syslog
 
 # Pastikan entrypoint dijalankan
-ENTRYPOINT ["/app/syslog/entrypoint.sh"]y
+ENTRYPOINT ["/app/syslog/entrypoint.sh"]

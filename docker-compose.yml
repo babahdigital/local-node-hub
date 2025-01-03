@@ -32,6 +32,7 @@ services:
     ports:
       - "1514:1514/tcp"
       - "1514:1514/udp"
+    entrypoint: ["/app/syslog/entrypoint.sh"]
     volumes:
       - syslog-data:/app/Syslog
       - /mnt/Data/Syslog:/mnt/Data/Syslog
@@ -52,14 +53,16 @@ services:
       dockerfile: Dockerfile
     image: logrotate
     container_name: logrotate
+    ports: []
     depends_on:
-      - syslog
+      syslog:
+        condition: service_healthy
     restart: on-failure
     entrypoint: ["/app/syslog/entrypoint-logrotate.sh"]
     environment:
       LOG_MESSAGES_FILE: "/app/config/syslog/log_messages.json"
     volumes:
-      - syslog-data:/app/Syslog
+      - syslog-data:/app/Syslog:ro
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
       - /mnt/Data/Syslog:/mnt/Data/Syslog

@@ -30,7 +30,7 @@ log() {
 # Variabel dan Konfigurasi
 ###############################################################################
 LOG_MESSAGES_FILE_PATH="${LOG_MESSAGES_FILE_PATH:-"/app/syslog/config/log_messages.json"}"
-CONFIG_SOURCE="/app/syslog/config/logrotate/syslog-ng"
+CONFIG_SOURCE="/app/syslog/logrotate/syslog-ng"
 CONFIG_TARGET="/etc/logrotate.d/syslog-ng"
 LOGROTATE_STATE_FILE="/mnt/Data/Syslog/default/logrotate/logrotate.status"
 LOGROTATE_LOG="/mnt/Data/Syslog/default/logrotate/logrotate.log"
@@ -65,17 +65,14 @@ log "$(get_message "logrotate.init_start")"
 
 # 1. Bersihkan folder log (opsional)
 log "$(get_message "logrotate.cleaning_logs")"
-sudo -u root bash -c '
-  set -x
-  rm -rf /mnt/Data/Syslog/*
-  mkdir -p /mnt/Data/Syslog/test /mnt/Data/Syslog/debug
-  mkdir -p /mnt/Data/Syslog/default/logrotate
-  touch /mnt/Data/Syslog/default/default.log
-  touch /mnt/Data/Syslog/test/test.log
-  touch /mnt/Data/Syslog/debug/debug.log
-  touch /mnt/Data/Syslog/default/logrotate/logrotate.status
-  touch /mnt/Data/Syslog/default/logrotate/logrotate.log
-'
+rm -rf /mnt/Data/Syslog/*
+mkdir -p /mnt/Data/Syslog/test /mnt/Data/Syslog/debug
+mkdir -p /mnt/Data/Syslog/default/logrotate
+touch /mnt/Data/Syslog/default/default.log
+touch /mnt/Data/Syslog/test/test.log
+touch /mnt/Data/Syslog/debug/debug.log
+touch /mnt/Data/Syslog/default/logrotate/logrotate.status
+touch /mnt/Data/Syslog/default/logrotate/logrotate.log
 
 # 2. Verifikasi file cron
 log "$(get_message "logrotate.verifying_cron_file")"
