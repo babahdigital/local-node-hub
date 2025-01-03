@@ -63,16 +63,13 @@ RUN chmod 755 /usr/sbin/crond
 
 # Tambahkan folder /run dan var-run agar user abdullah dapat menulis
 RUN mkdir -p /run /app/syslog/var-run \
- && chown -R abdullah:abdullah /app/syslog/var-run \
  && chmod 755 /etc/logrotate.d
 
 # Pindahkan konfigurasi tetap di /app/syslog/config
-RUN mkdir -p /app/syslog/config \
- && chown -R abdullah:abdullah /app/syslog/config
+RUN mkdir -p /app/syslog/config 
 
 # Salin aplikasi dari builder
 COPY --from=builder /app/syslog /app/syslog
-RUN chown -R abdullah:abdullah /app/syslog
 
 WORKDIR /app/syslog
 

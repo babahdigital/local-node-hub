@@ -232,10 +232,33 @@
     "config_found": "File konfigurasi logrotate sudah ada.",
     "removing_existing_symlink": "Menghapus symlink logrotate yang sudah ada.",
     "symlink_removed": "Symlink logrotate dihapus.",
-    "start_cron_service": "Memulai layanan cron."
+    "start_cron_service": "Memulai layanan cron.",
+    "load_messages_ok": "Pesan log_messages.json berhasil diload dari",
+    "load_messages_not_found": "Error: File log_messages.json tidak ditemukan di",
+    "cleaning_logs": "Membersihkan /mnt/Data/Syslog...",
+    "verifying_cron_file": "Memeriksa kepemilikan dan izin file cron...",
+    "running_generate_rotate": "Menjalankan generate_rotate.sh...",
+    "generate_rotate_done": "generate_rotate.sh selesai.",
+    "checking_cron_job": "Memeriksa keberadaan cron job...",
+    "cron_job_added": "Menambahkan cron job baru...",
+    "starting_cron": "Memulai layanan cron...",
+    "crond_not_found": "Error: crond tidak ditemukan atau tidak dapat dijalankan."
   },
   "proxy.validation": {
     "files_valid": "Validasi file konfigurasi Nginx.",
     "file_missing": "File konfigurasi tidak ditemukan: {file}. Pastikan file tersedia dan dapat diakses."
+  },
+  "generate": {
+    "load_messages_ok": "Pesan log_messages.json berhasil diload dari",
+    "load_messages_not_found": "Warning: File log_messages.json tidak ditemukan. Menggunakan pesan default.",
+    "ensure_config_dir": "Memastikan direktori konfigurasi logrotate ada...",
+    "logroot_not_found": "Direktori log root tidak ditemukan! Script dihentikan.",
+    "config_exists": "File konfigurasi logrotate sudah ada. Mengabaikan pembuatan ulang.",
+    "creating_config": "Membuat file konfigurasi logrotate di",
+    "scanning_logs": "Memindai semua file log di",
+    "no_logs_found": "Tidak ditemukan file .log.",
+    "adding_log_config": "Menambahkan konfigurasi untuk",
+    "config_creation_done": "Konfigurasi logrotate selesai. File disimpan di",
+    "generate_finished": "Proses generate_rotate.sh selesai."
   }
 }
