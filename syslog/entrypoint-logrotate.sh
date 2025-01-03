@@ -73,6 +73,7 @@ touch /mnt/Data/Syslog/test/test.log
 touch /mnt/Data/Syslog/debug/debug.log
 touch /mnt/Data/Syslog/default/logrotate/logrotate.status
 touch /mnt/Data/Syslog/default/logrotate/logrotate.log
+touch /mnt/Data/Syslog/default/logrotate/cron.log
 
 # 2. Verifikasi file cron
 log "$(get_message "logrotate.verifying_cron_file")"
@@ -95,7 +96,12 @@ fi
 
 # 5. Mulai cron
 log "$(get_message "logrotate.start_cron")"
-crond -c "$(dirname "$CRON_FILE")" -b -l 2 -p /app/syslog/var-run/crond.pid
+crond \
+  -c "$(dirname "$CRON_FILE")" \
+  -b \
+  -l 8 \
+  -L /mnt/Data/Syslog/default/logrotate/cron.log \
+  -p /app/syslog/var-run/crond.pid
 
 # 6. Jalankan logrotate manual (force)
 log "$(get_message "logrotate.run_force_logrotate")"
