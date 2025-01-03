@@ -249,16 +249,39 @@
     "file_missing": "File konfigurasi tidak ditemukan: {file}. Pastikan file tersedia dan dapat diakses."
   },
   "generate": {
-    "load_messages_ok": "Pesan log_messages.json berhasil diload dari",
-    "load_messages_not_found": "Warning: File log_messages.json tidak ditemukan. Menggunakan pesan default.",
+    "load_messages_ok": "Memuat pesan JSON untuk generate_rotate.sh dari",
+    "load_messages_not_found": "Tidak ditemukan berkas log_messages.json untuk generate_rotate.sh",
     "ensure_config_dir": "Memastikan direktori konfigurasi logrotate ada...",
-    "logroot_not_found": "Direktori log root tidak ditemukan! Script dihentikan.",
-    "config_exists": "File konfigurasi logrotate sudah ada. Mengabaikan pembuatan ulang.",
+    "config_exists": "Konfigurasi logrotate sudah ada. Tidak membuat ulang.",
     "creating_config": "Membuat file konfigurasi logrotate di",
-    "scanning_logs": "Memindai semua file log di",
-    "no_logs_found": "Tidak ditemukan file .log.",
-    "adding_log_config": "Menambahkan konfigurasi untuk",
-    "config_creation_done": "Konfigurasi logrotate selesai. File disimpan di",
-    "generate_finished": "Proses generate_rotate.sh selesai."
+    "scanning_logs": "Memindai semua file .log di",
+    "adding_log_config": "Menambahkan konfigurasi logrotate untuk",
+    "config_creation_done": "Konfigurasi logrotate selesai. Disimpan di",
+    "generate_finished": "generate_rotate.sh selesai."
+  },
+  "syslog": {
+    "load_messages_ok": "Memuat pesan JSON untuk kontainer syslog-ng dari",
+    "load_messages_not_found": "Tidak ditemukan berkas log_messages.json untuk kontainer syslog-ng",
+    "init_start": "Memulai inisialisasi syslog-ng container...",
+    "check_config": "Memeriksa keberadaan file konfigurasi syslog-ng",
+    "config_found": "File konfigurasi syslog-ng sudah ada.",
+    "config_not_found": "File konfigurasi syslog-ng belum ada, akan menggunakan default.",
+    "start_syslog_ng": "Menjalankan syslog-ng secara foreground.",
+    "done": "Proses inisialisasi syslog-ng selesai."
+  },
+  "logrotate": {
+    "load_messages_ok": "Memuat pesan JSON untuk kontainer logrotate dari",
+    "load_messages_not_found": "Tidak ditemukan berkas log_messages.json untuk kontainer logrotate",
+    "init_start": "Memulai inisialisasi logrotate container...",
+    "cleaning_logs": "Membersihkan /mnt/Data/Syslog sebelum logrotate berjalan...",
+    "verifying_cron_file": "Memeriksa kepemilikan dan izin file cron...",
+    "config_not_found": "File konfigurasi logrotate tidak ditemukan, akan generate otomatis...",
+    "running_generate_rotate": "Menjalankan generate_rotate.sh untuk membuat config logrotate...",
+    "generate_rotate_done": "Proses generate_rotate.sh selesai.",
+    "start_cron": "Memulai layanan cron di dalam kontainer logrotate...",
+    "run_force_logrotate": "Menjalankan logrotate manual (force)...",
+    "logrotate_no_rotation": "Logrotate tidak melakukan rotasi.",
+    "logrotate_rotated": "Logrotate melakukan rotasi log.",
+    "done": "Proses inisialisasi kontainer logrotate selesai."
   }
 }

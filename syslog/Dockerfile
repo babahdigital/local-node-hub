@@ -32,7 +32,7 @@ RUN mkdir -p config logrotate crontabs var-run \
            /etc/logrotate.d/backup
 
 COPY . /app/syslog
-RUN chmod +x /app/syslog/entrypoint.sh /app/syslog/config/generate_rotate.sh
+RUN chmod +x /app/syslog/entrypoint.sh /app/syslog/entrypoint-logrotate.sh /app/syslog/config/generate_rotate.sh
 
 # Tahap 2: Final
 FROM alpine:3.21
