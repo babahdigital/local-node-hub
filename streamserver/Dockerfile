@@ -1,91 +1,136 @@
-# Gunakan base image alpine versi stabil (contoh: 3.18)
-FROM alpine:3.21
+# =========================================
+# STAGE 1: BUILD NGINX + LINGKUNGAN PYTHON
+# =========================================
+FROM python:3.12-slim AS builder
 
-# Tambahkan repositori main dan community Alpine 3.21 (tanpa edge)
-RUN echo "https://dl-cdn.alpinelinux.org/alpine/v3.21/main" > /etc/apk/repositories && \
-    echo "https://dl-cdn.alpinelinux.org/alpine/v3.21/community" >> /etc/apk/repositories && \
-    apk update && \
-    apk add --no-cache \
-    git \
-    gcc \
-    libc-dev \
-    make \
-    openssl-dev \
-    pcre-dev \
-    zlib-dev \
-    bash \
-    jq \
-    python3 \
-    py3-pip \
-    dos2unix \
-    net-tools \
-    ffmpeg \
-    wget  \
-    curl && \
-    rm -rf /var/cache/apk/*
+ARG NGINX_VERSION=1.27.3
+ENV DEBIAN_FRONTEND=noninteractive
 
-# Download source code Nginx
+# Install dependencies untuk build
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libpcre3-dev \
+    zlib1g-dev \
+    libssl-dev \
+    wget \
+    cmake \
+    libjpeg-dev \
+    libpng-dev \
+    libwebp-dev \
+    libtiff-dev \
+    libopenblas-dev \
+    gfortran \
+    python3-dev \
+    python3-setuptools \
+    python3-wheel && \
+    rm -rf /var/lib/apt/lists/*
+
 WORKDIR /tmp
-RUN wget https://nginx.org/download/nginx-1.27.3.tar.gz && \
-    tar -xzvf nginx-1.27.3.tar.gz
 
-# Build Nginx tanpa modul RTMP
-WORKDIR /tmp/nginx-1.27.3
-RUN ./configure --prefix=/etc/nginx \
-                --sbin-path=/usr/sbin/nginx \
-                --modules-path=/usr/lib/nginx/modules \
-                --conf-path=/etc/nginx/nginx.conf \
-                --error-log-path=/var/log/nginx/error.log \
-                --http-log-path=/var/log/nginx/access.log \
-                --pid-path=/var/run/nginx.pid \
-                --lock-path=/var/run/nginx.lock \
-                --http-client-body-temp-path=/var/cache/nginx/client_temp \
-                --http-proxy-temp-path=/var/cache/nginx/proxy_temp \
-                --http-fastcgi-temp-path=/var/cache/nginx/fastcgi_temp \
-                --http-uwsgi-temp-path=/var/cache/nginx/uwsgi_temp \
-                --http-scgi-temp-path=/var/cache/nginx/scgi_temp \
-                --with-http_ssl_module && \
-    make && \
-    make install
+# Download dan build Nginx
+RUN wget https://nginx.org/download/nginx-${NGINX_VERSION}.tar.gz && \
+    tar -xzvf nginx-${NGINX_VERSION}.tar.gz && \
+    cd nginx-${NGINX_VERSION} && \
+    ./configure \
+      --prefix=/etc/nginx \
+      --sbin-path=/usr/sbin/nginx \
+      --modules-path=/usr/lib/nginx/modules \
+      --conf-path=/etc/nginx/nginx.conf \
+      --error-log-path=/app/streamserver/nginx/error.log \
+      --http-log-path=/app/streamserver/nginx/access.log \
+      --pid-path=/app/streamserver/nginx/nginx.pid \
+      --lock-path=/app/streamserver/nginx/nginx.lock \
+      --http-client-body-temp-path=/app/streamserver/nginx/client_temp \
+      --http-proxy-temp-path=/app/streamserver/nginx/proxy_temp \
+      --http-fastcgi-temp-path=/app/streamserver/nginx/fastcgi_temp \
+      --http-uwsgi-temp-path=/app/streamserver/nginx/uwsgi_temp \
+      --http-scgi-temp-path=/app/streamserver/nginx/scgi_temp \
+      --with-http_ssl_module && \
+    make && make install && \
+    cd /tmp && rm -rf nginx-${NGINX_VERSION}*
 
-# Bersihkan file _build_ sementara
-RUN apk del gcc libc-dev make && \
-    rm -rf /tmp/nginx-1.27.3 /tmp/nginx-1.27.3.tar.gz
+# Buat direktori untuk cache, HLS, dan Nginx
+RUN mkdir -p /app/streamserver/hls /app/streamserver/nginx && \
+    chmod -R 777 /app/streamserver/hls /app/streamserver/nginx
 
-# Siapkan folder HLS agar Nginx dapat menulis segmen di sini
-RUN mkdir -p /app/streamserver/hls && \
-    chmod 777 /app/streamserver/hls
-
-# Buat direktori cache Nginx
-RUN mkdir -p /var/cache/nginx && \
-    chmod -R 777 /var/cache/nginx
-
-# Salin file konfigurasi Nginx
-COPY ./streamserver/config/nginx.conf /etc/nginx/nginx.conf
-
-# Set direktori kerja
 WORKDIR /app/streamserver
 
-# Salin file dan folder aplikasi
+# Copy aplikasi dan konfigurasi
 COPY ./scripts /app/scripts
 COPY ./config /app/config
 COPY ./streamserver /app/streamserver
+COPY ./models/mobilenet_ssd /app/models/mobilenet_ssd
+COPY ./streamserver/config/nginx.conf /etc/nginx/nginx.conf
+COPY ./streamserver/entrypoint.sh /app/streamserver/entrypoint.sh
 
-# Konversi _line-ending_ dan set izin untuk entrypoint
-RUN dos2unix /app/streamserver/entrypoint.sh && \
-    dos2unix /app/streamserver/config/nginx.conf && \
-    chmod +x /app/streamserver/entrypoint.sh
-
-# Buat virtual environment Python dan install dependensi
-RUN python3 -m venv /app/streamserver/venv && \
+# Install Python dependencies
+RUN pip install --no-cache-dir --upgrade pip && \
+    python -m venv /app/streamserver/venv && \
     /app/streamserver/venv/bin/pip install --no-cache-dir --upgrade pip && \
-    /app/streamserver/venv/bin/pip install --no-cache-dir python-dotenv pytz
+    /app/streamserver/venv/bin/pip install --no-cache-dir \
+        python-dotenv \
+        pytz \
+        opencv-python-headless
 
-# Set ENTRYPOINT untuk menjalankan skrip inisialisasi
+# Hapus build dependencies untuk memperkecil ukuran image
+RUN apt-get remove --purge -y \
+    build-essential \
+    libpcre3-dev \
+    zlib1g-dev \
+    libssl-dev \
+    wget \
+    cmake \
+    libjpeg-dev \
+    libpng-dev \
+    libwebp-dev \
+    libtiff-dev \
+    libopenblas-dev \
+    gfortran \
+    python3-dev \
+    python3-setuptools \
+    python3-wheel && \
+    apt-get autoremove -y && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# =========================================
+# STAGE 2: FINAL (RUNTIME) IMAGE
+# =========================================
+FROM python:3.12-slim AS final
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
+    libpcre3 \
+    libssl3 \
+    zlib1g \
+    ffmpeg \
+    net-tools \
+    libjpeg62-turbo-dev \
+    libpng16-16 \
+    libtiff6 \
+    libwebp7 \
+    libopenblas0 && \
+    adduser --disabled-password --gecos "" --uid 1000 abdullah && \
+    rm -rf /var/lib/apt/lists/*
+
+# Salin aplikasi dari stage builder
+COPY --from=builder /usr/sbin/nginx /usr/sbin/nginx
+COPY --from=builder /etc/nginx /etc/nginx
+COPY --from=builder /app/streamserver /app/streamserver
+
+# Pastikan file memiliki izin eksekusi dan direktori dimiliki oleh abdullah
+RUN chmod +x /app/streamserver/entrypoint.sh && \
+    chown -R abdullah:abdullah /app/streamserver
+
+# Atur user default ke 'abdullah'
+USER abdullah
+
+ENV PATH="/app/streamserver/venv/bin:$PATH"
+
+WORKDIR /app/streamserver
+
 ENTRYPOINT ["/app/streamserver/entrypoint.sh"]
-
-# Jalankan Nginx sebagai perintah default
 CMD ["nginx", "-g", "daemon off;", "-c", "/etc/nginx/nginx.conf"]
 
-# Expose port HTTP (8080) untuk HLS
 EXPOSE 8080

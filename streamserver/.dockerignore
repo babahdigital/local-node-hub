@@ -1,14 +1,18 @@
+# Python
+__pycache__/
 __init__.py
+
+# Node.js
 node_modules
+
+# Logs
 *.log
-.git
-.DS_Store
-LICENSE
+
+# Backups
 *-bak
-.github
-.vscode
+
+# File lainnya
 *.md
-LICENSE
-report
-rencana
-doc
+
+# Kecualikan env
+!.env

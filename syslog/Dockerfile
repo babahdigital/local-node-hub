@@ -1,11 +1,12 @@
 # Tahap 1: Builder
 FROM alpine:3.21 AS builder
 
+# Gunakan mirror tercepat untuk paket APK
 ENV APK_MIRROR=http://mirror.leaseweb.com/alpine/
 
-RUN sed -i "s|http://dl-cdn.alpinelinux.org/alpine/|${APK_MIRROR}|g" /etc/apk/repositories \
-    && apk update \
-    && apk add --no-cache \
+RUN sed -i "s|http://dl-cdn.alpinelinux.org/alpine/|${APK_MIRROR}|g" /etc/apk/repositories && \
+    apk update && \
+    apk add --no-cache \
         gcc \
         musl-dev \
         libcap \
@@ -20,31 +21,25 @@ RUN sed -i "s|http://dl-cdn.alpinelinux.org/alpine/|${APK_MIRROR}|g" /etc/apk/re
         procps \
         util-linux
 
-# Ijinkan syslog-ng bind port <1024
-RUN setcap 'cap_net_bind_service=+ep' /usr/sbin/syslog-ng
-
 WORKDIR /app/syslog
 
-# Buat struktur direktori untuk aplikasi
+# Buat struktur direktori dan salin file
 RUN mkdir -p config logrotate crontabs var-run \
-           /app/syslog/var-run \
-           /app/syslog/logrotate \
-           /app/syslog/config \
            /etc/logrotate.d/backup \
-           /mnt/Data/Syslog/default/logrotate
+           /mnt/Data/Syslog/default/logrotate && \
+    chmod 755 /app/syslog
 
 COPY . /app/syslog
 RUN chmod +x /app/syslog/entrypoint.sh /app/syslog/entrypoint-logrotate.sh /app/syslog/config/generate_rotate.sh
 
 # Tahap 2: Final
 FROM alpine:3.21
+
 ENV APK_MIRROR=http://mirror.leaseweb.com/alpine/
 
-RUN sed -i "s|http://dl-cdn.alpinelinux.org/alpine/|${APK_MIRROR}|g" /etc/apk/repositories \
-    && apk update \
-    && apk add --no-cache \
-        gcc \
-        musl-dev \
+RUN sed -i "s|http://dl-cdn.alpinelinux.org/alpine/|${APK_MIRROR}|g" /etc/apk/repositories && \
+    apk update && \
+    apk add --no-cache \
         libcap \
         syslog-ng \
         syslog-ng-json \
@@ -55,25 +50,16 @@ RUN sed -i "s|http://dl-cdn.alpinelinux.org/alpine/|${APK_MIRROR}|g" /etc/apk/re
         sudo \
         bash \
         procps \
-        util-linux
+        util-linux && \
+    id -u abdullah &>/dev/null || adduser -D -s /bin/bash abdullah && \
+    chmod 755 /usr/sbin/crond && \
+    mkdir -p /run /app/syslog/var-run && \
+    chmod 755 /etc/logrotate.d
 
-# Pastikan user abdullah ada (buat hanya jika belum ada)
-RUN id -u abdullah &>/dev/null || adduser -D -s /bin/bash abdullah
-
-# Pastikan crond dapat dieksekusi user biasa
-RUN chmod 755 /usr/sbin/crond
-
-# Tambahkan folder /run dan var-run agar user abdullah dapat menulis
-RUN mkdir -p /run /app/syslog/var-run \
- && chmod 755 /etc/logrotate.d
-
-# Pindahkan konfigurasi tetap di /app/syslog/config
-RUN mkdir -p /app/syslog/config 
+WORKDIR /app/syslog
 
 # Salin aplikasi dari builder
 COPY --from=builder /app/syslog /app/syslog
 
-WORKDIR /app/syslog
-
-# Pastikan entrypoint dijalankan
 ENTRYPOINT ["/app/syslog/entrypoint.sh"]
+EXPOSE 1514

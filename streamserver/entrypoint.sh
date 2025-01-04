@@ -3,10 +3,9 @@ set -e
 
 # === Variabel Utama ===
 LOG_BASE_PATH="/mnt/Data/Syslog/rtsp"
-NGINX_LOG_PATH="${LOG_BASE_PATH}/nginx"
-CCTV_LOG_PATH="/mnt/Data/Syslog/cctv"
+NGINX_LOG_PATH="/app/streamserver/nginx"
+CCTV_LOG_PATH="${LOG_BASE_PATH}/cctv"
 HLS_PATH="/app/streamserver/hls"
-ENV_FILE="/app/streamserver/.env" # Lokasi file .env
 
 # Fungsi Logging
 log_info() {
@@ -22,16 +21,30 @@ setup_directories() {
         "$NGINX_LOG_PATH"
         "$CCTV_LOG_PATH"
         "$HLS_PATH"
+        "$NGINX_LOG_PATH/client_temp"
+        "$NGINX_LOG_PATH/proxy_temp"
+        "$NGINX_LOG_PATH/fastcgi_temp"
+        "$NGINX_LOG_PATH/uwsgi_temp"
+        "$NGINX_LOG_PATH/scgi_temp"
     )
     log_info "Membuat direktori log dan direktori sementara..."
     for d in "${dirs[@]}"; do
         mkdir -p "$d"
     done
 
-    chmod -R 777 "$LOG_BASE_PATH"
-    chmod -R 777 "$NGINX_LOG_PATH"
+    # Pastikan hak akses direktori NGINX (di dalam container) memadai
+    chmod -R 775 "$NGINX_LOG_PATH"
+
+    # Jika LOG_BASE_PATH adalah mount di host, jangan di-chown
+    if [ -d "$LOG_BASE_PATH" ]; then
+        chmod -R 775 "$LOG_BASE_PATH"
+        log_info "Izin untuk $LOG_BASE_PATH diatur ke 775"
+    else
+        log_error "Direktori $LOG_BASE_PATH tidak ditemukan. Pastikan volume dipasang dengan benar."
+    fi
+
+    # Sesuaikan agar HLS_PATH bisa ditulis oleh service lain
     chmod -R 777 "$HLS_PATH"
-    chown -R nobody:nobody "$HLS_PATH"
 
     local log_files=(
         "$CCTV_LOG_PATH/cctv_status.log"
@@ -45,19 +58,14 @@ setup_directories() {
     log_info "Direktori log dan file log berhasil disiapkan."
 }
 
-secure_env_file() {
-    if [ -f "$ENV_FILE" ]; then
-        log_info "Mengamankan file .env dengan chmod 600..."
-        chmod 600 "$ENV_FILE"
-    else
-        log_error "File .env tidak ditemukan di $ENV_FILE!"
-    fi
-}
-
 decode_credentials() {
     log_info "Mendekode kredensial RTSP dari environment..."
-    export RTSP_USER=$(echo "$RTSP_USER_BASE64" | base64 -d)
-    export RTSP_PASSWORD=$(echo "$RTSP_PASSWORD_BASE64" | base64 -d)
+    if [ -n "$RTSP_USER_BASE64" ] && [ -n "$RTSP_PASSWORD_BASE64" ]; then
+        export RTSP_USER=$(echo "$RTSP_USER_BASE64" | base64 -d)
+        export RTSP_PASSWORD=$(echo "$RTSP_PASSWORD_BASE64" | base64 -d)
+    else
+        log_error "Variabel RTSP_USER_BASE64 atau RTSP_PASSWORD_BASE64 tidak diset. Kredensial RTSP tidak dapat didekode."
+    fi
 }
 
 cleanup_hls() {
@@ -97,12 +105,18 @@ validate_all_channels() {
 }
 
 # === MAIN ENTRYPOINT ===
+log_info "Memverifikasi user abdullah..."
+if id abdullah &>/dev/null; then
+    log_info "User abdullah tersedia."
+else
+    log_error "User abdullah tidak ditemukan!"
+    exit 1
+fi
+
 setup_directories
-secure_env_file
 decode_credentials
 cleanup_hls
 
-# Jalankan validasi jika diaktifkan
 ENABLE_RTSP_VALIDATION=${ENABLE_RTSP_VALIDATION:-true}
 if [ "$ENABLE_RTSP_VALIDATION" = "true" ]; then
     validate_all_channels

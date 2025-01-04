@@ -3,34 +3,29 @@ import subprocess
 from datetime import datetime
 import sys
 
-# Pastikan folder scripts ada di PATH
+# Pastikan folder scripts ada di PATH (jika utils.py ada di /app/scripts)
 sys.path.append("/app/scripts")
 
-from utils import load_log_messages, setup_logger
+from utils import setup_logger, get_local_time
 
-# File JSON untuk pesan log
-LOG_MESSAGES_FILE = os.getenv("LOG_MESSAGES_FILE", "/app/config/log_messages.json")
-# File log utama
-LOG_PATH = "/mnt/Data/Syslog/rtsp/stream/stream_service.log"
+# Konfigurasi file log utama (bisa disesuaikan via ENV)
+LOG_PATH = os.getenv("LOG_PATH", "/mnt/Data/Syslog/rtsp/cctv/validation.log")
+CCTV_LOG_PATH = os.getenv("CCTV_LOG_PATH", "/mnt/Data/Syslog/rtsp/cctv/cctv_status.log")
 
 # Siapkan logger
 logger = setup_logger("RTSP-Validation", LOG_PATH)
-
-# Muat pesan log (jika Anda menggunakan load_log_messages)
-log_messages = load_log_messages(LOG_MESSAGES_FILE)
 
 def write_status_log(channel, status):
     """
     Menulis status kamera (Online/Offline) ke file log CCTV.
     """
-    log_file = "/mnt/Data/Syslog/cctv/cctv_status.log"
-    timestamp = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
-    with open(log_file, "a") as f:
+    timestamp = get_local_time()
+    with open(CCTV_LOG_PATH, "a") as f:
         f.write(f"{timestamp} - Channel {channel}: {status}\n")
 
 def check_black_frames(rtsp_url):
     """
-    Periksa apakah frame hitam terdeteksi pada RTSP URL dengan ffmpeg filter blackdetect.
+    Periksa apakah frame hitam terdeteksi pada RTSP URL.
     """
     try:
         result = subprocess.run(
@@ -47,15 +42,13 @@ def check_black_frames(rtsp_url):
             stderr=subprocess.PIPE,
             timeout=10
         )
-        # Jika string "black_start" muncul di stderr => terdeteksi frame hitam
-        if b"black_start" in result.stderr:
-            return False
-        return True
+        # Jika b"black_start" terdeteksi => frame hitam
+        return b"black_start" not in result.stderr
     except subprocess.TimeoutExpired:
-        logger.error(log_messages["validation"]["stream_invalid"].format(channel=rtsp_url))
+        logger.error(f"Timeout saat memeriksa frame hitam pada URL: {rtsp_url}")
         return False
     except Exception as e:
-        logger.error(log_messages["general"]["unexpected_error"].format(error=str(e)))
+        logger.error(f"Kesalahan tidak terduga saat memeriksa frame hitam: {e}")
         return False
 
 def validate_rtsp_stream(rtsp_url, channel):
@@ -77,25 +70,24 @@ def validate_rtsp_stream(rtsp_url, channel):
             timeout=5
         )
         if result.returncode == 0 and result.stdout:
-            # Stream valid, selanjutnya cek frame hitam
+            # Jika valid, cek frame hitam
             if not check_black_frames(rtsp_url):
-                logger.error(log_messages["validation"]["camera_down"].format(channel=rtsp_url))
+                logger.warning(f"Channel {channel}: Frame hitam terdeteksi.")
                 write_status_log(channel, "Offline (Black Frames Detected)")
                 return False
-            # Jika lolos blackframe check
             write_status_log(channel, "Online")
             return True
         else:
-            logger.error(log_messages["validation"]["stream_invalid"].format(channel=rtsp_url))
+            logger.error(f"Channel {channel}: Stream tidak valid.")
             write_status_log(channel, "Offline")
             return False
     except subprocess.TimeoutExpired:
-        logger.error(log_messages["validation"]["stream_invalid"].format(channel=rtsp_url))
+        logger.error(f"Channel {channel}: Timeout saat validasi.")
         write_status_log(channel, "Offline (Timeout)")
         return False
     except Exception as e:
-        logger.error(log_messages["general"]["unexpected_error"].format(error=str(e)))
-        write_status_log(channel, f"Offline (Error: {str(e)})")
+        logger.error(f"Channel {channel}: Kesalahan tidak terduga: {e}")
+        write_status_log(channel, f"Offline (Error: {e})")
         return False
 
 def main():
@@ -103,10 +95,14 @@ def main():
     Fungsi utama untuk memvalidasi semua channel berdasarkan variabel lingkungan CHANNELS.
     """
     total_channels = int(os.getenv("CHANNELS", 1))
-
     for channel in range(1, total_channels + 1):
-        rtsp_url = f"rtsp://{os.getenv('RTSP_USER')}:{os.getenv('RTSP_PASSWORD')}@{os.getenv('RTSP_IP')}:554/cam/realmonitor?channel={channel}&subtype={os.getenv('RTSP_SUBTYPE', 1)}"
+        rtsp_url = (
+            f"rtsp://{os.getenv('RTSP_USER')}:{os.getenv('RTSP_PASSWORD')}@"
+            f"{os.getenv('RTSP_IP')}:554/cam/realmonitor?channel={channel}&"
+            f"subtype={os.getenv('RTSP_SUBTYPE', '1')}"
+        )
         result = validate_rtsp_stream(rtsp_url, channel)
+        # Jika RTSP tidak valid, Anda bisa memutuskan exit code
         if not result:
             sys.exit(1)
 

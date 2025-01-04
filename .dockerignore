@@ -1,14 +1,35 @@
+# Python
+__pycache__/
 __init__.py
+
+# Node.js
 node_modules
-*.log
+
+# Git-related
 .git
-.DS_Store
-LICENSE
-*-bak
 .github
+.gitconfig
+
+# Editor settings
 .vscode
+
+# System files
+.DS_Store
+
+# Logs
+*.log
+
+# Backups
+*-bak
+
+# File lainnya
 *.md
+
+# Documentation
 LICENSE
-report
-rencana
-doc
+doc/
+report/
+rencana/
+
+# Kecualikan env
+!.env
