@@ -1,10 +1,11 @@
-# Gunakan base image alpine dengan versi yang stabil
+# Gunakan base image alpine versi stabil (contoh: 3.18)
 FROM alpine:3.18
 
-# Tambahkan repositori edge dan instalasi paket yang diperlukan
-RUN echo "http://dl-cdn.alpinelinux.org/alpine/edge/community" >> /etc/apk/repositories && \
-    echo "http://dl-cdn.alpinelinux.org/alpine/edge/main" >> /etc/apk/repositories && \
-    apk update && apk add --no-cache \
+# Tambahkan repositori main dan community Alpine 3.18 (tanpa edge)
+RUN echo "https://dl-cdn.alpinelinux.org/alpine/v3.18/main" > /etc/apk/repositories && \
+    echo "https://dl-cdn.alpinelinux.org/alpine/v3.18/community" >> /etc/apk/repositories && \
+    apk update && \
+    apk add --no-cache \
     git \
     gcc \
     libc-dev \
@@ -19,7 +20,8 @@ RUN echo "http://dl-cdn.alpinelinux.org/alpine/edge/community" >> /etc/apk/repos
     dos2unix \
     net-tools \
     ffmpeg \
-    wget && \
+    wget  \
+    curl && \
     rm -rf /var/cache/apk/*
 
 # Download source code Nginx dan modul RTMP
@@ -48,11 +50,11 @@ RUN ./configure --prefix=/etc/nginx \
     make && \
     make install
 
-# Bersihkan file sementara
+# Bersihkan file _build_ sementara
 RUN apk del gcc libc-dev make && \
     rm -rf /tmp/nginx-1.27.3 /tmp/nginx-rtmp-module /tmp/nginx-1.27.3.tar.gz
 
-# Di dalam Dockerfile
+# Siapkan folder HLS agar Nginx-RTMP dapat menulis segmen di sini
 RUN mkdir -p /app/streamserver/hls && \
     chmod 777 /app/streamserver/hls
 
@@ -63,7 +65,7 @@ RUN mkdir -p /var/cache/nginx && \
 # Salin file konfigurasi Nginx
 COPY ./streamserver/config/nginx.conf /etc/nginx/nginx.conf
 
-# Direktori kerja
+# Set direktori kerja
 WORKDIR /app/streamserver
 
 # Salin file dan folder aplikasi
@@ -71,20 +73,21 @@ COPY ./scripts /app/scripts
 COPY ./config /app/config
 COPY ./streamserver /app/streamserver
 
-# Konversi line-ending dan set izin untuk entrypoint
+# Konversi _line-ending_ dan set izin untuk entrypoint
 RUN dos2unix /app/streamserver/entrypoint.sh && \
+    dos2unix /app/streamserver/config/nginx.conf && \
     chmod +x /app/streamserver/entrypoint.sh
 
-# Buat virtual environment dan install dependensi Python
+# Buat virtual environment Python dan install dependensi
 RUN python3 -m venv /app/streamserver/venv && \
     /app/streamserver/venv/bin/pip install --no-cache-dir --upgrade pip && \
     /app/streamserver/venv/bin/pip install --no-cache-dir python-dotenv pytz
 
-# Set ENTRYPOINT untuk menjalankan inisialisasi aplikasi
+# Set ENTRYPOINT untuk menjalankan skrip inisialisasi
 ENTRYPOINT ["/app/streamserver/entrypoint.sh"]
 
 # Jalankan Nginx sebagai perintah default
-CMD ["nginx", "-g", "daemon off;"]
+CMD ["nginx", "-g", "daemon off;", "-c", "/app/streamserver/config/nginx.conf"]
 
-# Expose RTMP dan HTTP ports
+# Expose port RTMP (1935) dan HTTP (8080) ke host
 EXPOSE 1935 8080

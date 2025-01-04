@@ -136,16 +136,15 @@ services:
       - ./config/log_messages.json:/app/config/log_messages.json:ro
 
       # Folder konfigurasi Nginx
-      - ./streamserver/config:/etc/nginx
+      - ./streamserver/config/nginx.conf:/app/streamserver/config/nginx.conf:ro
 
       # Volume docker untuk HLS
       - hls_data:/app/streamserver/hls
 
-      # Temp folder (jika dibutuhkan)
-      - ./temp/stream:/app/streamserver/temp/stream
-
       # DirektorI log Nginx (jika masih dibutuhkan)
       - /mnt/Data/Syslog/rtsp/nginx:/var/log/nginx
+      # Ganti log Nginx ke direktori lokal
+      #- /app/streamserver/nginx_logs:/var/log/nginx
 
       # File kredensial (opsional)
       - ./config/credentials.sh:/app/streamserver/config/credentials.sh:ro
