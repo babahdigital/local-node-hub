@@ -141,13 +141,8 @@ services:
       # Volume docker untuk HLS
       - hls_data:/app/streamserver/hls
 
-      # DirektorI log Nginx (jika masih dibutuhkan)
+      # Direktori log Nginx
       - /mnt/Data/Syslog/rtsp/nginx:/var/log/nginx
-      # Ganti log Nginx ke direktori lokal
-      #- /app/streamserver/nginx_logs:/var/log/nginx
-
-      # File kredensial (opsional)
-      - ./config/credentials.sh:/app/streamserver/config/credentials.sh:ro
 
       # Bind-mount Data Sistem (opsional, jika perlu akses /mnt/Data/Syslog)
       - /mnt/Data/Syslog:/mnt/Data/Syslog
@@ -161,7 +156,7 @@ services:
 
     # Healthcheck
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/hls"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/hls/stream.m3u8"]
       interval: 30s
       timeout: 10s
       retries: 3

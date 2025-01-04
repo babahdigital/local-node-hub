@@ -4,10 +4,9 @@ set -e
 # === Variabel Utama ===
 LOG_BASE_PATH="/mnt/Data/Syslog/rtsp"
 NGINX_LOG_PATH="${LOG_BASE_PATH}/nginx"
-#NGINX_LOG_PATH="/app/streamserver/nginx_logs"
-STREAM_LOG_PATH="${LOG_BASE_PATH}/stream"
 CCTV_LOG_PATH="/mnt/Data/Syslog/cctv"
 HLS_PATH="/app/streamserver/hls"
+ENV_FILE="/app/streamserver/.env" # Lokasi file .env
 
 # Fungsi Logging
 log_info() {
@@ -21,7 +20,6 @@ log_error() {
 setup_directories() {
     local dirs=(
         "$NGINX_LOG_PATH"
-        "$STREAM_LOG_PATH"
         "$CCTV_LOG_PATH"
         "$HLS_PATH"
     )
@@ -33,11 +31,9 @@ setup_directories() {
     chmod -R 777 "$LOG_BASE_PATH"
     chmod -R 777 "$NGINX_LOG_PATH"
     chmod -R 777 "$HLS_PATH"
-    #chown -R nobody:nobody "$NGINX_LOG_PATH"
     chown -R nobody:nobody "$HLS_PATH"
 
     local log_files=(
-        "$STREAM_LOG_PATH/rtsp_validation.log"
         "$CCTV_LOG_PATH/cctv_status.log"
     )
     for log_file in "${log_files[@]}"; do
@@ -49,9 +45,17 @@ setup_directories() {
     log_info "Direktori log dan file log berhasil disiapkan."
 }
 
+secure_env_file() {
+    if [ -f "$ENV_FILE" ]; then
+        log_info "Mengamankan file .env dengan chmod 600..."
+        chmod 600 "$ENV_FILE"
+    else
+        log_error "File .env tidak ditemukan di $ENV_FILE!"
+    fi
+}
+
 decode_credentials() {
     log_info "Mendekode kredensial RTSP dari environment..."
-    export RTSP_IP=$(echo "$RTSP_IP" | base64 -d)
     export RTSP_USER=$(echo "$RTSP_USER_BASE64" | base64 -d)
     export RTSP_PASSWORD=$(echo "$RTSP_PASSWORD_BASE64" | base64 -d)
 }
@@ -77,9 +81,9 @@ validate_and_log() {
     set -e
 
     if [ $RETVAL -eq 0 ]; then
-        echo "$(date '+%d-%m-%Y %H:%M:%S') - Channel ${channel}: Validasi berhasil." >> "$STREAM_LOG_PATH/rtsp_validation.log"
+        echo "$(date '+%d-%m-%Y %H:%M:%S') - Channel ${channel}: Validasi berhasil." >> "$CCTV_LOG_PATH/cctv_status.log"
     else
-        echo "$(date '+%d-%m-%Y %H:%M:%S') - Channel ${channel}: Validasi gagal." >> "$STREAM_LOG_PATH/rtsp_validation.log"
+        echo "$(date '+%d-%m-%Y %H:%M:%S') - Channel ${channel}: Validasi gagal." >> "$CCTV_LOG_PATH/cctv_status.log"
     fi
 }
 
@@ -89,29 +93,21 @@ validate_all_channels() {
     for (( ch=1; ch<=$total_channels; ch++ )); do
         validate_and_log "$ch"
     done
-    log_info "Validasi RTSP selesai. Cek log di $STREAM_LOG_PATH/rtsp_validation.log."
-}
-
-send_dummy_stream() {
-    log_info "Mengirimkan stream dummy ke RTMP server untuk testing..."
-    ffmpeg -re -f lavfi -i testsrc=duration=60:size=800x600:rate=30 -f flv rtmp://localhost:1935/live/test &
+    log_info "Validasi RTSP selesai. Cek log di $CCTV_LOG_PATH/cctv_status.log."
 }
 
 # === MAIN ENTRYPOINT ===
 setup_directories
+secure_env_file
 decode_credentials
 cleanup_hls
 
-# Tambahkan ENV untuk mengatur validasi
+# Jalankan validasi jika diaktifkan
 ENABLE_RTSP_VALIDATION=${ENABLE_RTSP_VALIDATION:-true}
 if [ "$ENABLE_RTSP_VALIDATION" = "true" ]; then
     validate_all_channels
 else
     log_info "RTSP validation dimatikan. Melewati proses validasi..."
-fi
-
-if [ "$ENABLE_TEST_STREAM" == "true" ]; then
-    send_dummy_stream
 fi
 
 log_info "Menjalankan Nginx sebagai proses utama..."

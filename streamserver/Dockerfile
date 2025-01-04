@@ -1,9 +1,9 @@
 # Gunakan base image alpine versi stabil (contoh: 3.18)
-FROM alpine:3.18
+FROM alpine:3.21
 
-# Tambahkan repositori main dan community Alpine 3.18 (tanpa edge)
-RUN echo "https://dl-cdn.alpinelinux.org/alpine/v3.18/main" > /etc/apk/repositories && \
-    echo "https://dl-cdn.alpinelinux.org/alpine/v3.18/community" >> /etc/apk/repositories && \
+# Tambahkan repositori main dan community Alpine 3.21 (tanpa edge)
+RUN echo "https://dl-cdn.alpinelinux.org/alpine/v3.21/main" > /etc/apk/repositories && \
+    echo "https://dl-cdn.alpinelinux.org/alpine/v3.21/community" >> /etc/apk/repositories && \
     apk update && \
     apk add --no-cache \
     git \
@@ -24,13 +24,12 @@ RUN echo "https://dl-cdn.alpinelinux.org/alpine/v3.18/main" > /etc/apk/repositor
     curl && \
     rm -rf /var/cache/apk/*
 
-# Download source code Nginx dan modul RTMP
+# Download source code Nginx
 WORKDIR /tmp
 RUN wget https://nginx.org/download/nginx-1.27.3.tar.gz && \
-    tar -xzvf nginx-1.27.3.tar.gz && \
-    git clone https://github.com/arut/nginx-rtmp-module.git
+    tar -xzvf nginx-1.27.3.tar.gz
 
-# Build Nginx dengan modul RTMP
+# Build Nginx tanpa modul RTMP
 WORKDIR /tmp/nginx-1.27.3
 RUN ./configure --prefix=/etc/nginx \
                 --sbin-path=/usr/sbin/nginx \
@@ -45,16 +44,15 @@ RUN ./configure --prefix=/etc/nginx \
                 --http-fastcgi-temp-path=/var/cache/nginx/fastcgi_temp \
                 --http-uwsgi-temp-path=/var/cache/nginx/uwsgi_temp \
                 --http-scgi-temp-path=/var/cache/nginx/scgi_temp \
-                --add-module=/tmp/nginx-rtmp-module \
                 --with-http_ssl_module && \
     make && \
     make install
 
 # Bersihkan file _build_ sementara
 RUN apk del gcc libc-dev make && \
-    rm -rf /tmp/nginx-1.27.3 /tmp/nginx-rtmp-module /tmp/nginx-1.27.3.tar.gz
+    rm -rf /tmp/nginx-1.27.3 /tmp/nginx-1.27.3.tar.gz
 
-# Siapkan folder HLS agar Nginx-RTMP dapat menulis segmen di sini
+# Siapkan folder HLS agar Nginx dapat menulis segmen di sini
 RUN mkdir -p /app/streamserver/hls && \
     chmod 777 /app/streamserver/hls
 
@@ -87,7 +85,7 @@ RUN python3 -m venv /app/streamserver/venv && \
 ENTRYPOINT ["/app/streamserver/entrypoint.sh"]
 
 # Jalankan Nginx sebagai perintah default
-CMD ["nginx", "-g", "daemon off;", "-c", "/app/streamserver/config/nginx.conf"]
+CMD ["nginx", "-g", "daemon off;", "-c", "/etc/nginx/nginx.conf"]
 
-# Expose port RTMP (1935) dan HTTP (8080) ke host
-EXPOSE 1935 8080
+# Expose port HTTP (8080) untuk HLS
+EXPOSE 8080
