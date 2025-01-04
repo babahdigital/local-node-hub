@@ -99,26 +99,38 @@ services:
     image: stream-server
     container_name: stream-server
 
-    # Pasang bind-mount
     volumes:
-      # 1) scripts -> /app/scripts
+      # Folder scripts
       - ./scripts:/app/scripts:rw
-      # 2) log_messages.json -> /app/config/log_messages.json
+      # File konfigurasi log messages
       - ./config/log_messages.json:/app/config/log_messages.json:ro
+      # Folder konfigurasi Nginx
+      - ./streamserver/config:/etc/nginx
+      # Temp folder untuk HLS
+      - ./temp/stream:/app/streamserver/temp/stream
+      # Direktori log terpusat di TrueNAS
+      - /mnt/Data/Syslog/rtsp/nginx:/var/log/nginx
+      - /mnt/Data/Syslog/rtsp/stream:/var/log/stream
+      # File kredensial
+      - ./config/credentials.sh:/app/streamserver/config/credentials.sh:ro
 
       # Bind-mount Data Sistem
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
       - /mnt/Data/Syslog:/mnt/Data/Syslog
 
-      # Bind-mount Kebutuhan Lainnya
-      - ./config/credentials.sh:/app/streamserver/config/credentials.sh:ro
-    command: ["nginx", "-g", "daemon off;"]
-    ports:
-      - "1935:1935"
-      - "8080:8080"
-    networks:
-      - rtsp-syslog-network
+    # Mode jaringan host
+    network_mode: "host"
+
+    # Healthcheck untuk memonitor layanan
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/hls"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+    depends_on:
+      - syslog
 
   docker-socket-proxy:
     image: tecnativa/docker-socket-proxy
