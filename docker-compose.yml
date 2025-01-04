@@ -140,6 +140,9 @@ services:
       - hls_data:/app/streamserver/hls
 
       # Direktori log Nginx
+      - syslog-data:/mnt/Data/Syslog/rtsp/nginx
+
+      # Direktori log Nginx
       - /mnt/Data/Syslog/rtsp/nginx:/var/log/nginx
 
       # Bind-mount Data Sistem (opsional, jika perlu akses /mnt/Data/Syslog)

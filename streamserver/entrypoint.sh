@@ -3,7 +3,7 @@ set -e
 
 # === Variabel Utama ===
 LOG_BASE_PATH="/mnt/Data/Syslog/rtsp"
-NGINX_LOG_PATH="/app/streamserver/nginx"
+NGINX_LOG_PATH="${LOG_BASE_PATH}/nginx"
 CCTV_LOG_PATH="${LOG_BASE_PATH}/cctv"
 HLS_PATH="/app/streamserver/hls"
 
@@ -21,19 +21,14 @@ setup_directories() {
         "$NGINX_LOG_PATH"
         "$CCTV_LOG_PATH"
         "$HLS_PATH"
-        "$NGINX_LOG_PATH/client_temp"
-        "$NGINX_LOG_PATH/proxy_temp"
-        "$NGINX_LOG_PATH/fastcgi_temp"
-        "$NGINX_LOG_PATH/uwsgi_temp"
-        "$NGINX_LOG_PATH/scgi_temp"
     )
     log_info "Membuat direktori log dan direktori sementara..."
     for d in "${dirs[@]}"; do
         mkdir -p "$d"
     done
 
-    # Pastikan hak akses direktori NGINX (di dalam container) memadai
-    chmod -R 775 "$NGINX_LOG_PATH"
+    # Pastikan hak akses direktori log utama memadai
+    chmod -R 775 "$NGINX_LOG_PATH" "$CCTV_LOG_PATH"
 
     # Jika LOG_BASE_PATH adalah mount di host, jangan di-chown
     if [ -d "$LOG_BASE_PATH" ]; then
@@ -48,6 +43,8 @@ setup_directories() {
 
     local log_files=(
         "$CCTV_LOG_PATH/cctv_status.log"
+        "$NGINX_LOG_PATH/error.log"
+        "$NGINX_LOG_PATH/access.log"
     )
     for log_file in "${log_files[@]}"; do
         if [ ! -f "$log_file" ]; then

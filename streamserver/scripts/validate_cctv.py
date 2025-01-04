@@ -8,7 +8,7 @@ sys.path.append("/app/scripts")
 
 from utils import setup_logger, get_local_time
 
-# Konfigurasi file log utama (bisa disesuaikan via ENV)
+# Konfigurasi file log utama (disesuaikan via ENV atau gunakan default)
 LOG_PATH = os.getenv("LOG_PATH", "/mnt/Data/Syslog/rtsp/cctv/validation.log")
 CCTV_LOG_PATH = os.getenv("CCTV_LOG_PATH", "/mnt/Data/Syslog/rtsp/cctv/cctv_status.log")
 
@@ -20,8 +20,11 @@ def write_status_log(channel, status):
     Menulis status kamera (Online/Offline) ke file log CCTV.
     """
     timestamp = get_local_time()
-    with open(CCTV_LOG_PATH, "a") as f:
-        f.write(f"{timestamp} - Channel {channel}: {status}\n")
+    try:
+        with open(CCTV_LOG_PATH, "a") as f:
+            f.write(f"{timestamp} - Channel {channel}: {status}\n")
+    except IOError as e:
+        logger.error(f"Gagal menulis ke {CCTV_LOG_PATH}: {e}")
 
 def check_black_frames(rtsp_url):
     """
@@ -67,7 +70,7 @@ def validate_rtsp_stream(rtsp_url, channel):
             ],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            timeout=5
+            timeout=10
         )
         if result.returncode == 0 and result.stdout:
             # Jika valid, cek frame hitam
@@ -95,6 +98,7 @@ def main():
     Fungsi utama untuk memvalidasi semua channel berdasarkan variabel lingkungan CHANNELS.
     """
     total_channels = int(os.getenv("CHANNELS", 1))
+    logger.info(f"Memulai validasi untuk {total_channels} channel...")
     for channel in range(1, total_channels + 1):
         rtsp_url = (
             f"rtsp://{os.getenv('RTSP_USER')}:{os.getenv('RTSP_PASSWORD')}@"
@@ -104,7 +108,9 @@ def main():
         result = validate_rtsp_stream(rtsp_url, channel)
         # Jika RTSP tidak valid, Anda bisa memutuskan exit code
         if not result:
+            logger.error(f"Validasi gagal untuk channel {channel}.")
             sys.exit(1)
+    logger.info("Validasi selesai untuk semua channel.")
 
 if __name__ == "__main__":
     main()

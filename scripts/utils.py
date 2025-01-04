@@ -11,9 +11,9 @@ load_dotenv()  # Memuat environment variables dari .env
 # === Konstanta & Default ===
 DEFAULT_SYSLOG_SERVER = "syslog-ng"
 DEFAULT_SYSLOG_PORT = 1514
-DEFAULT_LOG_DIR = "/mnt/Data/Syslog"
+DEFAULT_LOG_DIR = "/mnt/Data/Syslog/rtsp"
 DEFAULT_BACKUP_LOG_DIR = f"{DEFAULT_LOG_DIR}/backup"
-DEFAULT_LOG_PATH = "/mnt/Data/Syslog/rtsp/stream/stream_service.log"
+DEFAULT_LOG_PATH = f"{DEFAULT_LOG_DIR}/stream/stream_service.log"
 DEFAULT_MESSAGES_FILE = "/app/config/log_messages.json"
 TIMEZONE = os.getenv("TIMEZONE", "Asia/Makassar")
 
@@ -66,7 +66,7 @@ def setup_logger(name, log_path=DEFAULT_LOG_PATH):
         file_handler.setFormatter(file_formatter)
         logger.addHandler(file_handler)
     except Exception as e:
-        print(f"[ERROR] Gagal mengatur file handler: {e}")
+        print(f"[ERROR] Gagal mengatur file handler untuk {log_path}: {e}")
 
     # === Syslog Handler (Opsional) ===
     if ENABLE_SYSLOG:
@@ -76,7 +76,7 @@ def setup_logger(name, log_path=DEFAULT_LOG_PATH):
             syslog_handler.setFormatter(syslog_formatter)
             logger.addHandler(syslog_handler)
         except Exception as e:
-            print(f"[WARNING] Gagal mengatur syslog handler: {e}")
+            print(f"[WARNING] Gagal mengatur syslog handler ke {SYSLOG_SERVER}:{SYSLOG_PORT}: {e}")
 
     return logger
 
