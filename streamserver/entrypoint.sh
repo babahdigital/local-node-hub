@@ -1,4 +1,7 @@
 #!/bin/bash
+set +e
+/app/streamserver/venv/bin/python /app/streamserver/scripts/validate_cctv.py "$rtsp_url" "$channel"
+RETVAL=$?
 set -e
 
 # === Variabel Utama ===
@@ -108,6 +111,9 @@ setup_directories
 decode_credentials
 cleanup_hls
 validate_all_channels
+
+# Debug log untuk ENABLE_TEST_STREAM
+log_info "DEBUG: ENABLE_TEST_STREAM=$ENABLE_TEST_STREAM"
 
 # Jalankan stream dummy jika diinginkan
 if [ "$ENABLE_TEST_STREAM" == "true" ]; then

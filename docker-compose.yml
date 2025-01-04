@@ -131,6 +131,8 @@ services:
 
     depends_on:
       - syslog
+    environment:
+      - ENABLE_TEST_STREAM=true
 
   docker-socket-proxy:
     image: tecnativa/docker-socket-proxy
