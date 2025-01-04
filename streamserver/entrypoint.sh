@@ -1,7 +1,4 @@
 #!/bin/bash
-set +e
-/app/streamserver/venv/bin/python /app/streamserver/scripts/validate_cctv.py "$rtsp_url" "$channel"
-RETVAL=$?
 set -e
 
 # === Variabel Utama ===
@@ -10,7 +7,9 @@ NGINX_LOG_PATH="${LOG_BASE_PATH}/nginx"
 STREAM_LOG_PATH="${LOG_BASE_PATH}/stream"
 CCTV_LOG_PATH="/mnt/Data/Syslog/cctv"
 TEMP_PATH="/app/streamserver/temp"
-HLS_PATH="${STREAM_LOG_PATH}/hls"
+
+# Ubah HLS_PATH ke dalam container (bukan lagi di TrueNAS)
+HLS_PATH="/app/streamserver/hls"
 
 # === Fungsi Logging Sederhana ===
 log_info() {
@@ -33,16 +32,19 @@ setup_directories() {
         "${TEMP_PATH}/scgi_temp"
         "${TEMP_PATH}/uwsgi_temp"
         "${TEMP_PATH}/stream"
+        # Buat folder HLS di dalam container
+        "$HLS_PATH"
     )
 
-    # Membuat direktori yang diperlukan
     log_info "Membuat direktori log dan direktori sementara..."
     for d in "${dirs[@]}"; do
         mkdir -p "$d"
     done
 
+    # Set permission direktori log & temp
     chmod -R 777 "$LOG_BASE_PATH"
     chmod -R 777 "$TEMP_PATH"
+    chmod -R 777 "$HLS_PATH"
 
     # Pastikan file log utama tersedia
     local log_files=(
@@ -62,6 +64,8 @@ setup_directories() {
 # === Fungsi Dekode Kredensial RTSP ===
 decode_credentials() {
     log_info "Mendekode kredensial RTSP dari environment..."
+
+    # Contoh: RTSP_IP, RTSP_USER_BASE64, RTSP_PASSWORD_BASE64
     export RTSP_IP=$(echo "$RTSP_IP" | base64 -d)
     export RTSP_USER=$(echo "$RTSP_USER_BASE64" | base64 -d)
     export RTSP_PASSWORD=$(echo "$RTSP_PASSWORD_BASE64" | base64 -d)
@@ -83,19 +87,28 @@ validate_and_log() {
     local rtsp_url="rtsp://${RTSP_USER}:${RTSP_PASSWORD}@${RTSP_IP}:554/cam/realmonitor?channel=${channel}&subtype=1"
 
     log_info "Memulai validasi RTSP untuk channel ${channel}..."
+
+    # Nonaktifkan -e sebelum panggilan Python => agar container tidak exit jika RTSP gagal
+    set +e
     /app/streamserver/venv/bin/python /app/streamserver/scripts/validate_cctv.py "$rtsp_url" "$channel"
-    if [ $? -eq 0 ]; then
+    RETVAL=$?
+    set -e
+
+    if [ $RETVAL -eq 0 ]; then
         echo "$(date '+%d-%m-%Y %H:%M:%S') - Channel ${channel}: Validasi berhasil." >> "$STREAM_LOG_PATH/rtsp_validation.log"
     else
         echo "$(date '+%d-%m-%Y %H:%M:%S') - Channel ${channel}: Validasi gagal." >> "$STREAM_LOG_PATH/rtsp_validation.log"
     fi
 }
 
-# === Fungsi untuk validasi semua channel (1..32) ===
+# === Fungsi untuk validasi semua channel berdasarkan ENV CHANNELS ===
 validate_all_channels() {
-    log_info "Memulai validasi RTSP untuk semua channel..."
-    for channel in {1..32}; do
-        validate_and_log "$channel"
+    # Baca environment variable CHANNELS; default 1 kalau tidak ada
+    local total_channels=${CHANNELS:-1}
+
+    log_info "Memulai validasi RTSP untuk semua channel (1..$total_channels)..."
+    for (( ch=1; ch<=$total_channels; ch++ )); do
+        validate_and_log "$ch"
     done
     log_info "Validasi RTSP selesai. Cek log di $STREAM_LOG_PATH/rtsp_validation.log."
 }

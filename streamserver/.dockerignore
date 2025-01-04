@@ -1,0 +1,14 @@
+__init__.py
+node_modules
+*.log
+.git
+.DS_Store
+LICENSE
+*-bak
+.github
+.vscode
+*.md
+LICENSE
+report
+rencana
+doc

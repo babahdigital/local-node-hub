@@ -1,4 +1,21 @@
+networks:
+  rtsp-syslog-network:
+    name: babah-network
+    driver: bridge
+
+volumes:
+  # Volume untuk Syslog
+  syslog-data:
+    name: data-syslog
+  # Volume untuk HLS
+  hls_data:
+    name: data-hls
+    driver: local
+
 services:
+  # =========================================================
+  # HDD Monitor (misalnya memantau /mnt/Data/Backup dsb.)
+  # =========================================================
   hdd:
     build:
       context: ./hdd
@@ -16,19 +33,20 @@ services:
     networks:
       rtsp-syslog-network:
 
+  # =========================================================
+  # Syslog (syslog-ng)
+  # =========================================================
   syslog:
     build: 
       context: ./syslog
       dockerfile: Dockerfile
     image: syslog-ng
     container_name: syslog-ng
-    restart: unless-stopped
     hostname: ${SYSLOG_HOSTNAME:-syslog-ng}
+    restart: unless-stopped
     cap_add:
       - CAP_NET_BIND_SERVICE
     command: ["syslog-ng", "--foreground", "-f", "/app/syslog/config/syslog-ng.conf", "--persist-file=/app/syslog/var-run/syslog-ng.persist"]
-    environment:
-      LOG_MESSAGES_FILE: "/app/config/log_messages.json"
     ports:
       - "1514:1514/tcp"
       - "1514:1514/udp"
@@ -39,6 +57,8 @@ services:
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
       - ./config/log_messages.json:/app/syslog/config/log_messages.json:ro
+    environment:
+      LOG_MESSAGES_FILE: "/app/config/log_messages.json"
     networks:
       rtsp-syslog-network:
     healthcheck:
@@ -47,13 +67,15 @@ services:
       timeout: 10s
       retries: 3
 
+  # =========================================================
+  # Logrotate (opsional, memutar log syslog)
+  # =========================================================
   logrotate:
     build:
       context: ./syslog
       dockerfile: Dockerfile
     image: logrotate
     container_name: logrotate
-    ports: []
     depends_on:
       - syslog
     restart: on-failure
@@ -74,6 +96,9 @@ services:
       timeout: 10s
       retries: 3
 
+  # =========================================================
+  # API Monitor (contoh)
+  # =========================================================
   api:
     build:
       context: ./api
@@ -92,68 +117,68 @@ services:
     networks:
       rtsp-syslog-network:
 
+  # =========================================================
+  # Stream Server (Nginx-RTMP) 
+  # =========================================================
   stream:
     build:
       context: .
       dockerfile: ./streamserver/Dockerfile
     image: stream-server
     container_name: stream-server
-
-    volumes:
-      # Folder scripts
-      - ./scripts:/app/scripts:rw
-      # File konfigurasi log messages
-      - ./config/log_messages.json:/app/config/log_messages.json:ro
-      # Folder konfigurasi Nginx
-      - ./streamserver/config:/etc/nginx
-      # Temp folder untuk HLS
-      - ./temp/stream:/app/streamserver/temp/stream
-      # Direktori log terpusat di TrueNAS
-      - /mnt/Data/Syslog/rtsp/nginx:/var/log/nginx
-      - /mnt/Data/Syslog/rtsp/stream:/var/log/stream
-      # File kredensial
-      - ./config/credentials.sh:/app/streamserver/config/credentials.sh:ro
-
-      # Bind-mount Data Sistem
-      - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
-      - /mnt/Data/Syslog:/mnt/Data/Syslog
-
-    # Mode jaringan host
     network_mode: "host"
 
-    # Healthcheck untuk memonitor layanan
+    volumes:
+      # Folder scripts (Python, dsb.)
+      - ./scripts:/app/scripts:rw
+
+      # File konfigurasi log messages
+      - ./config/log_messages.json:/app/config/log_messages.json:ro
+
+      # Folder konfigurasi Nginx
+      - ./streamserver/config:/etc/nginx
+
+      # Volume docker untuk HLS
+      - hls_data:/app/streamserver/hls
+
+      # Temp folder (jika dibutuhkan)
+      - ./temp/stream:/app/streamserver/temp/stream
+
+      # DirektorI log Nginx (jika masih dibutuhkan)
+      - /mnt/Data/Syslog/rtsp/nginx:/var/log/nginx
+
+      # File kredensial (opsional)
+      - ./config/credentials.sh:/app/streamserver/config/credentials.sh:ro
+
+      # Bind-mount Data Sistem (opsional, jika perlu akses /mnt/Data/Syslog)
+      - /mnt/Data/Syslog:/mnt/Data/Syslog
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+
+    depends_on:
+      - syslog
+    env_file:
+      - .env
+
+    # Healthcheck
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/hls"]
       interval: 30s
       timeout: 10s
       retries: 3
 
-    depends_on:
-      - syslog
-    environment:
-      - ENABLE_TEST_STREAM=true
-
+  # =========================================================
+  # Docker Socket Proxy (opsional)
+  # =========================================================
   docker-socket-proxy:
     image: tecnativa/docker-socket-proxy
     container_name: babah-docker-socket-proxy
     privileged: true
     restart: unless-stopped
+    networks:
+      rtsp-syslog-network:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       CONTAINERS: 1
       LOGS: 1
-    networks:
-      rtsp-syslog-network:
-
-networks:
-  rtsp-syslog-network:
-    name: babah-network
-    driver: bridge
-
-volumes:
-  syslog-data:
-    name: data-syslog
-  stream-temp-data:
-    name: stream-temp-data

@@ -52,6 +52,10 @@ RUN ./configure --prefix=/etc/nginx \
 RUN apk del gcc libc-dev make && \
     rm -rf /tmp/nginx-1.27.3 /tmp/nginx-rtmp-module /tmp/nginx-1.27.3.tar.gz
 
+# Di dalam Dockerfile
+RUN mkdir -p /app/streamserver/hls && \
+    chmod 777 /app/streamserver/hls
+
 # Buat direktori cache Nginx
 RUN mkdir -p /var/cache/nginx && \
     chmod -R 777 /var/cache/nginx

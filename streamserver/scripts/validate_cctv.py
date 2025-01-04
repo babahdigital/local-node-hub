@@ -98,19 +98,17 @@ def validate_rtsp_stream(rtsp_url, channel):
         write_status_log(channel, f"Offline (Error: {str(e)})")
         return False
 
+def main():
+    """
+    Fungsi utama untuk memvalidasi semua channel berdasarkan variabel lingkungan CHANNELS.
+    """
+    total_channels = int(os.getenv("CHANNELS", 1))
+
+    for channel in range(1, total_channels + 1):
+        rtsp_url = f"rtsp://{os.getenv('RTSP_USER')}:{os.getenv('RTSP_PASSWORD')}@{os.getenv('RTSP_IP')}:554/cam/realmonitor?channel={channel}&subtype={os.getenv('RTSP_SUBTYPE', 1)}"
+        result = validate_rtsp_stream(rtsp_url, channel)
+        if not result:
+            sys.exit(1)
+
 if __name__ == "__main__":
-    """
-    Argumen:
-      1) rtsp_url: URL RTSP dengan user, pass, IP, channel, dsb.
-      2) channel : nomor channel (int)
-    """
-    if len(sys.argv) != 3:
-        logger.error("Usage: python validate_cctv.py <rtsp_url> <channel>")
-        sys.exit(1)
-
-    rtsp_url = sys.argv[1]
-    channel = sys.argv[2]
-
-    # Panggil fungsi utama
-    result = validate_rtsp_stream(rtsp_url, channel)
-    sys.exit(0 if result else 1)
+    main()
