@@ -24,7 +24,7 @@ def write_status_log(channel, status):
         with open(CCTV_LOG_PATH, "a") as f:
             f.write(f"{timestamp} - Channel {channel}: {status}\n")
     except IOError as e:
-        logger.error(f"Gagal menulis ke {CCTV_LOG_PATH}: {e}")
+        logger.error(f"Gagal menulis ke {CCTV_LOG_PATH}: {e}. Status: {timestamp} - Channel {channel}: {status}")
 
 def check_black_frames(rtsp_url):
     """
@@ -59,6 +59,7 @@ def validate_rtsp_stream(rtsp_url, channel):
     Validasi RTSP stream menggunakan ffprobe dan memeriksa frame hitam.
     """
     try:
+        logger.info(f"Validasi channel {channel} dimulai...")
         result = subprocess.run(
             [
                 "ffprobe",
@@ -70,7 +71,7 @@ def validate_rtsp_stream(rtsp_url, channel):
             ],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            timeout=10
+            timeout=20
         )
         if result.returncode == 0 and result.stdout:
             # Jika valid, cek frame hitam

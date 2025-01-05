@@ -36,22 +36,26 @@ RUN wget https://nginx.org/download/nginx-${NGINX_VERSION}.tar.gz && \
       --sbin-path=/usr/sbin/nginx \
       --modules-path=/usr/lib/nginx/modules \
       --conf-path=/etc/nginx/nginx.conf \
-      --error-log-path=/app/streamserver/nginx/error.log \
-      --http-log-path=/app/streamserver/nginx/access.log \
-      --pid-path=/app/streamserver/nginx/nginx.pid \
-      --lock-path=/app/streamserver/nginx/nginx.lock \
-      --http-client-body-temp-path=/app/streamserver/nginx/client_temp \
-      --http-proxy-temp-path=/app/streamserver/nginx/proxy_temp \
-      --http-fastcgi-temp-path=/app/streamserver/nginx/fastcgi_temp \
-      --http-uwsgi-temp-path=/app/streamserver/nginx/uwsgi_temp \
-      --http-scgi-temp-path=/app/streamserver/nginx/scgi_temp \
+      --error-log-path=/mnt/Data/Syslog/rtsp/nginx/error.log \
+      --http-log-path=/mnt/Data/Syslog/rtsp/nginx/access.log \
+      --pid-path=/run/nginx.pid \
+      --lock-path=/var/lock/nginx.lock \
+      --http-client-body-temp-path=/var/cache/nginx/client_temp \
+      --http-proxy-temp-path=/var/cache/nginx/proxy_temp \
+      --http-fastcgi-temp-path=/var/cache/nginx/fastcgi_temp \
+      --http-uwsgi-temp-path=/var/cache/nginx/uwsgi_temp \
+      --http-scgi-temp-path=/var/cache/nginx/scgi_temp \
       --with-http_ssl_module && \
     make && make install && \
     cd /tmp && rm -rf nginx-${NGINX_VERSION}*
 
-# Buat direktori untuk cache, HLS, dan Nginx
-RUN mkdir -p /app/streamserver/hls /app/streamserver/nginx && \
-    chmod -R 777 /app/streamserver/hls /app/streamserver/nginx
+# Buat direktori tambahan di STAGE 1
+RUN mkdir -p /var/cache/nginx/client_temp \
+             /var/cache/nginx/proxy_temp \
+             /var/cache/nginx/fastcgi_temp \
+             /var/cache/nginx/uwsgi_temp \
+             /var/cache/nginx/scgi_temp && \
+    chmod -R 775 /var/cache/nginx
 
 WORKDIR /app/streamserver
 
@@ -71,25 +75,6 @@ RUN pip install --no-cache-dir --upgrade pip && \
         python-dotenv \
         pytz \
         opencv-python-headless
-
-# Hapus build dependencies untuk memperkecil ukuran image
-RUN apt-get remove --purge -y \
-    build-essential \
-    libpcre3-dev \
-    zlib1g-dev \
-    libssl-dev \
-    wget \
-    cmake \
-    libjpeg-dev \
-    libpng-dev \
-    libwebp-dev \
-    libtiff-dev \
-    libopenblas-dev \
-    gfortran \
-    python3-dev \
-    python3-setuptools \
-    python3-wheel && \
-    apt-get autoremove -y && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # =========================================
 # STAGE 2: FINAL (RUNTIME) IMAGE
@@ -114,17 +99,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     adduser --disabled-password --gecos "" --uid 1000 abdullah && \
     rm -rf /var/lib/apt/lists/*
 
-# Salin aplikasi dari stage builder
+# Salin aplikasi dan konfigurasi dari stage builder
 COPY --from=builder /usr/sbin/nginx /usr/sbin/nginx
 COPY --from=builder /etc/nginx /etc/nginx
 COPY --from=builder /app/streamserver /app/streamserver
+COPY --from=builder /mnt/Data/Syslog/rtsp/nginx /mnt/Data/Syslog/rtsp/nginx
 
-# Pastikan file memiliki izin eksekusi dan direktori dimiliki oleh abdullah
-RUN chmod +x /app/streamserver/entrypoint.sh && \
-    chown -R abdullah:abdullah /app/streamserver
+# Pastikan file log dimiliki oleh user abdullah
+RUN mkdir -p /mnt/Data/Syslog/rtsp/nginx && \
+    chmod -R 775 /mnt/Data/Syslog/rtsp/nginx && \
+    chown -R abdullah:abdullah /mnt/Data/Syslog/rtsp/nginx
 
-# Atur user default ke 'abdullah'
-USER abdullah
+# Buat direktori tambahan di STAGE 2 untuk runtime
+RUN mkdir -p /app/streamserver/hls /var/cache/nginx/client_temp && \
+    chmod -R 775 /app/streamserver/hls /var/cache/nginx
+
+# Pastikan file memiliki izin eksekusi
+RUN chmod +x /app/streamserver/entrypoint.sh
+
+# Tetap gunakan root untuk Nginx
+USER root
 
 ENV PATH="/app/streamserver/venv/bin:$PATH"
 

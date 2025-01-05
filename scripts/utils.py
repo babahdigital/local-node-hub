@@ -24,34 +24,39 @@ SYSLOG_SERVER = os.getenv("SYSLOG_SERVER", DEFAULT_SYSLOG_SERVER)
 SYSLOG_PORT = int(os.getenv("SYSLOG_PORT", DEFAULT_SYSLOG_PORT))
 DEBUG_MODE = os.getenv("DEBUG", "false").lower() == "true"
 
-# === Load Log Messages Sekali Saja ===
 def load_log_messages(file_path):
     """
     Memuat pesan log dari file JSON.
     """
     try:
         with open(file_path, "r") as f:
-            return json.load(f)
+            messages = json.load(f)
+            if not isinstance(messages, dict):
+                raise ValueError("Format file log messages tidak valid.")
+            return messages
+    except FileNotFoundError:
+        print(f"[WARNING] File log messages {file_path} tidak ditemukan.")
+        return {}
+    except json.JSONDecodeError as e:
+        print(f"[WARNING] File log messages {file_path} tidak dapat di-decode: {e}")
+        return {}
     except Exception as e:
         print(f"[WARNING] Gagal memuat pesan log dari {file_path}: {e}")
         return {}
 
 LOG_MESSAGES = load_log_messages(LOG_MESSAGES_FILE)
 
-# === Setup Logger ===
 def setup_logger(name, log_path=DEFAULT_LOG_PATH):
     """
     Mengatur logger dengan File Handler dan optional Syslog Handler.
     """
     logger = logging.getLogger(name)
 
-    # Hindari duplikasi handler jika logger sudah dikonfigurasi
     if logger.hasHandlers():
         return logger
 
     logger.setLevel(logging.DEBUG if DEBUG_MODE else logging.INFO)
 
-    # === File Handler ===
     try:
         os.makedirs(os.path.dirname(log_path), exist_ok=True)
         file_handler = RotatingFileHandler(
@@ -68,7 +73,6 @@ def setup_logger(name, log_path=DEFAULT_LOG_PATH):
     except Exception as e:
         print(f"[ERROR] Gagal mengatur file handler untuk {log_path}: {e}")
 
-    # === Syslog Handler (Opsional) ===
     if ENABLE_SYSLOG:
         try:
             syslog_handler = SysLogHandler(address=(SYSLOG_SERVER, SYSLOG_PORT))
@@ -80,7 +84,6 @@ def setup_logger(name, log_path=DEFAULT_LOG_PATH):
 
     return logger
 
-# === Utility untuk Log Messages ===
 def get_log_message(key):
     """
     Mengambil pesan log berdasarkan kunci (key) dari LOG_MESSAGES global.
@@ -94,7 +97,6 @@ def get_log_message(key):
     except KeyError:
         raise RuntimeError(f"Pesan log untuk kunci '{key}' tidak ditemukan.")
 
-# === Utility untuk Waktu Lokal ===
 def get_local_time():
     """
     Mengembalikan waktu lokal (string) berdasarkan zona waktu.

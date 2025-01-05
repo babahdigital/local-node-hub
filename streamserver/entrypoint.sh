@@ -3,7 +3,6 @@ set -e
 
 # === Variabel Utama ===
 LOG_BASE_PATH="/mnt/Data/Syslog/rtsp"
-NGINX_LOG_PATH="${LOG_BASE_PATH}/nginx"
 CCTV_LOG_PATH="${LOG_BASE_PATH}/cctv"
 HLS_PATH="/app/streamserver/hls"
 
@@ -14,45 +13,6 @@ log_info() {
 
 log_error() {
     echo "$(date '+%d-%m-%Y %H:%M:%S') [ERROR] $1"
-}
-
-setup_directories() {
-    local dirs=(
-        "$NGINX_LOG_PATH"
-        "$CCTV_LOG_PATH"
-        "$HLS_PATH"
-    )
-    log_info "Membuat direktori log dan direktori sementara..."
-    for d in "${dirs[@]}"; do
-        mkdir -p "$d"
-    done
-
-    # Pastikan hak akses direktori log utama memadai
-    chmod -R 775 "$NGINX_LOG_PATH" "$CCTV_LOG_PATH"
-
-    # Jika LOG_BASE_PATH adalah mount di host, jangan di-chown
-    if [ -d "$LOG_BASE_PATH" ]; then
-        chmod -R 775 "$LOG_BASE_PATH"
-        log_info "Izin untuk $LOG_BASE_PATH diatur ke 775"
-    else
-        log_error "Direktori $LOG_BASE_PATH tidak ditemukan. Pastikan volume dipasang dengan benar."
-    fi
-
-    # Sesuaikan agar HLS_PATH bisa ditulis oleh service lain
-    chmod -R 777 "$HLS_PATH"
-
-    local log_files=(
-        "$CCTV_LOG_PATH/cctv_status.log"
-        "$NGINX_LOG_PATH/error.log"
-        "$NGINX_LOG_PATH/access.log"
-    )
-    for log_file in "${log_files[@]}"; do
-        if [ ! -f "$log_file" ]; then
-            touch "$log_file"
-            chmod 666 "$log_file"
-        fi
-    done
-    log_info "Direktori log dan file log berhasil disiapkan."
 }
 
 decode_credentials() {
@@ -70,8 +30,6 @@ cleanup_hls() {
     if [ -d "$HLS_PATH" ]; then
         rm -rf "${HLS_PATH:?}/"*
     fi
-    mkdir -p "$HLS_PATH"
-    chmod -R 777 "$HLS_PATH"
 }
 
 validate_and_log() {
@@ -110,7 +68,6 @@ else
     exit 1
 fi
 
-setup_directories
 decode_credentials
 cleanup_hls
 
