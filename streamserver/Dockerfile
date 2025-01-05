@@ -90,6 +90,9 @@ ENV DEBIAN_FRONTEND=noninteractive
 # 1) Install runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash \
+    nano \
+    curl \
+    procps \
     libpcre3 \
     libssl3 \
     zlib1g \
@@ -99,7 +102,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpng16-16 \
     libtiff6 \
     libwebp7 \
-    nano \
     libopenblas0 && \
     rm -rf /var/lib/apt/lists/*
 
@@ -142,3 +144,6 @@ WORKDIR /app/streamserver
 
 ENTRYPOINT ["/app/streamserver/entrypoint.sh"]
 CMD ["nginx", "-g", "daemon off;", "-c", "/etc/nginx/nginx.conf"]
+
+# Definisikan Healthcheck
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 CMD pgrep nginx || exit 1

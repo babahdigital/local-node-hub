@@ -1,5 +1,5 @@
 networks:
-  rtsp-syslog-network:
+  babahdigital:
     name: babah-network
     driver: bridge
 
@@ -18,9 +18,6 @@ volumes:
       type: none
       o: bind
       device: /mnt/Data/Backup
-  nginx-data:
-    driver: local
-    name: nginx-data
   logrotate-data:
     driver: local
     name: logrotate-data
@@ -53,7 +50,7 @@ services:
     environment:
       LOG_MESSAGES_FILE: "/app/config/log_messages.json"
     networks:
-      rtsp-syslog-network:
+      babahdigital:
     healthcheck:
       test: ["CMD", "pgrep", "syslog-ng"]
       interval: 30s
@@ -81,7 +78,7 @@ services:
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
     networks:
-      rtsp-syslog-network:
+      babahdigital:
     healthcheck:
       test: ["CMD", "pgrep", "syslog-ng"]
       interval: 30s
@@ -97,8 +94,12 @@ services:
       dockerfile: ./streamserver/Dockerfile
     image: stream-server
     container_name: stream-server
-    network_mode: "host"
-
+    networks:
+      babahdigital:
+    #network_mode: "host"
+    ports:
+      # HLS Services
+      - "80:8080"
     volumes:
       # Folder scripts (Python, dsb.)
       - ./scripts:/app/scripts
@@ -111,18 +112,10 @@ services:
       # Bind-mount Data Sistem
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
-
     depends_on:
       - syslog
     env_file:
       - .env
-
-    # Healthcheck
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:8080/hls/stream.m3u8"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
   # =========================================================
   # HDD Monitor (misalnya memantau /mnt/Data/Backup dsb.)
@@ -142,7 +135,7 @@ services:
     environment:
       BACKUP_DIR: "/mnt/Data/Backup"
     networks:
-      rtsp-syslog-network:
+      babahdigital:
 
   # =========================================================
   # API Monitor (contoh)
@@ -163,7 +156,7 @@ services:
     environment:
       LOG_DIR: "/app/data"
     networks:
-      rtsp-syslog-network:
+      babahdigital:
 
   # =========================================================
   # Docker Socket Proxy (opsional)
@@ -174,7 +167,7 @@ services:
     privileged: true
     restart: unless-stopped
     networks:
-      rtsp-syslog-network:
+      babahdigital:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
