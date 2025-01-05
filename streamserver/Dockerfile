@@ -63,7 +63,9 @@ WORKDIR /app/streamserver
 COPY ./scripts /app/scripts
 COPY ./config /app/config
 COPY ./streamserver /app/streamserver
-COPY ./streamserver/error /app/streamserver/error
+COPY ./streamserver/html/error/404.html /app/streamserver/html/error/404.html
+COPY ./streamserver/html/error/50x.html /app/streamserver/html/error/50x.html
+COPY ./streamserver/html/index.html /app/streamserver/html/index.html
 COPY ./models/mobilenet_ssd /app/models/mobilenet_ssd
 COPY ./streamserver/config/nginx.conf /etc/nginx/nginx.conf
 COPY ./streamserver/entrypoint.sh /app/streamserver/entrypoint.sh
@@ -116,8 +118,8 @@ RUN mkdir -p /app/streamserver/hls /var/cache/nginx/client_temp && \
     chmod -R 775 /app/streamserver/hls /var/cache/nginx
 
 # Buat direktori error dan file HTML default
-RUN mkdir -p /app/streamserver/error && \
-    chmod -R 755 /app/streamserver/error
+RUN mkdir -p /app/streamserver/html && \
+    chmod -R 755 /app/streamserver/html
 
 # Pastikan file memiliki izin eksekusi
 RUN chmod +x /app/streamserver/entrypoint.sh
