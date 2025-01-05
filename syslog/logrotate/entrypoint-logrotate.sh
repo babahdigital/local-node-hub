@@ -29,7 +29,7 @@ log() {
 ###############################################################################
 # Variabel dan Konfigurasi
 ###############################################################################
-LOG_MESSAGES_FILE_PATH="${LOG_MESSAGES_FILE_PATH:-"/app/syslog/config/log_messages.json"}"
+LOG_MESSAGES_FILE_PATH="${LOG_MESSAGES_FILE_PATH:-"/app/config/log_messages.json"}"
 CONFIG_SOURCE="/app/syslog/logrotate/syslog-ng"
 CONFIG_TARGET="/etc/logrotate.d/syslog-ng"
 LOGROTATE_STATE_FILE="/mnt/Data/Syslog/default/logrotate/logrotate.status"

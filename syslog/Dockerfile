@@ -24,13 +24,12 @@ RUN sed -i "s|http://dl-cdn.alpinelinux.org/alpine/|${APK_MIRROR}|g" /etc/apk/re
 WORKDIR /app/syslog
 
 # Buat struktur direktori dan salin file
-RUN mkdir -p config logrotate crontabs var-run \
-           /etc/logrotate.d/backup \
-           /mnt/Data/Syslog/default/logrotate && \
+RUN mkdir -p config logrotate var-run && \
     chmod 755 /app/syslog
 
-COPY . /app/syslog
-RUN chmod +x /app/syslog/entrypoint.sh /app/syslog/entrypoint-logrotate.sh /app/syslog/config/generate_rotate.sh
+COPY ./syslog /app/syslog
+COPY ./config /app/syslog/config
+RUN chmod +x /app/syslog/entrypoint.sh /app/syslog/entrypoint-logrotate.sh /app/syslog/logrotate/generate_rotate.sh
 
 # Tahap 2: Final
 FROM alpine:3.21

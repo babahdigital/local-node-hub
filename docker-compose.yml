@@ -43,8 +43,8 @@ services:
   # =========================================================
   syslog:
     build: 
-      context: ./syslog
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./syslog/Dockerfile
     image: syslog-ng
     container_name: syslog-ng
     hostname: ${SYSLOG_HOSTNAME:-syslog-ng}
@@ -55,11 +55,10 @@ services:
       - "1514:1514/udp"
     entrypoint: ["/app/syslog/entrypoint.sh"]
     volumes:
-      - syslog-data:/app/Syslog
+      - syslog-data:/app/syslog
       - /mnt/Data/Syslog:/mnt/Data/Syslog
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
-      - ./config/log_messages.json:/app/syslog/config/log_messages.json:ro
     environment:
       LOG_MESSAGES_FILE: "/app/config/log_messages.json"
     networks:
@@ -71,26 +70,24 @@ services:
       retries: 3
 
   # =========================================================
-  # Logrotate (opsional, memutar log syslog)
+  # Logrotate
   # =========================================================
   logrotate:
     build:
-      context: ./syslog
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./syslog/Dockerfile
     image: logrotate
     container_name: logrotate
     depends_on:
       - syslog
     restart: on-failure
-    entrypoint: ["/app/syslog/entrypoint-logrotate.sh"]
+    entrypoint: ["/app/syslog/logrotate/entrypoint-logrotate.sh"]
     environment:
-      LOG_MESSAGES_FILE: "/app/config/syslog/log_messages.json"
+      LOG_MESSAGES_FILE: "/app/config/log_messages.json"
     volumes:
-      - syslog-data:/app/Syslog:ro
+      - /mnt/Data/Syslog:/mnt/Data/Syslog
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
-      - /mnt/Data/Syslog:/mnt/Data/Syslog
-      - ./config/log_messages.json:/app/syslog/config/log_messages.json:ro
     networks:
       rtsp-syslog-network:
     healthcheck:

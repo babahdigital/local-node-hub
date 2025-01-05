@@ -29,7 +29,7 @@ log() {
 ###############################################################################
 # Variabel dan Konfigurasi
 ###############################################################################
-LOG_MESSAGES_FILE_PATH="${LOG_MESSAGES_FILE_PATH:-"/app/syslog/config/log_messages.json"}"
+LOG_MESSAGES_FILE_PATH="${LOG_MESSAGES_FILE_PATH:-"/app/config/log_messages.json"}"
 SYSLOG_CONFIG="/app/syslog/config/syslog-ng.conf"
 
 ###############################################################################
