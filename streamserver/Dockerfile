@@ -63,6 +63,7 @@ WORKDIR /app/streamserver
 COPY ./scripts/utils.py /app/scripts/utils.py
 COPY ./scripts/validate_model.py /app/scripts/validate_model.py
 COPY ./config/log_messages.json /app/config/log_messages.json
+COPY ./config/credentials.sh /app/config/credentials.sh
 COPY ./streamserver /app/streamserver
 COPY ./streamserver/html/error/404.html /app/streamserver/html/error/404.html
 COPY ./streamserver/html/error/50x.html /app/streamserver/html/error/50x.html

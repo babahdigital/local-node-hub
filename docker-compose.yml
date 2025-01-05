@@ -1,30 +1,4 @@
-networks:
-  babahdigital:
-    name: babah-network
-    driver: bridge
-
-volumes:
-  syslog-data:
-    driver: local
-    name: syslog-data
-    driver_opts:
-      type: none
-      o: bind
-      device: /mnt/Data/Syslog
-  backup-data:
-    driver: local
-    name: backup-data
-    driver_opts:
-      type: none
-      o: bind
-      device: /mnt/Data/Backup
-  logrotate-data:
-    driver: local
-    name: logrotate-data
-  hls-data:
-    driver: local
-    name: hls-data
-
+version: '3.9'
 services:
   # =========================================================
   # Syslog (syslog-ng)
@@ -112,10 +86,15 @@ services:
       # Bind-mount Data Sistem
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
+      # Credentials RTSP
+      - secret-rtsp:/app/config/credentials.sh:ro
     depends_on:
       - syslog
     env_file:
       - .env
+    secrets:
+      - rtsp_user
+      - rtsp_password
 
   # =========================================================
   # HDD Monitor (misalnya memantau /mnt/Data/Backup dsb.)
@@ -173,3 +152,39 @@ services:
     environment:
       CONTAINERS: 1
       LOGS: 1
+
+networks:
+  babahdigital:
+    name: babah-network
+    driver: overlay
+
+volumes:
+  syslog-data:
+    driver: local
+    name: syslog-data
+    driver_opts:
+      type: nfs
+      o: addr=172.16.30.2,nolock
+      device: /mnt/Data/Syslog
+  backup-data:
+    driver: local
+    name: backup-data
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/Data/Backup
+  logrotate-data:
+    driver: local
+    name: logrotate-data
+  hls-data:
+    driver: local
+    name: hls-data
+  secret-rtsp:
+    driver: local
+    name: secret-rtsp
+
+secrets:
+  rtsp_user:
+    external: true
+  rtsp_password:
+    external: true

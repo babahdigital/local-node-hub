@@ -1,5 +1,6 @@
 import os
 import subprocess
+import ipaddress
 from datetime import datetime
 import sys
 
@@ -54,6 +55,13 @@ def check_black_frames(rtsp_url):
         logger.error(f"Kesalahan tidak terduga saat memeriksa frame hitam: {e}")
         return False
 
+def parse_subnet(nvr_subnet):
+    """
+    Parsing IP dari subnet NVR.
+    """
+    logger.info(f"Parsing subnet NVR: {nvr_subnet}")
+    return list(ipaddress.ip_network(nvr_subnet, strict=False).hosts())
+
 def validate_rtsp_stream(rtsp_url, channel):
     """
     Validasi RTSP stream menggunakan ffprobe dan memeriksa frame hitam.
@@ -96,21 +104,51 @@ def validate_rtsp_stream(rtsp_url, channel):
 
 def main():
     """
-    Fungsi utama untuk memvalidasi semua channel berdasarkan variabel lingkungan CHANNELS.
+    Fungsi utama untuk memvalidasi RTSP stream dengan dukungan TEST_CHANNEL dan multi-channel.
     """
-    total_channels = int(os.getenv("CHANNELS", 1))
-    logger.info(f"Memulai validasi untuk {total_channels} channel...")
-    for channel in range(1, total_channels + 1):
-        rtsp_url = (
-            f"rtsp://{os.getenv('RTSP_USER')}:{os.getenv('RTSP_PASSWORD')}@"
-            f"{os.getenv('RTSP_IP')}:554/cam/realmonitor?channel={channel}&"
-            f"subtype={os.getenv('RTSP_SUBTYPE', '1')}"
-        )
-        result = validate_rtsp_stream(rtsp_url, channel)
-        # Jika RTSP tidak valid, Anda bisa memutuskan exit code
-        if not result:
-            logger.error(f"Validasi gagal untuk channel {channel}.")
-            sys.exit(1)
+    enable_rtsp_validation = os.getenv("ENABLE_RTSP_VALIDATION", "true").lower() == "true"
+    nvr_enable = os.getenv("NVR_ENABLE", "false").lower() == "true"
+    rtsp_ip = os.getenv("RTSP_IP")
+    rtsp_user = os.getenv("RTSP_USER")
+    rtsp_password = os.getenv("RTSP_PASSWORD")
+    rtsp_subtype = os.getenv("RTSP_SUBTYPE", "1")
+    channels = int(os.getenv("CHANNELS", 1))
+    test_channel = os.getenv("TEST_CHANNEL", "off").lower()
+    nvr_subnet = os.getenv("NVR_SUBNET", "")
+
+    if not enable_rtsp_validation:
+        logger.info("ENABLE_RTSP_VALIDATION=false, semua validasi RTSP dilewati.")
+        return
+
+    if nvr_enable:
+        # Jika NVR_ENABLE=true, gunakan subnet untuk mencari IP
+        ips = parse_subnet(nvr_subnet)
+        logger.info(f"Mode NVR diaktifkan, subnet: {nvr_subnet}, total IP: {len(ips)}")
+    else:
+        # Jika NVR_ENABLE=false, hanya gunakan IP tunggal
+        ips = [rtsp_ip]
+        logger.info(f"Mode DVR diaktifkan, menggunakan IP: {rtsp_ip}")
+
+    # Tentukan channel yang divalidasi
+    if test_channel != "off":
+        # Parse TEST_CHANNEL sebagai daftar integer
+        try:
+            channels_to_validate = [int(ch.strip()) for ch in test_channel.split(",")]
+            logger.info(f"TEST_CHANNEL={test_channel} diatur. Memvalidasi channel: {channels_to_validate}")
+        except ValueError:
+            logger.error(f"TEST_CHANNEL={test_channel} tidak valid. Gunakan format seperti '1' atau '1,2,3'.")
+            return
+    else:
+        logger.info(f"TEST_CHANNEL=off. Memvalidasi semua channel (1 hingga {channels}).")
+        channels_to_validate = range(1, channels + 1)
+
+    # Validasi setiap IP dan channel
+    for ip in ips:
+        for channel in channels_to_validate:
+            rtsp_url = f"rtsp://{rtsp_user}:{rtsp_password}@{ip}:554/cam/realmonitor?channel={channel}&subtype={rtsp_subtype}"
+            logger.info(f"Memvalidasi URL: {rtsp_url}")
+            validate_rtsp_stream(rtsp_url, channel)
+
     logger.info("Validasi selesai untuk semua channel.")
 
 if __name__ == "__main__":
