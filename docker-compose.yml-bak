@@ -1,120 +1,190 @@
+version: '3.9'
 services:
-  logrotate-setup:
-    image: alpine:latest
-    container_name: logrotate-setup
-    environment:
-      - TIMEZONE=Asia/Makassar
-      - TZ=Asia/Makassar
-    volumes:
-      - ./config/generate_logrotate.sh:/app/generate_logrotate.sh
-      - /mnt/Data/Syslog/default/logrotate:/mnt/Data/Syslog/default/logrotate
-      - ./syslog/logrotate:/app/logrotate
-      - ./config/log_messages.json:/app/config/log_messages.json:ro
-    user: root
-    entrypoint: ["/bin/sh", "-c", "
-      chmod +x /app/generate_logrotate.sh &&
-      sed -i 's|http://dl-cdn.alpinelinux.org/alpine/|http://mirror.leaseweb.com/alpine/|g' /etc/apk/repositories &&
-      rm -rf /var/cache/apk/* &&
-      apk update --no-cache &&
-      apk add --no-cache bash jq tzdata &&
-      /app/generate_logrotate.sh
-    "]
-    depends_on:
-      - syslog-ng
-    restart: "no"
-    networks:
-      rtsp-syslog-network:
-        ipv4_address: 172.16.31.2
-
-  syslog-ng:
-    build: ./syslog
+  # =========================================================
+  # Syslog (syslog-ng)
+  # =========================================================
+  syslog:
+    build: 
+      context: .
+      dockerfile: ./syslog/Dockerfile
+    image: syslog-ng
     container_name: syslog-ng
+    hostname: ${SYSLOG_HOSTNAME:-syslog-ng}
+    restart: unless-stopped
+    command: ["syslog-ng", "--foreground", "-f", "/app/syslog/config/syslog-ng.conf", "--persist-file=/app/syslog/var-run/syslog-ng.persist"]
     ports:
       - "1514:1514/tcp"
       - "1514:1514/udp"
-    restart: always
-    hostname: ${SYSLOG_HOSTNAME:-syslog-ng}
-    cap_add:
-      - CAP_SYS_ADMIN
-      - CAP_NET_BIND_SERVICE
-    command: ["syslog-ng", "--foreground", "-f", "/app/config/syslog-ng.conf", "--persist-file=/run/syslog-ng.persist"]
+    entrypoint: ["/app/syslog/entrypoint.sh"]
     volumes:
-      - /mnt/Data/Syslog:/mnt/Data/Syslog
-      - ./syslog/config/syslog-ng.conf:/app/config/syslog-ng.conf:ro
-      - /mnt/Data/Syslog/var-run:/run
-      - /mnt/Data/Syslog/default:/mnt/Data/Syslog/default
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ./config/log_messages.json:/app/config/log_messages.json:ro
-    env_file:
-      - .env
+      - syslog-data:/mnt/Data/Syslog
+      - logrotate-data:/app/syslog/logrotate
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
     environment:
-      SYSLOG_USER: ${SYSLOG_USER:-root}
-      SYSLOG_PORT: ${SYSLOG_PORT:-1514}
-      TIMEZONE: Asia/Makassar
-      TZ: Asia/Makassar
+      LOG_MESSAGES_FILE: "/app/config/log_messages.json"
     networks:
-      rtsp-syslog-network:
-        ipv4_address: 172.16.31.3
+      babahdigital:
     healthcheck:
       test: ["CMD", "pgrep", "syslog-ng"]
       interval: 30s
       timeout: 10s
       retries: 3
 
-  rtsp-backup:
-    build: ./rtsp
-    container_name: rtsp-backup
-    restart: always
-    volumes:
-      - ./scripts/validate_cctv.py:/app/scripts/validate_cctv.py
-      - ./scripts/utils.py:/app/scripts/utils.py
-      - /mnt/Data/Backup:/mnt/Data/Backup
-      - ./rtsp/scripts:/app/scripts
-      - ./config/log_messages.json:/app/config/log_messages.json:ro
-      - ./config/credentials.sh:/app/config/credentials.sh:ro
-      - /mnt/Data/Syslog/rtsp:/mnt/Data/Syslog/rtsp
-    ports:
-      - "127.0.0.1:8080:8080"
-    env_file:
-      - .env
-    healthcheck:
-      test: ["CMD", "curl", "--silent", "--fail", "http://rtsp-backup:8080/health"]
-      interval: 120s
-      timeout: 60s
-      retries: 5
-    command: ["bash", "/app/entrypoint.sh"]
-    networks:
-      rtsp-syslog-network:
-        ipv4_address: 172.16.31.4
-
-  proxy:
+  # =========================================================
+  # Logrotate
+  # =========================================================
+  logrotate:
     build:
-      context: ./proxy
-    container_name: nginx-proxy
-    restart: always
+      context: .
+      dockerfile: ./syslog/Dockerfile
+    image: logrotate
+    container_name: logrotate
+    depends_on:
+      - syslog
+    restart: on-failure
+    entrypoint: ["/app/syslog/entrypoint-logrotate.sh"]
+    environment:
+      LOG_MESSAGES_FILE: "/app/config/log_messages.json"
     volumes:
-      - ./proxy/config:/app/config
-      - ./config/credentials.sh:/app/config/credentials.sh:ro
-      - ./config/log_messages.json:/app/config/log_messages.json:ro
-      - /mnt/Data/Syslog/nginx:/mnt/Data/Syslog/nginx
-    ports:
-      - "8554:8554"
-    env_file:
-      - .env
+      - syslog-data:/mnt/Data/Syslog
+      - logrotate-data:/app/syslog/logrotate
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
     networks:
-      rtsp-syslog-network:
-        aliases:
-          - nginx-proxy
+      babahdigital:
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:8554"]
+      test: ["CMD", "pgrep", "syslog-ng"]
       interval: 30s
       timeout: 10s
       retries: 3
 
+  # =========================================================
+  # Stream Server (Nginx-RTMP) 
+  # =========================================================
+  stream:
+    build:
+      context: .
+      dockerfile: ./streamserver/Dockerfile
+    image: stream-server
+    container_name: stream-server
+    networks:
+      babahdigital:
+    #network_mode: "host"
+    ports:
+      # HLS Services
+      - "80:8080"
+    volumes:
+      # Folder scripts (Python, dsb.)
+      - ./scripts:/app/scripts
+      # File konfigurasi log messages
+      - ./config:/app/config
+      # File hls
+      - hls-data:/app/hls
+      # Bind Syslog Truenas
+      - syslog-data:/mnt/Data/Syslog
+      # Bind-mount Data Sistem
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      # Credentials RTSP
+      - secret-rtsp:/app/config/credentials.sh:ro
+    depends_on:
+      - syslog
+    env_file:
+      - .env
+    secrets:
+      - rtsp_user
+      - rtsp_password
+
+  # =========================================================
+  # HDD Monitor (misalnya memantau /mnt/Data/Backup dsb.)
+  # =========================================================
+  hdd:
+    build:
+      context: ./hdd
+      dockerfile: Dockerfile
+    image: hdd-monitor
+    container_name: hdd-monitor
+    restart: always
+    volumes:
+      - syslog-data:/mnt/Data/Syslog
+      - /mnt/Data/Backup:/mnt/Data/Backup
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    environment:
+      BACKUP_DIR: "/mnt/Data/Backup"
+    networks:
+      babahdigital:
+
+  # =========================================================
+  # API Monitor (contoh)
+  # =========================================================
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    image: api-monitor
+    container_name: api-monitor
+    restart: always
+    volumes:
+      - /mnt/Data/Backup:/mnt/Data/Backup
+      #- syslog-data:/mnt/Data/Syslog
+      - ./api/data:/app/data
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    environment:
+      LOG_DIR: "/app/data"
+    networks:
+      babahdigital:
+
+  # =========================================================
+  # Docker Socket Proxy (opsional)
+  # =========================================================
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy
+    container_name: babah-docker-socket-proxy
+    privileged: true
+    restart: unless-stopped
+    networks:
+      babahdigital:
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      CONTAINERS: 1
+      LOGS: 1
+
 networks:
-  rtsp-syslog-network:
-    driver: bridge
-    ipam:
-      config:
-        - subnet: "172.16.31.0/28"
-          gateway: "172.16.31.1"
+  babahdigital:
+    name: babah-network
+    driver: overlay
+
+volumes:
+  syslog-data:
+    driver: local
+    name: syslog-data
+    driver_opts:
+      type: nfs
+      o: addr=172.16.30.2,nolock
+      device: /mnt/Data/Syslog
+  backup-data:
+    driver: local
+    name: backup-data
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/Data/Backup
+  logrotate-data:
+    driver: local
+    name: logrotate-data
+  hls-data:
+    driver: local
+    name: hls-data
+  secret-rtsp:
+    driver: local
+    name: secret-rtsp
+
+secrets:
+  rtsp_user:
+    external: true
+  rtsp_password:
+    external: true
