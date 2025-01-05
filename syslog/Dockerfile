@@ -28,8 +28,8 @@ RUN mkdir -p config logrotate var-run && \
     chmod 755 /app/syslog
 
 COPY ./syslog /app/syslog
-COPY ./config /app/syslog/config
-RUN chmod +x /app/syslog/entrypoint.sh /app/syslog/entrypoint-logrotate.sh /app/syslog/logrotate/generate_rotate.sh
+COPY ./config/log_messages.json /app/config/log_messages.json
+RUN chmod +x /app/syslog/entrypoint.sh /app/syslog/logrotate/entrypoint-logrotate.sh /app/syslog/logrotate/generate_rotate.sh
 
 # Tahap 2: Final
 FROM alpine:3.21
@@ -59,6 +59,7 @@ WORKDIR /app/syslog
 
 # Salin aplikasi dari builder
 COPY --from=builder /app/syslog /app/syslog
+COPY --from=builder /app/config /app/config
 
 ENTRYPOINT ["/app/syslog/entrypoint.sh"]
 EXPOSE 1514

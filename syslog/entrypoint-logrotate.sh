@@ -34,7 +34,7 @@ CONFIG_SOURCE="/app/syslog/logrotate/syslog-ng"
 CONFIG_TARGET="/etc/logrotate.d/syslog-ng"
 LOGROTATE_STATE_FILE="/mnt/Data/Syslog/default/logrotate/logrotate.status"
 LOGROTATE_LOG="/mnt/Data/Syslog/default/logrotate/logrotate.log"
-CRON_FILE="/app/syslog/crontabs/root"
+CRON_FILE="/app/syslog/logrotate/crontabs/root"
 CRON_JOB="0 * * * * /usr/bin/docker compose up logrotate >> /var/log/cron-custom.log 2>&1"
 
 ###############################################################################
