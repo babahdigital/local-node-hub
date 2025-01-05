@@ -63,6 +63,7 @@ WORKDIR /app/streamserver
 COPY ./scripts /app/scripts
 COPY ./config /app/config
 COPY ./streamserver /app/streamserver
+COPY ./streamserver/error /app/streamserver/error
 COPY ./models/mobilenet_ssd /app/models/mobilenet_ssd
 COPY ./streamserver/config/nginx.conf /etc/nginx/nginx.conf
 COPY ./streamserver/entrypoint.sh /app/streamserver/entrypoint.sh
@@ -116,8 +117,6 @@ RUN mkdir -p /app/streamserver/hls /var/cache/nginx/client_temp && \
 
 # Buat direktori error dan file HTML default
 RUN mkdir -p /app/streamserver/error && \
-    echo "<!DOCTYPE html><html><head><title>404 Not Found</title></head><body><h1>404 Not Found</h1></body></html>" > /app/streamserver/error/404.html && \
-    echo "<!DOCTYPE html><html><head><title>500 Internal Server Error</title></head><body><h1>500 Internal Server Error</h1></body></html>" > /app/streamserver/error/50x.html && \
     chmod -R 755 /app/streamserver/error
 
 # Pastikan file memiliki izin eksekusi
