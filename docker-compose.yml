@@ -4,13 +4,18 @@ networks:
     driver: bridge
 
 volumes:
-  # Volume untuk Syslog
   syslog-data:
-    name: data-syslog
-  # Volume untuk HLS
-  hls_data:
-    name: data-hls
     driver: local
+    name: data-syslog
+  nginx-data:
+    driver: local
+    name: nginx-data
+  scripts-data:
+    driver: local
+    name: scripts-data
+  hls-data:
+    driver: local
+    name: hls-data
 
 services:
   # =========================================================
@@ -106,7 +111,7 @@ services:
     restart: always
     volumes:
       - /mnt/Data/Backup:/mnt/Data/Backup
-      - syslog-data:/mnt/Data/Syslog
+      #- syslog-data:/mnt/Data/Syslog
       - ./api/data:/app/data
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
@@ -128,25 +133,21 @@ services:
 
     volumes:
       # Folder scripts (Python, dsb.)
-      - ./scripts:/app/scripts:rw
+      - ./scripts:/app/scripts
 
       # File konfigurasi log messages
-      - ./config/log_messages.json:/app/config/log_messages.json:ro
+      - ./config:/app/config
 
-      # Folder konfigurasi Nginx
-      - ./streamserver/config/nginx.conf:/app/streamserver/config/nginx.conf:ro
+      # File konfigurasi log messages
+      #- ./streamserver:/app/streamserver
 
-      # Volume docker untuk HLS
-      - hls_data:/app/streamserver/hls
+      # File konfigurasi log messages
+      - hls-data:/app/hls
 
-      # Direktori log Nginx
-      - syslog-data:/mnt/Data/Syslog/rtsp/nginx
-
-      # Direktori log Nginx
-      - /mnt/Data/Syslog/rtsp/nginx:/var/log/nginx
+      # Volume
+      - /mnt/Data/Syslog:/mnt/Data/Syslog
 
       # Bind-mount Data Sistem (opsional, jika perlu akses /mnt/Data/Syslog)
-      - /mnt/Data/Syslog:/mnt/Data/Syslog
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
 

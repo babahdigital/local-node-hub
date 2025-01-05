@@ -6,7 +6,7 @@ FROM python:3.12-slim AS builder
 ARG NGINX_VERSION=1.27.3
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install dependencies untuk build
+# 1) Install dependencies untuk build
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpcre3-dev \
@@ -27,7 +27,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /tmp
 
-# Download dan build Nginx
+# 2) Download dan build Nginx
 RUN wget https://nginx.org/download/nginx-${NGINX_VERSION}.tar.gz && \
     tar -xzvf nginx-${NGINX_VERSION}.tar.gz && \
     cd nginx-${NGINX_VERSION} && \
@@ -38,8 +38,8 @@ RUN wget https://nginx.org/download/nginx-${NGINX_VERSION}.tar.gz && \
       --conf-path=/etc/nginx/nginx.conf \
       --error-log-path=/mnt/Data/Syslog/rtsp/nginx/error.log \
       --http-log-path=/mnt/Data/Syslog/rtsp/nginx/access.log \
-      --pid-path=/run/nginx.pid \
-      --lock-path=/var/lock/nginx.lock \
+      --pid-path=/run/nginx/nginx.pid \
+      --lock-path=/run/nginx/nginx.lock \
       --http-client-body-temp-path=/var/cache/nginx/client_temp \
       --http-proxy-temp-path=/var/cache/nginx/proxy_temp \
       --http-fastcgi-temp-path=/var/cache/nginx/fastcgi_temp \
@@ -49,7 +49,7 @@ RUN wget https://nginx.org/download/nginx-${NGINX_VERSION}.tar.gz && \
     make && make install && \
     cd /tmp && rm -rf nginx-${NGINX_VERSION}*
 
-# Buat direktori tambahan di STAGE 1
+# 3) Buat direktori tambahan di STAGE 1 (cache Nginx)
 RUN mkdir -p /var/cache/nginx/client_temp \
              /var/cache/nginx/proxy_temp \
              /var/cache/nginx/fastcgi_temp \
@@ -59,9 +59,10 @@ RUN mkdir -p /var/cache/nginx/client_temp \
 
 WORKDIR /app/streamserver
 
-# Copy aplikasi dan konfigurasi
-COPY ./scripts /app/scripts
-COPY ./config /app/config
+# 4) Copy aplikasi dan konfigurasi
+COPY ./scripts/utils.py /app/scripts/utils.py
+COPY ./scripts/validate_model.py /app/scripts/validate_model.py
+COPY ./config/log_messages.json /app/config/log_messages.json
 COPY ./streamserver /app/streamserver
 COPY ./streamserver/html/error/404.html /app/streamserver/html/error/404.html
 COPY ./streamserver/html/error/50x.html /app/streamserver/html/error/50x.html
@@ -70,7 +71,7 @@ COPY ./models/mobilenet_ssd /app/models/mobilenet_ssd
 COPY ./streamserver/config/nginx.conf /etc/nginx/nginx.conf
 COPY ./streamserver/entrypoint.sh /app/streamserver/entrypoint.sh
 
-# Install Python dependencies
+# 5) Install Python dependencies ke venv
 RUN pip install --no-cache-dir --upgrade pip && \
     python -m venv /app/streamserver/venv && \
     /app/streamserver/venv/bin/pip install --no-cache-dir --upgrade pip && \
@@ -86,7 +87,7 @@ FROM python:3.12-slim AS final
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install runtime dependencies
+# 1) Install runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash \
     libpcre3 \
@@ -98,37 +99,45 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpng16-16 \
     libtiff6 \
     libwebp7 \
+    nano \
     libopenblas0 && \
-    adduser --disabled-password --gecos "" --uid 1000 abdullah && \
     rm -rf /var/lib/apt/lists/*
 
-# Salin aplikasi dan konfigurasi dari stage builder
+# 2) Tambah user abdullah
+RUN adduser --disabled-password --gecos "" --uid 1000 abdullah
+
+# 3) Salin hasil build (Nginx + app) dari STAGE builder
 COPY --from=builder /usr/sbin/nginx /usr/sbin/nginx
 COPY --from=builder /etc/nginx /etc/nginx
+COPY --from=builder /app/scripts /app/scripts
+COPY --from=builder /app/config /app/config
 COPY --from=builder /app/streamserver /app/streamserver
-COPY --from=builder /mnt/Data/Syslog/rtsp/nginx /mnt/Data/Syslog/rtsp/nginx
 
-# Pastikan file log dimiliki oleh user abdullah
-RUN mkdir -p /mnt/Data/Syslog/rtsp/nginx && \
-    chmod -R 775 /mnt/Data/Syslog/rtsp/nginx && \
-    chown -R abdullah:abdullah /mnt/Data/Syslog/rtsp/nginx
+# 4) Buat folder pendukung Nginx + /run/nginx
+RUN mkdir -p /app/hls \
+             /var/cache/nginx/client_temp \
+             /var/cache/nginx/proxy_temp \
+             /var/cache/nginx/fastcgi_temp \
+             /var/cache/nginx/uwsgi_temp \
+             /var/cache/nginx/scgi_temp \
+             /run/nginx && \
+    chmod -R 775 /app/hls /var/cache/nginx /run/nginx
 
-# Buat direktori tambahan di STAGE 2 untuk runtime
-RUN mkdir -p /app/streamserver/hls /var/cache/nginx/client_temp && \
-    chmod -R 775 /app/streamserver/hls /var/cache/nginx
+# 5) Buat folder /mnt/Data/Syslog/rtsp/nginx dan /mnt/Data/Syslog/rtsp/cctv 
+#    di dalam image (untuk jaga-jaga jika TIDAK bind mount).
+RUN mkdir -p /mnt/Data/Syslog/rtsp/nginx \
+             /mnt/Data/Syslog/rtsp/cctv && \
+    chmod -R 775 /mnt/Data/Syslog/rtsp && \
+    chown -R abdullah:abdullah /mnt/Data/Syslog/rtsp \
+    && chown -R abdullah:abdullah /var/cache/nginx /run/nginx /app/hls
 
-# Buat direktori error dan file HTML default
-RUN mkdir -p /app/streamserver/html && \
-    chmod -R 755 /app/streamserver/html
-
-# Pastikan file memiliki izin eksekusi
+# 6) Pastikan entrypoint.sh bisa dieksekusi
 RUN chmod +x /app/streamserver/entrypoint.sh
 
-# Tetap gunakan root untuk Nginx
-USER root
+# 7) Baru pindah user abdullah
+USER abdullah
 
 ENV PATH="/app/streamserver/venv/bin:$PATH"
-
 WORKDIR /app/streamserver
 
 ENTRYPOINT ["/app/streamserver/entrypoint.sh"]
