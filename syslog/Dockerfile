@@ -1,7 +1,6 @@
 # Tahap 1: Builder
 FROM alpine:3.21 AS builder
 
-# Gunakan mirror tercepat untuk paket APK
 ENV APK_MIRROR=http://mirror.leaseweb.com/alpine/
 
 RUN sed -i "s|http://dl-cdn.alpinelinux.org/alpine/|${APK_MIRROR}|g" /etc/apk/repositories && \
@@ -23,13 +22,14 @@ RUN sed -i "s|http://dl-cdn.alpinelinux.org/alpine/|${APK_MIRROR}|g" /etc/apk/re
 
 WORKDIR /app/syslog
 
-# Buat struktur direktori dan salin file
-RUN mkdir -p config logrotate var-run && \
+RUN mkdir -p config logrotate/crontabs var-run && \
     chmod 755 /app/syslog
 
 COPY ./syslog /app/syslog
 COPY ./config/log_messages.json /app/config/log_messages.json
-RUN chmod +x /app/syslog/entrypoint.sh /app/syslog/logrotate/entrypoint-logrotate.sh /app/syslog/logrotate/generate_rotate.sh
+RUN chmod +x /app/syslog/entrypoint.sh \
+    /app/syslog/entrypoint-logrotate.sh \
+    /app/syslog/logrotate/generate_rotate.sh
 
 # Tahap 2: Final
 FROM alpine:3.21
@@ -57,7 +57,6 @@ RUN sed -i "s|http://dl-cdn.alpinelinux.org/alpine/|${APK_MIRROR}|g" /etc/apk/re
 
 WORKDIR /app/syslog
 
-# Salin aplikasi dari builder
 COPY --from=builder /app/syslog /app/syslog
 COPY --from=builder /app/config /app/config
 

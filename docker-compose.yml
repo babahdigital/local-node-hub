@@ -6,38 +6,29 @@ networks:
 volumes:
   syslog-data:
     driver: local
-    name: data-syslog
+    name: syslog-data
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/Data/Syslog
+  backup-data:
+    driver: local
+    name: backup-data
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/Data/Backup
   nginx-data:
     driver: local
     name: nginx-data
-  scripts-data:
+  logrotate-data:
     driver: local
-    name: scripts-data
+    name: logrotate-data
   hls-data:
     driver: local
     name: hls-data
 
 services:
-  # =========================================================
-  # HDD Monitor (misalnya memantau /mnt/Data/Backup dsb.)
-  # =========================================================
-  hdd:
-    build:
-      context: ./hdd
-      dockerfile: Dockerfile
-    image: hdd-monitor
-    container_name: hdd-monitor
-    restart: always
-    volumes:
-      - syslog-data:/mnt/Data/Syslog
-      - /mnt/Data/Backup:/mnt/Data/Backup
-      - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
-    environment:
-      BACKUP_DIR: "/mnt/Data/Backup"
-    networks:
-      rtsp-syslog-network:
-
   # =========================================================
   # Syslog (syslog-ng)
   # =========================================================
@@ -55,8 +46,8 @@ services:
       - "1514:1514/udp"
     entrypoint: ["/app/syslog/entrypoint.sh"]
     volumes:
-      - syslog-data:/app/syslog
-      - /mnt/Data/Syslog:/mnt/Data/Syslog
+      - syslog-data:/mnt/Data/Syslog
+      - logrotate-data:/app/syslog/logrotate
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
     environment:
@@ -81,11 +72,12 @@ services:
     depends_on:
       - syslog
     restart: on-failure
-    entrypoint: ["/app/syslog/logrotate/entrypoint-logrotate.sh"]
+    entrypoint: ["/app/syslog/entrypoint-logrotate.sh"]
     environment:
       LOG_MESSAGES_FILE: "/app/config/log_messages.json"
     volumes:
-      - /mnt/Data/Syslog:/mnt/Data/Syslog
+      - syslog-data:/mnt/Data/Syslog
+      - logrotate-data:/app/syslog/logrotate
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
     networks:
@@ -95,6 +87,62 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+
+  # =========================================================
+  # Stream Server (Nginx-RTMP) 
+  # =========================================================
+  stream:
+    build:
+      context: .
+      dockerfile: ./streamserver/Dockerfile
+    image: stream-server
+    container_name: stream-server
+    network_mode: "host"
+
+    volumes:
+      # Folder scripts (Python, dsb.)
+      - ./scripts:/app/scripts
+      # File konfigurasi log messages
+      - ./config:/app/config
+      # File hls
+      - hls-data:/app/hls
+      # Bind Syslog Truenas
+      - syslog-data:/mnt/Data/Syslog
+      # Bind-mount Data Sistem
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+
+    depends_on:
+      - syslog
+    env_file:
+      - .env
+
+    # Healthcheck
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8080/hls/stream.m3u8"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # =========================================================
+  # HDD Monitor (misalnya memantau /mnt/Data/Backup dsb.)
+  # =========================================================
+  hdd:
+    build:
+      context: ./hdd
+      dockerfile: Dockerfile
+    image: hdd-monitor
+    container_name: hdd-monitor
+    restart: always
+    volumes:
+      - syslog-data:/mnt/Data/Syslog
+      - /mnt/Data/Backup:/mnt/Data/Backup
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    environment:
+      BACKUP_DIR: "/mnt/Data/Backup"
+    networks:
+      rtsp-syslog-network:
 
   # =========================================================
   # API Monitor (contoh)
@@ -116,49 +164,6 @@ services:
       LOG_DIR: "/app/data"
     networks:
       rtsp-syslog-network:
-
-  # =========================================================
-  # Stream Server (Nginx-RTMP) 
-  # =========================================================
-  stream:
-    build:
-      context: .
-      dockerfile: ./streamserver/Dockerfile
-    image: stream-server
-    container_name: stream-server
-    network_mode: "host"
-
-    volumes:
-      # Folder scripts (Python, dsb.)
-      - ./scripts:/app/scripts
-
-      # File konfigurasi log messages
-      - ./config:/app/config
-
-      # File konfigurasi log messages
-      #- ./streamserver:/app/streamserver
-
-      # File konfigurasi log messages
-      - hls-data:/app/hls
-
-      # Volume
-      - /mnt/Data/Syslog:/mnt/Data/Syslog
-
-      # Bind-mount Data Sistem (opsional, jika perlu akses /mnt/Data/Syslog)
-      - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
-
-    depends_on:
-      - syslog
-    env_file:
-      - .env
-
-    # Healthcheck
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:8080/hls/stream.m3u8"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
   # =========================================================
   # Docker Socket Proxy (opsional)

@@ -85,8 +85,16 @@ chmod 600 "$CRON_FILE"
 if [[ ! -f "$CONFIG_SOURCE" ]]; then
   log "$(get_message "logrotate.config_not_found")"
   log "$(get_message "logrotate.running_generate_rotate")"
-  /app/syslog/config/generate_rotate.sh
+  /app/syslog/logrotate/generate_rotate.sh
   log "$(get_message "logrotate.generate_rotate_done")"
+fi
+
+# Tambahan debug: pastikan file benar-benar ada
+if [[ -f "$CONFIG_SOURCE" ]]; then
+  log "INFO: File konfigurasi logrotate ditemukan di $CONFIG_SOURCE"
+else
+  log "ERROR: File konfigurasi logrotate tidak ditemukan di $CONFIG_SOURCE"
+  exit 1
 fi
 
 # 4. Salin atau link config ke /etc/logrotate.d

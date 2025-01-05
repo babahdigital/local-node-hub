@@ -4,7 +4,7 @@ set -e
 ###############################################################################
 # Konfigurasi Umum
 ###############################################################################
-LOG_MESSAGES_FILE_PATH="${LOG_MESSAGES_FILE_PATH:-"/app/syslog/config/log_messages.json"}"
+LOG_MESSAGES_FILE_PATH="${LOG_MESSAGES_FILE_PATH:-"/app/config/log_messages.json"}"
 LOG_ROOT="/mnt/Data/Syslog"
 CONFIG_FILE="/app/syslog/logrotate/syslog-ng"
 GENERATE_LOG="/mnt/Data/Syslog/default/logrotate/generate.log"
@@ -109,6 +109,13 @@ EOF
 fi
 
 log "$(get_message "generate.config_creation_done"): $CONFIG_FILE"
+
+# Tambahan debug: periksa apakah file berhasil dibuat
+if [[ -f "$CONFIG_FILE" ]]; then
+  log "INFO: File konfigurasi logrotate berhasil dibuat di $CONFIG_FILE"
+else
+  log "ERROR: File konfigurasi logrotate tidak ditemukan di $CONFIG_FILE"
+fi
 
 # Salin config ke folder logrotate agar dapat dilihat di host
 cp "$CONFIG_FILE" "/mnt/Data/Syslog/default/logrotate/syslog-ng.conf.generated"
