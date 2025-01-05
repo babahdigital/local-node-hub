@@ -114,6 +114,12 @@ RUN mkdir -p /mnt/Data/Syslog/rtsp/nginx && \
 RUN mkdir -p /app/streamserver/hls /var/cache/nginx/client_temp && \
     chmod -R 775 /app/streamserver/hls /var/cache/nginx
 
+# Buat direktori error dan file HTML default
+RUN mkdir -p /app/streamserver/error && \
+    echo "<!DOCTYPE html><html><head><title>404 Not Found</title></head><body><h1>404 Not Found</h1></body></html>" > /app/streamserver/error/404.html && \
+    echo "<!DOCTYPE html><html><head><title>500 Internal Server Error</title></head><body><h1>500 Internal Server Error</h1></body></html>" > /app/streamserver/error/50x.html && \
+    chmod -R 755 /app/streamserver/error
+
 # Pastikan file memiliki izin eksekusi
 RUN chmod +x /app/streamserver/entrypoint.sh
 
@@ -126,5 +132,3 @@ WORKDIR /app/streamserver
 
 ENTRYPOINT ["/app/streamserver/entrypoint.sh"]
 CMD ["nginx", "-g", "daemon off;", "-c", "/etc/nginx/nginx.conf"]
-
-EXPOSE 8080
