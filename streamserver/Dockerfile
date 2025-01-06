@@ -154,4 +154,4 @@ ENTRYPOINT ["/app/streamserver/entrypoint.sh"]
 CMD ["nginx", "-g", "daemon off;", "-c", "/etc/nginx/nginx.conf"]
 
 # 9) Healthcheck (opsional)
-HEALTHCHECK --interval=30s --timeout=10s --retries=3 CMD pgrep nginx || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 CMD curl -f http://127.0.0.1:8080 || exit 1

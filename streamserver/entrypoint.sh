@@ -112,7 +112,7 @@ validate_environment() {
     # - TEST_CHANNEL bisa berupa "1,2,3" (dipisahkan koma).
     # - CHANNELS default-nya 1 (jika tidak di-set).
     if [ "${TEST_CHANNEL:-off}" != "off" ]; then
-        log_info "TEST_CHANNEL diatur: $TEST_CHANNEL, CHANNELS diabaikan."
+        log_info "Mode Testing Hidup, Variabel CHANNELS diabaikan."
     else
         if [[ "${CHANNELS:-1}" =~ ^[0-9]+$ ]]; then
             log_info "CHANNELS diatur sebagai angka: ${CHANNELS:-1}."
@@ -161,8 +161,6 @@ create_log_dirs() {
     touch "$CCTV_LOG_PATH/validation.log" "$CCTV_LOG_PATH/cctv_status.log"
     chmod -R 750 "$CCTV_LOG_PATH"
     log_info "Folder $CCTV_LOG_PATH siap digunakan."
-
-    # Folder lain bisa ditambahkan di sini
 }
 
 ###############################################################################
@@ -199,8 +197,13 @@ start_hls_stream() {
     local rtsp_url="rtsp://${actual_cred}@${RTSP_IP}:554/cam/realmonitor?channel=${channel_name}&subtype=${RTSP_SUBTYPE}"
     local hls_output="$HLS_PATH/${folder_name}/live.m3u8"
 
-    log_info "STREAMING-HLS: Memulai proses FFmpeg untuk channel: $channel_name (folder: $folder_name)..."
-    log_info "STREAMING-HLS: Menggunakan RTSP URL: rtsp://${masked_cred}@${RTSP_IP}...[REDACTED PATH]"
+    # Metadata Title: Gabungkan STREAM_TITLE (dari ENV) dengan informasi channel
+    local metadata_title="${STREAM_TITLE:-Default Stream} - Channel ${channel_name}"
+
+    #log_info "STREAMING-HLS: Memulai proses conversi untuk channel: $channel_name (folder: $folder_name)..."
+    #log_info "STREAMING-HLS: RTSP URL: rtsp://${masked_cred}@${RTSP_IP}...[REDACTED PATH]"
+    log_info "STREAMING-HLS: Menjalankan CCTV ${metadata_title}"
+    log_info "STREAMING-HLS: Akses lokal melalui URL: http://bankkalsel/$folder_name/"
 
     mkdir -p "$HLS_PATH/$folder_name"
 
@@ -210,10 +213,11 @@ start_hls_stream() {
         -rtsp_transport tcp \
         -i "$rtsp_url" \
         -c:v copy -c:a aac \
-        -f hls -hls_time 4 -hls_list_size 5 -hls_flags delete_segments \
+        -metadata title="${metadata_title}" \
+        -f hls -hls_time 4 -hls_list_size 10 -hls_flags delete_segments \
         "$hls_output" &>/dev/null &
 
-    log_info "STREAMING-HLS: FFmpeg untuk channel $channel_name berjalan di background (PID=$!)."
+    #log_info "STREAMING-HLS: FFmpeg untuk channel $channel_name berjalan di background (PID=$!)."
 }
 
 start_hls_streams() {
@@ -256,12 +260,18 @@ main() {
     if [ "$ENABLE_RTSP_VALIDATION" = "true" ]; then
         local validation_script="/app/streamserver/scripts/validate_cctv.py"
         if [ -f "$validation_script" ]; then
-            log_info "Menjalankan script Python validate_cctv.py untuk validasi RTSP..."
-            if ! python3 "$validation_script"; then
-                log_error "Terjadi error saat menjalankan validate_cctv.py (exit code != 0)."
-                # Jika mau kontainer tetap jalan meski validasi gagal, JANGAN exit 1 di sini.
-                # exit 1
-            fi
+            log_info "Menjalankan script Python untuk validasi RTSP..."
+
+            # Jika Anda ingin script Python loop berjalan di background:
+            python3 "$validation_script" &
+
+            # === Kalau cuma mau jalankan sekali (blocking), pakai tanpa ampersand ===
+            # if ! python3 "$validation_script"; then
+            #     log_error "Terjadi error saat menjalankan validate_cctv.py (exit code != 0)."
+            #     # Jika mau kontainer tetap jalan meski validasi gagal, JANGAN exit 1 di sini.
+            #     # exit 1
+            # fi
+
         else
             log_error "File $validation_script tidak ditemukan! Skipping validation..."
         fi
