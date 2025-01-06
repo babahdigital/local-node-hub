@@ -1,4 +1,3 @@
-version: '3.9'
 services:
   # =========================================================
   # Syslog (syslog-ng)
@@ -70,7 +69,6 @@ services:
     container_name: stream-server
     networks:
       babahdigital:
-    #network_mode: "host"
     ports:
       # HLS Services
       - "80:8080"
@@ -86,28 +84,80 @@ services:
       # Bind-mount Data Sistem
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
-      # Credentials RTSP
-      - secret-rtsp:/app/config/credentials.sh:ro
     depends_on:
       - syslog
     env_file:
       - .env
-    secrets:
-      - rtsp_user
-      - rtsp_password
+
+  # =========================================================
+  # HDD Monitor (misalnya memantau /mnt/Data/Backup dsb.)
+  # =========================================================
+  hdd:
+    build:
+      context: ./hdd
+      dockerfile: Dockerfile
+    image: hdd-monitor
+    container_name: hdd-monitor
+    restart: always
+    volumes:
+      - syslog-data:/mnt/Data/Syslog
+      - /mnt/Data/Backup:/mnt/Data/Backup
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    environment:
+      BACKUP_DIR: "/mnt/Data/Backup"
+    networks:
+      babahdigital:
+
+  # =========================================================
+  # API Monitor (contoh)
+  # =========================================================
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    image: api-monitor
+    container_name: api-monitor
+    restart: always
+    volumes:
+      - /mnt/Data/Backup:/mnt/Data/Backup
+      #- syslog-data:/mnt/Data/Syslog
+      - ./api/data:/app/data
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    environment:
+      LOG_DIR: "/app/data"
+    networks:
+      babahdigital:
+
+  # =========================================================
+  # Docker Socket Proxy (opsional)
+  # =========================================================
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy
+    container_name: babah-docker-socket-proxy
+    privileged: true
+    restart: unless-stopped
+    networks:
+      babahdigital:
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      CONTAINERS: 1
+      LOGS: 1
 
 networks:
   babahdigital:
     name: babah-network
-    driver: overlay
+    driver: bridge
 
 volumes:
   syslog-data:
     driver: local
     name: syslog-data
     driver_opts:
-      type: nfs
-      o: addr=172.16.30.2,nolock
+      type: none
+      o: bind
       device: /mnt/Data/Syslog
   backup-data:
     driver: local
@@ -122,12 +172,3 @@ volumes:
   hls-data:
     driver: local
     name: hls-data
-  secret-rtsp:
-    driver: local
-    name: secret-rtsp
-
-secrets:
-  rtsp_user:
-    external: true
-  rtsp_password:
-    external: true

@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -Eeuo pipefail
 
 LOG_BASE_PATH="/mnt/Data/Syslog/rtsp"
 NGINX_LOG_PATH="${LOG_BASE_PATH}/nginx"
@@ -7,45 +7,64 @@ CCTV_LOG_PATH="${LOG_BASE_PATH}/cctv"
 HLS_PATH="/app/hls"
 
 log_info() {
-    echo "$(date '+%d-%m-%Y %H:%M:%S') [INFO] $1"
+    echo "$(date '+%d-%m-%Y %H:%M:%S') [INFO] $*"
 }
 
 log_error() {
-    echo "$(date '+%d-%m-%Y %H:%M:%S') [ERROR] $1"
+    echo "$(date '+%d-%m-%Y %H:%M:%S') [ERROR] $*" >&2
 }
 
 create_nginx_log_dir() {
-    if [ ! -d "${NGINX_LOG_PATH}" ]; then
-        log_info "Folder ${NGINX_LOG_PATH} belum ada. Membuat folder..."
-        mkdir -p "${NGINX_LOG_PATH}" || {
-            log_error "Gagal membuat folder ${NGINX_LOG_PATH}!"
+    if [ ! -d "$NGINX_LOG_PATH" ]; then
+        log_info "Folder $NGINX_LOG_PATH belum ada. Membuat folder..."
+        mkdir -p "$NGINX_LOG_PATH" || {
+            log_error "Gagal membuat folder $NGINX_LOG_PATH!"
             exit 1
         }
     fi
-    [ ! -f "${NGINX_LOG_PATH}/error.log" ] && touch "${NGINX_LOG_PATH}/error.log"
-    [ ! -f "${NGINX_LOG_PATH}/access.log" ] && touch "${NGINX_LOG_PATH}/access.log"
-    chmod -R 750 "${NGINX_LOG_PATH}"
-    log_info "Folder ${NGINX_LOG_PATH} siap untuk log Nginx."
+    [ ! -f "$NGINX_LOG_PATH/error.log" ] && touch "$NGINX_LOG_PATH/error.log"
+    [ ! -f "$NGINX_LOG_PATH/access.log" ] && touch "$NGINX_LOG_PATH/access.log"
+    chmod -R 750 "$NGINX_LOG_PATH"
+    log_info "Folder $NGINX_LOG_PATH siap untuk log Nginx."
 }
 
+source /app/config/credentials.sh
+
 decode_credentials() {
-    log_info "Mendekode kredensial RTSP dari Docker Secrets..."
-    if [ -f /run/secrets/rtsp_user ] && [ -f /run/secrets/rtsp_password ]; then
-        export RTSP_USER=$(cat /run/secrets/rtsp_user)
-        export RTSP_PASSWORD=$(cat /run/secrets/rtsp_password)
-        log_info "Kredensial berhasil dibaca dari secrets."
+    log_info "Mendekode kredensial RTSP..."
+    if [ -n "${RTSP_USER_BASE64:-}" ] && [ -n "${RTSP_PASSWORD_BASE64:-}" ]; then
+        export RTSP_USER=$(echo "$RTSP_USER_BASE64" | base64 -d || true)
+        export RTSP_PASSWORD=$(echo "$RTSP_PASSWORD_BASE64" | base64 -d || true)
+        if [ -z "$RTSP_USER" ] || [ -z "$RTSP_PASSWORD" ]; then
+            log_error "Kredensial RTSP gagal didekode."
+            exit 1
+        fi
+        log_info "Kredensial RTSP berhasil didekode."
     else
-        log_error "Secrets tidak ditemukan! Pastikan secrets tersedia di /run/secrets."
+        log_error "Variabel RTSP_USER_BASE64 atau RTSP_PASSWORD_BASE64 tidak diset!"
         exit 1
     fi
 }
 
 validate_environment() {
     log_info "Memvalidasi variabel lingkungan..."
-    if [ -z "$RTSP_IP" ]; then
-        log_error "RTSP_IP tidak diset! Pastikan RTSP_IP diatur dalam konfigurasi."
+
+    if [ -z "${RTSP_IP:-}" ]; then
+        log_error "RTSP_IP tidak diset!"
         exit 1
     fi
+
+    if [ "${TEST_CHANNEL:-off}" != "off" ]; then
+        log_info "TEST_CHANNEL diatur: $TEST_CHANNEL, mengabaikan CHANNELS."
+    else
+        if [[ "${CHANNELS:-1}" =~ ^[0-9]+$ ]]; then
+            log_info "CHANNELS diatur sebagai angka: $CHANNELS."
+        else
+            log_error "CHANNELS harus berupa angka (contoh: 8, 16, 32)."
+            exit 1
+        fi
+    fi
+
     log_info "Semua variabel lingkungan valid."
 }
 
@@ -55,62 +74,64 @@ cleanup_hls() {
         rm -rf "${HLS_PATH:?}/"*
         log_info "Direktori HLS berhasil dibersihkan."
     else
-        log_info "Direktori HLS tidak ditemukan. Tidak ada yang perlu dibersihkan."
+        log_info "Direktori HLS tidak ditemukan. Tidak ada yang dibersihkan."
     fi
 }
 
-validate_rtsp() {
-    log_info "Memulai validasi RTSP menggunakan validate_cctv.py..."
-    /app/streamserver/venv/bin/python /app/streamserver/scripts/validate_cctv.py || {
-        log_error "Validasi RTSP gagal. Periksa log untuk detail lebih lanjut."
-        exit 1
-    }
-    log_info "Validasi RTSP selesai. Cek log di ${CCTV_LOG_PATH}/cctv_status.log."
+generate_channels() {
+    if [ "${TEST_CHANNEL:-off}" != "off" ]; then
+        IFS=',' read -ra channels <<< "$TEST_CHANNEL"
+    else
+        channels=($(seq 1 "$CHANNELS"))
+    fi
+    echo "${channels[@]}"
 }
 
 start_hls_stream() {
-    local rtsp_url="rtsp://${RTSP_USER}:${RTSP_PASSWORD}@${RTSP_IP}:554/cam/realmonitor?channel=1&subtype=1"
-    log_info "Memulai proses FFmpeg untuk menghasilkan HLS dari RTSP stream..."
+    local channel_name=$1
+    local folder_name="ch${channel_name}" # Folder format ch<n>
+    local rtsp_url="rtsp://${RTSP_USER}:${RTSP_PASSWORD}@${RTSP_IP}:554/cam/realmonitor?channel=${channel_name}&subtype=${RTSP_SUBTYPE}"
+    local hls_output="$HLS_PATH/${folder_name}/live.m3u8"
+
+    log_info "Memulai proses FFmpeg untuk channel: $channel_name (folder: $folder_name)..."
+    
+    mkdir -p "$HLS_PATH/$folder_name"
+
     ffmpeg -i "$rtsp_url" \
-           -c:v copy -c:a aac \
-           -f hls \
-           -hls_time 4 \
-           -hls_list_size 5 \
-           -hls_flags delete_segments \
-           "${HLS_PATH}/live.m3u8" &
-    log_info "Proses FFmpeg untuk HLS berjalan di latar belakang."
+        -c:v copy -c:a aac \
+        -f hls -hls_time 4 -hls_list_size 5 -hls_flags delete_segments \
+        "$hls_output" &
+    
+    log_info "Proses FFmpeg berjalan di latar belakang untuk channel: $channel_name."
+}
+
+start_hls_streams() {
+    local channels
+    channels=$(generate_channels)
+    for channel in $channels; do
+        start_hls_stream "$channel"
+    done
 }
 
 log_info "Memverifikasi user abdullah..."
-if id abdullah &>/dev/null; then
-    log_info "User abdullah tersedia."
-else
+if ! id abdullah &>/dev/null; then
     log_error "User abdullah tidak ditemukan!"
     exit 1
 fi
+log_info "User abdullah tersedia."
 
-# 1. Validasi variabel lingkungan
 validate_environment
-
-# 2. Pastikan folder untuk Nginx logs
 create_nginx_log_dir
-
-# 3. Decode credential RTSP
 decode_credentials
-
-# 4. Bersihkan folder HLS
 cleanup_hls
 
-# 5. Validasi RTSP
-ENABLE_RTSP_VALIDATION=${ENABLE_RTSP_VALIDATION:-true}
+ENABLE_RTSP_VALIDATION="${ENABLE_RTSP_VALIDATION:-true}"
 if [ "$ENABLE_RTSP_VALIDATION" = "true" ]; then
     validate_rtsp
 else
-    log_info "RTSP validation dimatikan. Melewati proses validasi..."
+    log_info "RTSP validation dimatikan."
 fi
 
-# 6. Mulai proses HLS
-start_hls_stream
-
+start_hls_streams
 log_info "Menjalankan Nginx sebagai proses utama..."
 exec "$@"
