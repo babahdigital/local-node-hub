@@ -33,6 +33,11 @@ LOOP_ENABLE = os.getenv("LOOP_ENABLE", "false").lower() == "true"
 CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", "300"))  # default 300 detik
 
 ###############################################################################
+# FREEZE SENSITIVITY SETUP
+###############################################################################
+FREEZE_SENSITIVITY = float(os.getenv("FREEZE_SENSITIVITY", "0.5"))
+
+###############################################################################
 # FUNGSI MEMBANTU
 ###############################################################################
 def write_status_log(channel: int, status: str) -> None:
@@ -87,7 +92,7 @@ def check_freeze_frames(rtsp_url: str, timeout: int = 5) -> bool:
             "ffmpeg",
             "-rtsp_transport", "tcp",
             "-i", rtsp_url,
-            "-vf", "freezedetect=n=-60dB:d=0.5",
+            "-vf", "freezedetect=n=-60dB:d={FREEZE_SENSITIVITY}",
             "-an",
             "-t", str(timeout),
             "-f", "null",

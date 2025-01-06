@@ -89,6 +89,7 @@ clean_logs() {
     "streaming"
     "network"
     "default/logrotate"
+    "resource"
   )
 
   # 4. Daftar file yang akan dibuat
@@ -102,6 +103,8 @@ clean_logs() {
     "auth/auth.log"
     "streaming/hls.log"
     "network/network.log"
+    "resource/resource_monitor_state.json"
+    "resource/resource_monitor.log"
   )
 
   # 5. Buat folder-folder (beserta permission & kepemilikan)

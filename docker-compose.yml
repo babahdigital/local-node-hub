@@ -1,5 +1,36 @@
 services:
   # =========================================================
+  # Resource Monitor
+  # =========================================================
+  monitor:
+    build: 
+      context: .
+      dockerfile: ./resource/Dockerfile
+    image: monitor
+    container_name: monitor
+    depends_on:
+      - syslog
+    environment:
+      - LOG_PATH=/mnt/Data/Syslog/resource/resource_monitor.log
+      - MONITOR_STATE_FILE=/mnt/Data/Syslog/resource/resource_monitor_state.json
+      - RESOURCE_MONITOR_INTERVAL=5
+    volumes:
+      - monitor-data:/app/resource
+      - /mnt/Data/Syslog/resource:/mnt/Data/Syslog/resource    
+      # Folder scripts (Python, dsb.)
+      - ./scripts:/app/scripts
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    restart: unless-stopped
+    networks:
+      babahdigital:
+    healthcheck:
+      test: ["CMD-SHELL", "find /mnt/Data/Syslog/resource/resource_monitor_state.json -mmin -1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+  # =========================================================
   # Syslog (syslog-ng)
   # =========================================================
   syslog:
@@ -172,3 +203,6 @@ volumes:
   hls-data:
     driver: local
     name: hls-data
+  monitor-data:
+    driver: local
+    name: monitor-data
