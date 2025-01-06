@@ -16,7 +16,7 @@ services:
       - "1514:1514/udp"
     entrypoint: ["/app/syslog/entrypoint.sh"]
     volumes:
-      - syslog-data:/mnt/Data/Syslog
+      - /mnt/Data/Syslog:/mnt/Data/Syslog
       - logrotate-data:/app/syslog/logrotate
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
@@ -46,7 +46,7 @@ services:
     environment:
       LOG_MESSAGES_FILE: "/app/config/log_messages.json"
     volumes:
-      - syslog-data:/mnt/Data/Syslog
+      - /mnt/Data/Syslog:/mnt/Data/Syslog
       - logrotate-data:/app/syslog/logrotate
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
@@ -80,7 +80,7 @@ services:
       # File hls
       - hls-data:/app/hls
       # Bind Syslog Truenas
-      - syslog-data:/mnt/Data/Syslog
+      - /mnt/Data/Syslog:/mnt/Data/Syslog
       # Bind-mount Data Sistem
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro

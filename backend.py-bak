@@ -1,0 +1,17 @@
+from flask import Flask, jsonify
+
+app = Flask(__name__)
+
+# Data CCTV (contoh statis, bisa diambil dari database)
+cctv_channels = [
+    {"name": "Channel 1", "status": "active"},
+    {"name": "Channel 2", "status": "inactive"},
+    {"name": "Channel 3", "status": "active"},
+]
+
+@app.route('/cctv_status', methods=['GET'])
+def get_cctv_status():
+    return jsonify(cctv_channels)
+
+if __name__ == "__main__":
+    app.run(debug=True)

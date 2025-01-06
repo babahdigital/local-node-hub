@@ -37,6 +37,15 @@ LOGROTATE_LOG="/mnt/Data/Syslog/default/logrotate/logrotate.log"
 CRON_FILE="/app/syslog/logrotate/crontabs/root"
 CRON_JOB="0 * * * * /usr/bin/docker compose up logrotate >> /var/log/cron-custom.log 2>&1"
 
+# Variabel user/group dan permission default
+USER_OWNER="abdullah"
+GROUP_OWNER="abdullah"
+CHMOD_DIR=755
+CHMOD_FILE=644
+
+# Direktori induk logs
+LOG_BASE_DIR="/mnt/Data/Syslog"
+
 ###############################################################################
 # Load pesan dari log_messages.json
 ###############################################################################
@@ -53,7 +62,67 @@ load_messages() {
 
 get_message() {
   local key="$1"
+  # Pastikan 'jq' telah terinstall di image/container Anda
   echo "$MESSAGES" | jq -r ".${key} // \"\""
+}
+
+###############################################################################
+# Fungsi pembersihan & pembuatan ulang folder/file log
+###############################################################################
+clean_logs() {
+  log "$(get_message "logrotate.cleaning_logs")"
+
+  # 1. Hapus isi subfolder, bukan /mnt/Data/Syslog itu sendiri
+  #    -mindepth 1 => agar tidak menghapus /mnt/Data/Syslog
+  #    -delete     => menghapus file & folder di dalamnya
+  #    2>/dev/null => supresi error
+  find "$LOG_BASE_DIR" -mindepth 1 -delete 2>/dev/null || true
+
+  # 2. Pastikan direktori utama tetap ada
+  mkdir -p "$LOG_BASE_DIR"
+
+  # 3. Daftar sub-direktori yang akan dibuat
+  local directories=(
+    "test"
+    "debug"
+    "auth"
+    "streaming"
+    "network"
+    "default/logrotate"
+  )
+
+  # 4. Daftar file yang akan dibuat
+  local files=(
+    "default/default.log"
+    "test/test.log"
+    "debug/debug.log"
+    "default/logrotate/logrotate.status"
+    "default/logrotate/logrotate.log"
+    "default/logrotate/cron.log"
+    "auth/auth.log"
+    "streaming/hls.log"
+    "network/network.log"
+  )
+
+  # 5. Buat folder-folder (beserta permission & kepemilikan)
+  for dir in "${directories[@]}"; do
+    local dirpath="$LOG_BASE_DIR/$dir"
+    mkdir -p "$dirpath"
+    chown "$USER_OWNER:$GROUP_OWNER" "$dirpath"
+    chmod "$CHMOD_DIR" "$dirpath"
+  done
+
+  # 6. Buat file-file (beserta permission & kepemilikan)
+  for file in "${files[@]}"; do
+    local filepath="$LOG_BASE_DIR/$file"
+    mkdir -p "$(dirname "$filepath")"
+    rm -f "$filepath"
+    touch "$filepath"
+    chown "$USER_OWNER:$GROUP_OWNER" "$filepath"
+    chmod "$CHMOD_FILE" "$filepath"
+  done
+
+  log "INFO: Proses pembersihan dan pembuatan ulang folder/file log selesai."
 }
 
 ###############################################################################
@@ -63,17 +132,8 @@ load_messages
 
 log "$(get_message "logrotate.init_start")"
 
-# 1. Bersihkan folder log (opsional)
-log "$(get_message "logrotate.cleaning_logs")"
-rm -rf /mnt/Data/Syslog/*
-mkdir -p /mnt/Data/Syslog/test /mnt/Data/Syslog/debug
-mkdir -p /mnt/Data/Syslog/default/logrotate
-touch /mnt/Data/Syslog/default/default.log
-touch /mnt/Data/Syslog/test/test.log
-touch /mnt/Data/Syslog/debug/debug.log
-touch /mnt/Data/Syslog/default/logrotate/logrotate.status
-touch /mnt/Data/Syslog/default/logrotate/logrotate.log
-touch /mnt/Data/Syslog/default/logrotate/cron.log
+# 1. Bersihkan folder log dan buat ulang
+clean_logs
 
 # 2. Verifikasi file cron
 log "$(get_message "logrotate.verifying_cron_file")"
@@ -89,7 +149,7 @@ if [[ ! -f "$CONFIG_SOURCE" ]]; then
   log "$(get_message "logrotate.generate_rotate_done")"
 fi
 
-# Tambahan debug: pastikan file benar-benar ada
+# (Debug tambahan) Pastikan file logrotate benar-benar ada
 if [[ -f "$CONFIG_SOURCE" ]]; then
   log "INFO: File konfigurasi logrotate ditemukan di $CONFIG_SOURCE"
 else
@@ -97,7 +157,7 @@ else
   exit 1
 fi
 
-# 4. Salin atau link config ke /etc/logrotate.d
+# 4. Salin atau symlink config ke /etc/logrotate.d
 if [[ ! -f "$CONFIG_TARGET" ]]; then
   cp "$CONFIG_SOURCE" "$CONFIG_TARGET"
 fi
@@ -108,7 +168,7 @@ crond \
   -c "$(dirname "$CRON_FILE")" \
   -b \
   -l 8 \
-  -L /mnt/Data/Syslog/default/logrotate/cron.log \
+  -L "${LOG_BASE_DIR}/default/logrotate/cron.log" \
   -p /app/syslog/var-run/crond.pid
 
 # 6. Jalankan logrotate manual (force)
@@ -119,7 +179,7 @@ else
   log "$(get_message "logrotate.logrotate_rotated")"
 fi
 
-# 7. Tambahkan cron job (jika perlu)
+# 7. Tambahkan cron job (jika belum ada)
 if ! grep -Fxq "$CRON_JOB" "$CRON_FILE"; then
   echo "$CRON_JOB" >> "$CRON_FILE"
 fi
