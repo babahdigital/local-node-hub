@@ -123,6 +123,30 @@ services:
     - DEBUG=false
 
   # =========================================================
+  # Simple Motion + Object Detection
+  # =========================================================
+  detection:
+    build:
+      context: .
+      dockerfile: ./detection/Dockerfile
+    image: detection
+    container_name: detection
+    # Jika ingin mengakses webcam/RTSP local, 
+    # pastikan pengaturan environment dan device mapping sudah sesuai (opsional).
+    environment:
+      - PYTHONUNBUFFERED=1
+    # Expose port jika di 'main.py' Anda membuat server web streaming atau sejenisnya
+    ports:
+      - "8088:8088"
+    # Volume opsional jika ingin model di luar container
+    # volumes:
+    #   - ./detection/models:/app/models
+    # Perintah default -> jalankan main.py 
+    # (sudah di-define di Dockerfile lewat CMD)
+    networks:
+      babahdigital:
+
+  # =========================================================
   # HDD Monitor (misalnya memantau /mnt/Data/Backup dsb.)
   # =========================================================
   hdd:
