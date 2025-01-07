@@ -17,13 +17,22 @@ Tujuan utama contoh ini adalah memberikan kerangka bagi pengembangan CCTV stream
 ### Struktur Proyek
 
 ```
-your_repo/
-├── README.md
-├── requirements.txt
+detection
+├── Dockerfile
+├── main.py
+├── models
+│   └── mobilenet_ssd
+│       ├── MobileNetSSD_deploy.caffemodel
+│       └── MobileNetSSD_deploy.prototxt
 ├── motion_detection.py
 ├── object_detection.py
-├── main.py
-└── model/
+├── README.md
+├── requirements.txt
+└── validate_model.py
+scripts
+└── utils.py
+config
+└── log_messages.json
 ```
 
 ### Penjelasan File
