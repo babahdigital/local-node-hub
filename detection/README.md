@@ -39,7 +39,7 @@ your_repo/
 1. **OpenCV**: Digunakan untuk membaca frame, menjalankan motion detection, object detection, dan menampilkan hasil deteksi.
 2. **MobileNet SSD (Caffe Model)**: Dimuat lewat cv2.dnn.readNetFromCaffe untuk mendeteksi 20 kelas umum.
 3. **Python + Numpy**: Python sebagai bahasa pemrograman utama, Numpy untuk manipulasi array gambar.
-4. **(Opsional) Integrasi dengan Komponen Lain**: FFmpeg/Nginx, Docker, Database/Logging.
+4. **Integrasi dengan Komponen Lain**: FFmpeg/Nginx, Docker, Database/Logging.
 
 ## Detail Pengembangan
 
