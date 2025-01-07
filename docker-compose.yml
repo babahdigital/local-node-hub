@@ -21,6 +21,11 @@ services:
       - /etc/timezone:/etc/timezone:ro
       # Mount Bind Log Messages
       - ./config/log_messages.json:/app/config/log_messages.json
+    environment:
+      - SYSLOG_SERVER=syslog-ng
+      - SYSLOG_PORT=1514
+      - CLEAN_ON_STARTUP=true
+      - ENABLE_SYSLOG=true
     healthcheck:
       test: ["CMD", "pgrep", "syslog-ng"]
       interval: 30s
