@@ -33,11 +33,10 @@ from utils import setup_category_logger
 ###############################################################################
 # 1. Konstanta / Konfigurasi
 ###############################################################################
-LOG_PATH = os.getenv("LOG_PATH", "/mnt/Data/Syslog/resource/resource_monitor.log")
 DEBUG_MODE = os.getenv("DEBUG_MODE", "false").lower() == "true"
 
 # Gunakan kategori "Resource-Monitor"
-# => Menyertakan prefix "[Resource-Monitor]" di setiap pesan log
+# => Akan menyertakan prefix "[Resource-Monitor]" di setiap pesan log (ke syslog)
 logger = setup_category_logger("Resource-Monitor")
 
 # File JSON untuk menyimpan data pemantauan
@@ -80,20 +79,16 @@ def ping_host_with_rtt(host: str, count=1, timeout=2) -> (bool, float):
           - reachable = True jika host merespon
           - rtt_ms = RTT (ms) dari satu ping, None jika tidak tersedia
     """
+    import subprocess
     try:
-        output = subprocess.check_output(
-            ["ping", "-c", str(count), "-W", str(timeout), host],
-            stderr=subprocess.STDOUT,
-            universal_newlines=True
-        )
-        # Cari "time=xxx ms"
+        cmd = ["ping", "-c", str(count), "-W", str(timeout), host]
+        output = subprocess.check_output(cmd, stderr=subprocess.STDOUT, universal_newlines=True)
         match = re.search(r"time=([\d\.]+)\s*ms", output)
         if match:
             return True, float(match.group(1))
         else:
             return True, None
     except subprocess.CalledProcessError:
-        # Ping gagal => CalledProcessError
         return False, None
     except Exception:
         logger.exception(f"[Resource-Monitor] Ping error ke {host}")
@@ -142,22 +137,19 @@ def collect_resource_data():
     Mengumpulkan data resource (CPU, RAM, Disk, Swap, LoadAvg, Network).
     Menyertakan timestamp_local di dalam dict.
     """
-    # CPU
+    import psutil
+
     cpu_usage_percent = psutil.cpu_percent(interval=None)
     cpu_count_logical = psutil.cpu_count(logical=True)
 
-    # RAM
     mem_info = psutil.virtual_memory()
     ram_usage_percent = mem_info.percent
 
-    # Disk
     disk_info = psutil.disk_usage('/')
     disk_usage_percent = disk_info.percent
 
-    # Swap
     swap_info = psutil.swap_memory()
 
-    # Load average
     try:
         load_1, load_5, load_15 = os.getloadavg()
     except OSError:
@@ -208,9 +200,10 @@ def collect_stream_info():
     Mengumpulkan info streaming/IP dari environment:
       - Jika NVR_ENABLE=true => subnet scan
       - Jika NVR_ENABLE=false => ping single IP RTSP_IP
-      - Ping luar (google.com) => cek internet
+      - Ping luar => cek internet
 
-    Return dict: {
+    Return dict:
+    {
       "final_ips": [...],
       "ping_outside_ok": bool,
       ...
@@ -226,7 +219,7 @@ def collect_stream_info():
     ENABLE_RTSP_VALIDATION = (os.getenv("ENABLE_RTSP_VALIDATION", "true").lower() == "true")
     SKIP_ABDULLAH_CHECK    = (os.getenv("SKIP_ABDULLAH_CHECK", "false").lower() == "true")
 
-    # 1. Kumpulkan final_ips
+    # NVR_ENABLE => subnet scan
     if NVR_ENABLE:
         final_ips = collect_subnet_ips(NVR_SUBNET, ping_timeout=1)
     else:
@@ -237,7 +230,7 @@ def collect_stream_info():
             "ping_time_ms": rtt_ms
         }]
 
-    # 2. channel_list
+    # channel_list
     if TEST_CHANNEL.lower() == "off":
         channel_list = list(range(1, CHANNELS + 1))
     else:
@@ -246,8 +239,8 @@ def collect_stream_info():
             if c.strip().isdigit():
                 channel_list.append(int(c.strip()))
 
-    # 3. Ping ke luar => cek internet
-    outside_ok, outside_rtt = ping_host_with_rtt(PING_OUTSIDE_HOST, count=1, timeout=2)
+    # Ping keluar => cek internet
+    outside_ok, outside_rtt = ping_host_with_rtt(os.getenv("PING_OUTSIDE_HOST", "google.com"), count=1, timeout=2)
 
     data = {
         "stream_title": STREAM_TITLE,
@@ -286,23 +279,19 @@ def main():
 
     while True:
         try:
-            # 1) Kumpulkan resource usage
             resource_data = collect_resource_data()
-
-            # 2) Kumpulkan info stream (NVR/IP, dsb.)
             stream_data = collect_stream_info()
 
-            # 3) Gabungkan hasil
             combined_data = {
                 "resource_usage": resource_data,
                 "stream_config": stream_data
             }
 
-            # 4) Tulis ke file JSON
+            # Tulis ke JSON
             with open(MONITOR_STATE_FILE, "w") as f:
                 json.dump(combined_data, f, indent=2)
 
-            # 5) Log ringkasan CPU & RAM
+            # Ringkasan CPU & RAM di log
             cpu_short = resource_data["cpu"]["usage_percent"]
             ram_short = resource_data["ram"]["usage_percent"]
             ts_local  = resource_data["timestamp_local"]
@@ -312,10 +301,8 @@ def main():
             )
 
         except Exception:
-            # Tampilkan stack trace lengkap agar memudahkan debugging
             logger.exception("[Resource-Monitor] Gagal memproses data.")
-        
-        # 6) Tunggu sebelum loop berikutnya
+
         time.sleep(RESOURCE_MONITOR_INTERVAL)
 
 

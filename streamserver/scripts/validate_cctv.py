@@ -1,13 +1,27 @@
 #!/usr/bin/env python3
+"""
+validate_cctv.py
+
+Memeriksa RTSP stream (ffprobe), blackdetect, freezedetect (opsional),
+dan menulis status (Online/Offline) ke cctv_status.log.
+
+Fitur:
+1) Baca data IP/Channel dari JSON (resource_monitor_state.json).
+2) ffprobe => cek valid/tidak.
+3) blackdetect/freezedetect => offline jika black/freeze.
+4) Tulis ringkasan ke validation.log & cctv_status.log.
+
+Menggunakan 'utils.py' untuk logging (setup_logger).
+"""
+
 import os
 import sys
 import subprocess
 import time
 import json
 from datetime import datetime
-import ipaddress
 
-# Pastikan folder scripts ada di PATH (jika utils.py ada di /app/scripts)
+# Pastikan folder scripts ada di PATH (untuk utils.py).
 sys.path.append("/app/scripts")
 
 from utils import (
@@ -21,6 +35,9 @@ from utils import (
 ###############################################################################
 LOG_PATH = os.getenv("LOG_PATH", "/mnt/Data/Syslog/rtsp/cctv/validation.log")
 CCTV_LOG_PATH = os.getenv("CCTV_LOG_PATH", "/mnt/Data/Syslog/rtsp/cctv/cctv_status.log")
+
+# Di sini kita buat logger "RTSP-Validation"
+# => agar syslog-ng dapat memfilter "[RTSP-Validation]"
 logger = setup_logger("RTSP-Validation", LOG_PATH)
 
 ###############################################################################
@@ -39,7 +56,7 @@ ENABLE_FREEZE_CHECK = os.getenv("ENABLE_FREEZE_CHECK", "true").lower() == "true"
 FREEZE_COOLDOWN = int(os.getenv("FREEZE_COOLDOWN", "10"))
 
 ###############################################################################
-# RESOURCE STATE PATH (JSON) => MENGAMBIL DATA IP/CHANNEL DARI SANA
+# RESOURCE STATE PATH (JSON) => Ambil IP/CHANNEL dari resource_monitor
 ###############################################################################
 RESOURCE_STATE_PATH = os.getenv("RESOURCE_STATE_PATH", "/mnt/Data/Syslog/resource/resource_monitor_state.json")
 
@@ -53,7 +70,7 @@ last_online_timestamp = {}
 ###############################################################################
 def load_monitor_json(path: str) -> dict:
     """
-    Membaca file JSON yang dihasilkan oleh combined_resource_and_rtsp_monitor.py.
+    Membaca file JSON yang dihasilkan oleh resource_monitor.py.
     Return dict, atau {} jika gagal.
     """
     try:
@@ -74,11 +91,11 @@ def get_cpu_usage_and_sensitivity(default_sensitivity: float):
     """
     Membaca CPU usage dari resource_usage.cpu.usage_percent (file JSON),
     menyesuaikan freeze_sensitivity jika CPU usage tinggi/rendah.
-    Jika CPU usage >90, kita skip freeze-check (return None).
+    Jika CPU usage >90, skip freeze-check => return None (disable).
     """
     monitor_data = load_monitor_json(RESOURCE_STATE_PATH)
     if not monitor_data:
-        logger.warning("[validate_cctv] Tidak ada data resource_usage => gunakan default freeze_sensitivity.")
+        logger.warning("[validate_cctv] Tidak ada data resource_usage => pakai default freeze_sens.")
         return 0.0, default_sensitivity
 
     resource_usage = monitor_data.get("resource_usage", {})
@@ -87,43 +104,40 @@ def get_cpu_usage_and_sensitivity(default_sensitivity: float):
 
     logger.info(f"[validate_cctv] CPU usage: {cpu_usage:.1f}% => menyesuaikan freeze_sensitivity.")
 
-    # Skip freeze-check entirely jika CPU usage > 90 (opsional)
     if cpu_usage > 90:
-        logger.warning("[validate_cctv] CPU sangat tinggi (>90%) => skip freeze-check sepenuhnya.")
+        logger.warning("[validate_cctv] CPU >90% => skip freeze-check.")
         return cpu_usage, None
-
-    # Jika CPU 80-90 => gandakan sensitivitas (lebih “longgar”).
-    if 80 < cpu_usage <= 90:
+    elif 80 < cpu_usage <= 90:
         new_sens = default_sensitivity * 2.0
         logger.info(f"[validate_cctv] CPU tinggi => freeze_sens={new_sens:.2f}")
         return cpu_usage, new_sens
-
-    # Jika CPU <30 => perketat sensitivitas (0.5x).
     elif cpu_usage < 30:
         new_sens = default_sensitivity * 0.5
         logger.info(f"[validate_cctv] CPU rendah => freeze_sens={new_sens:.2f}")
         return cpu_usage, new_sens
 
-    # Sisanya => default
     return cpu_usage, default_sensitivity
 
 ###############################################################################
 # FUNGSI WRITE STATUS LOG
 ###############################################################################
 def write_status_log(channel: int, status: str):
+    """
+    Menulis ringkasan status channel ke file cctv_status.log + mencatat timestamp.
+    """
     timestamp = get_local_time()
     try:
         with open(CCTV_LOG_PATH, "a") as f:
             f.write(f"{timestamp} - Channel {channel}: {status}\n")
     except IOError as e:
-        logger.error(f"Gagal menulis ke {CCTV_LOG_PATH}: {e} (Channel={channel}, Status={status})")
+        logger.error(f"[validate_cctv] Gagal menulis ke {CCTV_LOG_PATH}: {e} (Channel={channel}, Status={status})")
 
 ###############################################################################
 # BLACKDETECT & FREEZEDETECT
 ###############################################################################
 def check_black_frames(rtsp_url: str, timeout=5) -> bool:
     """
-    Return True jika TIDAK ada black frames (stream normal).
+    Return True jika stream normal (TIDAK black frames).
     """
     try:
         cmd = [
@@ -139,18 +153,17 @@ def check_black_frames(rtsp_url: str, timeout=5) -> bool:
         result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout+5)
         return b"black_start" not in result.stderr
     except subprocess.TimeoutExpired:
-        logger.error(f"[validate_cctv] check_black_frames TIMEOUT => {rtsp_url}")
+        logger.error(f"[validate_cctv] blackdetect TIMEOUT => {rtsp_url}")
         return False
     except Exception as e:
-        logger.error(f"[validate_cctv] check_black_frames error: {e}")
+        logger.error(f"[validate_cctv] blackdetect error: {e}")
         return False
 
 def check_freeze_frames(rtsp_url: str, freeze_sensitivity: float, timeout=5) -> bool:
     """
-    Return True jika TIDAK freeze. 
-    freeze_sensitivity=None => skip => return True.
+    Return True jika stream normal (TIDAK freeze).
+    freeze_sensitivity=None => skip => True (tidak dicek).
     """
-    # Jika freeze_sensitivity=None => kita skip freeze-check => True
     if freeze_sensitivity is None:
         return True
 
@@ -166,14 +179,13 @@ def check_freeze_frames(rtsp_url: str, freeze_sensitivity: float, timeout=5) -> 
             "-f", "null",
             "-"
         ]
-        logger.debug(f"[validate_cctv] freeze-check cmd: {' '.join(cmd)}")
         result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout+5)
         return b"freeze_start" not in result.stderr
     except subprocess.TimeoutExpired:
-        logger.error(f"[validate_cctv] check_freeze_frames TIMEOUT => {rtsp_url}")
+        logger.error(f"[validate_cctv] freezedetect TIMEOUT => {rtsp_url}")
         return False
     except Exception as e:
-        logger.error(f"[validate_cctv] check_freeze_frames error: {e}")
+        logger.error(f"[validate_cctv] freezedetect error: {e}")
         return False
 
 ###############################################################################
@@ -181,7 +193,7 @@ def check_freeze_frames(rtsp_url: str, freeze_sensitivity: float, timeout=5) -> 
 ###############################################################################
 def validate_rtsp_stream(rtsp_url: str, rtsp_url_log: str) -> bool:
     """
-    Memakai ffprobe untuk cek apakah stream valid (tidak error).
+    Memakai ffprobe => cek apakah stream valid (return True).
     """
     try:
         logger.info(f"[validate_cctv] ffprobe => {rtsp_url_log}")
@@ -302,7 +314,6 @@ def run_validation_once():
         do_freeze_check = False
     else:
         do_black_check = True
-        # Walau ENABLE_FREEZE_CHECK=false di ENV, kita tetap cek `ENABLE_FREEZE_CHECK` di global
         do_freeze_check = True if ENABLE_FREEZE_CHECK else False
 
     # CPU usage & freeze_sensitivity

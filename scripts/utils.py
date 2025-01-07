@@ -2,7 +2,7 @@
 utils.py
 
 Modul utilitas yang menyediakan:
-1) Fungsi logger (RotatingFileHandler, opsional SysLogHandler).
+1) Fungsi logger (opsional RotatingFileHandler, opsional SysLogHandler, opsional StreamHandler).
 2) Fungsi-fungsi umum: get_local_time, decode_credentials, dsb.
 3) Kemudahan penggunaan log kategori (LOG_CATEGORIES).
 
@@ -41,7 +41,6 @@ DEFAULT_LOG_SIZE = 10 * 1024 * 1024  # 10 MB
 DEFAULT_BACKUP_COUNT = 5
 
 # Timezone default: Asia/Makassar (WITA).
-# Jika tidak valid atau tidak di-set, akan fallback ke system local time.
 TIMEZONE = os.getenv("TIMEZONE", "Asia/Makassar")
 
 # Environment fallback
@@ -50,16 +49,18 @@ ENABLE_SYSLOG = os.getenv("ENABLE_SYSLOG", "false").lower() == "true"
 SYSLOG_SERVER = os.getenv("SYSLOG_SERVER", DEFAULT_SYSLOG_SERVER)
 SYSLOG_PORT = int(os.getenv("SYSLOG_PORT", DEFAULT_SYSLOG_PORT))
 
-# DEBUG_MODE => menentukan level logging (DEBUG vs INFO)
 DEBUG_MODE = os.getenv("DEBUG", "false").lower() == "true"
+
+# Opsi untuk mengaktifkan File Handler & Stream Handler:
+ENABLE_FILE_LOG = os.getenv("ENABLE_FILE_LOG", "false").lower() == "true"
+ENABLE_STREAM_LOG = os.getenv("ENABLE_STREAM_LOG", "true").lower() == "true"
 
 ###############################################################################
 # 3. KATEGORI LOG (DICTIONARY)
 ###############################################################################
-# Anda bisa menambahkan kategori lain, misalnya "Resource-Monitor" jika diinginkan.
 LOG_CATEGORIES = {
     "PERFORMANCE": {
-        "description": "Mencatat metrik kinerja sistem (CPU/RAM, eksekusi).",
+        "description": "Mencatat metrik kinerja sistem (CPU/RAM, dsb.).",
         "path": f"{DEFAULT_LOG_DIR}/performance/performance.log"
     },
     "BACKUP": {
@@ -106,12 +107,10 @@ LOG_CATEGORIES = {
         "description": "Log level debug (untuk dev).",
         "path": f"{DEFAULT_LOG_DIR}/debug/debug.log"
     },
-
-     "Resource-Monitor": {
-         "description": "Log pemantauan CPU/RAM dsb. (resource_monitor.py).",
-         "path": "/mnt/Data/Syslog/resource/resource_monitor.log"
+    "Resource-Monitor": {
+        "description": "Log pemantauan CPU/RAM dsb. (resource_monitor.py).",
+        "path": "/mnt/Data/Syslog/resource/resource_monitor.log"
     },
-
     "default": {
         "description": "Fallback untuk log umum.",
         "path": DEFAULT_LOG_PATH
@@ -124,13 +123,6 @@ LOG_CATEGORIES = {
 def load_log_messages(file_path: str) -> dict:
     """
     Memuat pesan log dari file JSON (opsional).
-    Berguna jika ada penanganan log berbasis template message (get_log_message).
-
-    Args:
-        file_path (str): Path ke file JSON.
-
-    Returns:
-        dict: Isi file JSON sebagai dictionary. {} jika gagal.
     """
     try:
         with open(file_path, "r") as f:
@@ -151,67 +143,67 @@ def load_log_messages(file_path: str) -> dict:
 LOG_MESSAGES = load_log_messages(LOG_MESSAGES_FILE)
 
 ###############################################################################
-# 5. FUNGSI UTILITY LOGGER
+# 5. FUNGSI UTILITY LOGGER (Optimized for Syslog / Optional File / Optional STDOUT)
 ###############################################################################
 def setup_logger(logger_name: str, log_path: str) -> logging.Logger:
     """
-    Membuat logger dengan RotatingFileHandler dan opsional SyslogHandler.
-
-    Args:
-        logger_name (str): Nama logger (bebas).
-        log_path   (str): Path file log (misal /mnt/Data/Syslog/...).
-
-    Returns:
-        logging.Logger: Objek logger yang siap digunakan (level INFO/DEBUG).
+    Membuat logger dengan opsional RotatingFileHandler, SyslogHandler, dan StreamHandler.
+    Sesuai environment variable:
+      ENABLE_SYSLOG (bool),
+      ENABLE_FILE_LOG (bool),
+      ENABLE_STREAM_LOG (bool).
     """
     logger = logging.getLogger(logger_name)
     if logger.hasHandlers():
-        # Sudah pernah dibuat => kembalikan existing
         return logger
 
-    # Set level logging
-    logger.setLevel(logging.DEBUG if DEBUG_MODE else logging.INFO)
+    # Tentukan level
+    level = logging.DEBUG if DEBUG_MODE else logging.INFO
+    logger.setLevel(level)
 
-    # Setup Rotating File Handler
-    import os
-    os.makedirs(os.path.dirname(log_path), exist_ok=True)
-    try:
-        file_handler = RotatingFileHandler(
-            filename=log_path,
-            maxBytes=DEFAULT_LOG_SIZE,
-            backupCount=DEFAULT_BACKUP_COUNT
-        )
-        formatter = logging.Formatter(
-            fmt='%(asctime)s [%(levelname)s] %(message)s',
-            datefmt='%d-%m-%Y %H:%M:%S'
-        )
-        file_handler.setFormatter(formatter)
-        logger.addHandler(file_handler)
-    except Exception as e:
-        print(f"[ERROR] Gagal mengatur file handler untuk {log_path}: {e}")
+    formatter_file = logging.Formatter(
+        fmt='%(asctime)s [%(levelname)s] %(message)s',
+        datefmt='%d-%m-%Y %H:%M:%S'
+    )
 
-    # Setup Syslog Handler (jika ENABLE_SYSLOG=true di ENV)
+    # 1) RotatingFileHandler => jika ENABLE_FILE_LOG=true
+    if ENABLE_FILE_LOG:
+        import os
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        try:
+            file_handler = RotatingFileHandler(
+                filename=log_path,
+                maxBytes=DEFAULT_LOG_SIZE,
+                backupCount=DEFAULT_BACKUP_COUNT
+            )
+            file_handler.setFormatter(formatter_file)
+            logger.addHandler(file_handler)
+        except Exception as e:
+            print(f"[ERROR] Gagal mengatur file handler untuk {log_path}: {e}")
+
+    # 2) Syslog Handler => jika ENABLE_SYSLOG=true
     if ENABLE_SYSLOG:
         try:
             syslog_handler = SysLogHandler(address=(SYSLOG_SERVER, SYSLOG_PORT))
+            # Format => [LoggerName] Pesan...
             syslog_formatter = logging.Formatter(f"[{logger_name}] %(message)s")
             syslog_handler.setFormatter(syslog_formatter)
             logger.addHandler(syslog_handler)
         except Exception as e:
             print(f"[WARNING] Gagal mengatur syslog handler: {SYSLOG_SERVER}:{SYSLOG_PORT} => {e}")
 
+    # 3) Stream Handler => agar muncul di docker logs
+    if ENABLE_STREAM_LOG:
+        stream_handler = logging.StreamHandler()
+        # Bisa pakai format yang sama dengan file, atau berbeda
+        stream_handler.setFormatter(formatter_file)
+        logger.addHandler(stream_handler)
+
     return logger
 
 def setup_category_logger(category: str) -> logging.Logger:
     """
     Membuat logger berdasarkan kategori di LOG_CATEGORIES.
-    Jika kategori tidak ditemukan, fallback ke 'default'.
-
-    Args:
-        category (str): Nama kategori (e.g. 'RTSP', 'NETWORK', dsb.)
-
-    Returns:
-        logging.Logger: Logger dengan path & handler sesuai kategori.
     """
     if category not in LOG_CATEGORIES:
         category = "default"
@@ -221,15 +213,6 @@ def setup_category_logger(category: str) -> logging.Logger:
 def get_log_message(key: str) -> str:
     """
     Mengambil pesan log berdasarkan kunci dari LOG_MESSAGES.
-
-    Format key: "some.key.path" => messages[some][key][path]
-    Contoh: get_log_message("resource.start") => "Memulai pemantauan resource..."
-
-    Raises:
-        RuntimeError: Jika key tidak ditemukan di file JSON.
-
-    Returns:
-        str: Pesan log yang sesuai key.
     """
     try:
         parts = key.split('.')
@@ -246,12 +229,6 @@ def get_log_message(key: str) -> str:
 def get_local_time() -> str:
     """
     Mengembalikan waktu lokal dengan format 'dd-MM-yyyy HH:mm:ss TZZZ+Offset'.
-
-    - Jika ENV TIMEZONE valid (misal "Asia/Makassar"), gunakan itu.
-    - Jika TIMEZONE tidak valid / tidak ada, fallback ke system local time.
-
-    Returns:
-        str: Contoh "08-01-2025 10:12:01 WITA+0800"
     """
     try:
         tz_name = TIMEZONE.strip() if TIMEZONE else ""
@@ -262,23 +239,12 @@ def get_local_time() -> str:
             local_time = datetime.now().astimezone()
         return local_time.strftime('%d-%m-%Y %H:%M:%S %Z%z')
     except Exception:
-        # Jika TIMEZONE tidak valid => fallback system local time
         fallback_time = datetime.now().astimezone()
         return fallback_time.strftime('%d-%m-%Y %H:%M:%S %Z%z')
 
 def decode_credentials() -> tuple:
     """
     Dekode ENV: RTSP_USER_BASE64, RTSP_PASSWORD_BASE64 => (user, password).
-
-    Pastikan di .env atau environment:
-      RTSP_USER_BASE64=<base64 user>
-      RTSP_PASSWORD_BASE64=<base64 password>
-
-    Returns:
-        tuple: (user, password)
-
-    Raises:
-        RuntimeError: Jika env tidak diset atau decode gagal.
     """
     u_b64 = os.getenv("RTSP_USER_BASE64", "")
     p_b64 = os.getenv("RTSP_PASSWORD_BASE64", "")
@@ -297,12 +263,6 @@ def decode_credentials() -> tuple:
 def generate_channels() -> list:
     """
     Membuat list channel berdasarkan TEST_CHANNEL atau CHANNELS.
-
-    - Jika TEST_CHANNEL != 'off', parse string "1,3,4" => [1,3,4].
-    - Jika TEST_CHANNEL=='off', gunakan range(1..CHANNELS).
-
-    Returns:
-        list: daftar channel (int).
     """
     tc = os.getenv("TEST_CHANNEL", "off").lower()
     if tc != "off":
@@ -316,14 +276,7 @@ def generate_channels() -> list:
 
 def load_json_file(file_path: str) -> dict:
     """
-    Membaca file JSON dan mengembalikan dict.
-    Return {} jika gagal atau file tidak ditemukan.
-
-    Args:
-        file_path (str): Path ke file JSON
-
-    Returns:
-        dict: Isi file, atau {} jika tidak ditemukan/error.
+    Membaca file JSON dan mengembalikan dict. 
     """
     try:
         with open(file_path, "r") as f:
@@ -342,45 +295,30 @@ def load_json_file(file_path: str) -> dict:
 # 7. DOKUMENTASI PENGGUNAAN
 ###############################################################################
 """
-Dokumentasi Penggunaan:
+Dokumentasi Penggunaan (Optimized):
+-----------------------------------
+1) ENV Variable Penting:
+   - DEBUG => "true"/"false"
+   - ENABLE_SYSLOG => "true"/"false"
+   - ENABLE_FILE_LOG => "true"/"false"
+   - ENABLE_STREAM_LOG => "true"/"false"
+   - SYSLOG_SERVER, SYSLOG_PORT => untuk SysLogHandler
 
-1. Konfigurasi ENV:
-   - TIMEZONE (default: "Asia/Makassar").
-     Jika kosong/invalid => fallback system local time (misal Asia/Jakarta).
-   - ENABLE_SYSLOG, SYSLOG_SERVER, SYSLOG_PORT => untuk mengaktifkan Syslog Handler.
-   - DEBUG (default "false") => Menentukan logger.setLevel(DEBUG vs INFO).
+2) Di resource_monitor.py atau validate_cctv.py:
+   from utils import setup_logger, setup_category_logger
 
-2. Contoh Penggunaan di Script Lain:
-   from utils import (
-       setup_logger, setup_category_logger, get_local_time,
-       decode_credentials, load_json_file, ...
-   )
+   # Ingin menulis pakai kategori "Resource-Monitor"
+   logger = setup_category_logger("Resource-Monitor")
+   logger.info("Memulai pemantauan resource...")
 
-   logger = setup_logger("MyLogger", "/path/to/log/file.log")
-   logger.info("Hello from MyLogger")
+3) Syslog-ng:
+   - Tambahkan filter f_resource_monitor, f_rtsp_validation, dsb.
+   - Atur destination => file /mnt/Data/Syslog/xx/xxx.log
 
-   # atau, kategori
-   logger_resource = setup_category_logger("Resource-Monitor")
-   logger_resource.info("Memulai pemantauan resource...")
+4) Pilih jalur logging:
+   - Hanya Syslog + Stream? => ENABLE_SYSLOG=true, ENABLE_STREAM_LOG=true, ENABLE_FILE_LOG=false
+   - Hanya File (rotating)? => ENABLE_FILE_LOG=true, ENABLE_SYSLOG=false, ENABLE_STREAM_LOG=false
+   - File + Syslog + Stream => set ketiganya true, hati-hati duplikasi di file yang sama.
 
-3. Rotasi Log & Syslog:
-   - Rotasi otomatis (10MB) dengan 5 backup.
-   - Jika ENABLE_SYSLOG=true => log juga ke server syslog-ng (UDP/TCP 1514).
-   - Pastikan environment SYSLOG_SERVER, SYSLOG_PORT.
-
-4. Fungsi decode_credentials():
-   - Mengambil RTSP_USER_BASE64 & RTSP_PASSWORD_BASE64, decode ke (user, pass).
-
-5. Fungsi generate_channels():
-   - Parsing channel dari TEST_CHANNEL (jika tidak 'off'),
-     atau range(1..CHANNELS).
-
-6. Fungsi load_json_file():
-   - Membaca file JSON, kembalikan dict => berguna untuk config dynamic.
-
-Dengan demikian, modul `utils.py` ini memudahkan:
-- Logging (file & syslog).
-- Timezone local time.
-- Decode credential base64.
-- Baca file JSON dsb.
+Semoga bermanfaat!
 """
