@@ -2,11 +2,16 @@
 """
 resource_monitor.py
 
-Script ini memantau pemakaian CPU, RAM, Disk, Swap, dan Jaringan.
-Hasil pemantauan disimpan dalam file JSON untuk digunakan oleh sistem lain.
+Gabungan:
+1. Pemantauan resource (CPU, RAM, Disk, dsb.) => data disimpan JSON.
+2. Memetakan IP mana yang digunakan (berdasarkan NVR_ENABLE, NVR_SUBNET, RTSP_IP).
+3. Ping keluar (misal google.com) untuk cek internet (beserta RTT).
 
-- Menghapus "per_core_usage_percent" dari output JSON.
-- Tetap menampilkan timestamp_local, timestamp_wib, dan timestamp_wita.
+Hasil pemantauan (resource_usage + stream_config) disimpan dalam 1 file JSON (MONITOR_STATE_FILE).
+
+Tujuan:
+- Memisahkan beban scanning/ping IP dari proses validasi RTSP (validate_cctv.py).
+- Berjalan terus (loop) setiap RESOURCE_MONITOR_INTERVAL detik.
 """
 
 import os
@@ -14,6 +19,9 @@ import sys
 import time
 import json
 import psutil
+import subprocess
+import re
+import ipaddress
 from datetime import datetime
 import pytz
 
@@ -23,38 +31,24 @@ sys.path.append("/app/scripts")
 from utils import setup_logger
 
 ###############################################################################
-# KONFIGURASI & SETUP LOGGER
+# KONSTANTA / KONFIGURASI
 ###############################################################################
 LOG_PATH = os.getenv("LOG_PATH", "/mnt/Data/Syslog/resource/resource_monitor.log")
 logger = setup_logger("Resource-Monitor", LOG_PATH)
 
-###############################################################################
-# KONFIGURASI RESOURCE MONITOR
-###############################################################################
 MONITOR_STATE_FILE = os.getenv("MONITOR_STATE_FILE",
                                "/mnt/Data/Syslog/resource/resource_monitor_state.json")
+
 RESOURCE_MONITOR_INTERVAL = int(os.getenv("RESOURCE_MONITOR_INTERVAL", "5"))
+PING_OUTSIDE_HOST = os.getenv("PING_OUTSIDE_HOST", "google.com")
 
 ###############################################################################
-# FUNGSI TIMEZONE
+# FUNGSI WAKTU / TIMEZONE
 ###############################################################################
-def get_time_in_timezone(tz_name: str) -> str:
-    """
-    Mengembalikan waktu saat ini dalam timezone tertentu (misal 'Asia/Makassar')
-    dengan format 'dd-MM-YYYY HH:mm:ss ZZZZ'.
-    Jika tz_name tidak valid, kembalikan 'unknown'.
-    """
-    try:
-        tz = pytz.timezone(tz_name)
-        now = datetime.now(tz)
-        return now.strftime('%d-%m-%Y %H:%M:%S %Z%z')
-    except Exception:
-        return "unknown"
-
 def get_local_time() -> str:
     """
-    Mengembalikan waktu 'lokal' (sesuai local timezone container/host)
-    dengan format 'dd-MM-YYYY HH:mm:ss ZZZZ'.
+    Mengembalikan waktu lokal (container/host).
+    Format: 'dd-MM-YYYY HH:mm:ss %Z%z'
     """
     try:
         now = datetime.now().astimezone()
@@ -64,75 +58,105 @@ def get_local_time() -> str:
         return "unknown"
 
 ###############################################################################
+# FUNGSI PING
+###############################################################################
+def ping_host_with_rtt(host: str, count=1, timeout=2) -> (bool, float):
+    """
+    Ping <host> dengan ping -c <count> -W <timeout>.
+    Return (reachable: bool, rtt_ms: float or None).
+    """
+    try:
+        output = subprocess.check_output(
+            ["ping", "-c", str(count), "-W", str(timeout), host],
+            stderr=subprocess.STDOUT,
+            universal_newlines=True
+        )
+        # Cari pola time=... ms
+        match = re.search(r"time=([\d\.]+)\s*ms", output)
+        if match:
+            return True, float(match.group(1))
+        else:
+            return True, None
+    except subprocess.CalledProcessError:
+        return False, None
+    except Exception as e:
+        logger.error(f"[Resource-Monitor] Ping error ke {host}: {e}")
+        return False, None
+
+def collect_subnet_ips(subnet: str, ping_timeout=1):
+    """
+    Scan subnet => kembalikan list IP reachable. 
+    Return list of {ip, reachable, ping_time_ms}.
+    """
+    results = []
+    try:
+        net = ipaddress.ip_network(subnet, strict=False)
+        for ip_obj in net.hosts():
+            ip_str = str(ip_obj)
+            reachable, rtt_ms = ping_host_with_rtt(ip_str, count=1, timeout=ping_timeout)
+            if reachable:
+                results.append({
+                    "ip": ip_str,
+                    "reachable": True,
+                    "ping_time_ms": rtt_ms
+                })
+        return results
+    except ValueError as ve:
+        logger.error(f"[Resource-Monitor] Subnet tidak valid: {subnet} => {ve}")
+        return []
+
+###############################################################################
 # FUNGSI PENGUMPULAN RESOURCE
 ###############################################################################
 def collect_resource_data():
     """
-    Mengumpulkan data resource (CPU, RAM, Disk, Swap, Load Avg, Network).
-    *Tanpa* 'per_core_usage_percent'.
-    Menyertakan tiga timestamp (local, WIB, WITA).
+    Mengumpulkan data resource (CPU, RAM, Disk, Swap, LoadAvg, Network).
+    Menyertakan timestamp_local.
     """
-
-    # CPU usage
+    # CPU
     cpu_usage_percent = psutil.cpu_percent(interval=None)
     cpu_count_logical = psutil.cpu_count(logical=True)
-    # (Dihilangkan) cpu_per_core_usage = psutil.cpu_percent(interval=None, percpu=True)
 
-    # RAM usage
+    # RAM
     mem_info = psutil.virtual_memory()
-    ram_total = mem_info.total
-    ram_used = mem_info.used
-    ram_free = mem_info.available
     ram_usage_percent = mem_info.percent
 
-    # Disk usage (root '/')
+    # Disk
     disk_info = psutil.disk_usage('/')
-    disk_total = disk_info.total
-    disk_used = disk_info.used
-    disk_free = disk_info.free
     disk_usage_percent = disk_info.percent
 
-    # Swap usage
+    # Swap
     swap_info = psutil.swap_memory()
-    swap_total = swap_info.total
-    swap_used = swap_info.used
-    swap_free = swap_info.free
-    swap_usage_percent = swap_info.percent
 
-    # Load average (Unix-based only)
+    # Load average
     try:
         load_1, load_5, load_15 = os.getloadavg()
     except OSError:
         load_1, load_5, load_15 = (0, 0, 0)
 
-    # Network I/O
     net_io = psutil.net_io_counters()
-    bytes_sent = net_io.bytes_sent
-    bytes_recv = net_io.bytes_recv
-
-    # Buat struktur data (tanpa per_core_usage_percent)
     data = {
         "cpu": {
             "usage_percent": cpu_usage_percent,
             "core_count_logical": cpu_count_logical
         },
         "ram": {
-            "total": ram_total,
-            "used": ram_used,
-            "free": ram_free,
+            "total": mem_info.total,
+            "used": mem_info.used,
+            "free": mem_info.available,
             "usage_percent": ram_usage_percent
         },
         "disk": {
-            "total": disk_total,
-            "used": disk_used,
-            "free": disk_free,
+            "total": disk_info.total,
+            "used": disk_info.used,
+            "free": disk_info.free,
             "usage_percent": disk_usage_percent
         },
         "swap": {
-            "total": swap_total,
-            "used": swap_used,
-            "free": swap_free,
-            "usage_percent": swap_usage_percent
+            "total": swap_info.total,
+            "used": swap_info.used,
+            "free": swap_info.free,
+            "usage_percent": swap_info.percent
         },
         "load_average": {
             "1min": load_1,
@@ -140,46 +164,114 @@ def collect_resource_data():
             "15min": load_15
         },
         "network": {
-            "bytes_sent": bytes_sent,
-            "bytes_received": bytes_recv
+            "bytes_sent": net_io.bytes_sent,
+            "bytes_received": net_io.bytes_recv
         },
-        # Timestamp lokal, WIB, WITA
-        "timestamp_local": get_local_time(),
-        #"timestamp_wib": get_time_in_timezone("Asia/Jakarta"),
-        #"timestamp_wita": get_time_in_timezone("Asia/Makassar")
+        "timestamp_local": get_local_time()
     }
+    return data
 
+###############################################################################
+# FUNGSI MENGUMPULKAN KONFIG STREAM / IP
+###############################################################################
+def collect_stream_info():
+    """
+    Mengumpulkan info environment (NVR_ENABLE, dsb.),
+    lalu memetakan final_ips, channel_list dsb. tanpa validasi RTSP.
+    """
+    STREAM_TITLE  = os.getenv("STREAM_TITLE", "Unknown Title")
+    RTSP_IP       = os.getenv("RTSP_IP", "127.0.0.1")
+    NVR_SUBNET    = os.getenv("NVR_SUBNET", "192.168.1.0/24")
+    TEST_CHANNEL  = os.getenv("TEST_CHANNEL", "1,3,4")
+    CHANNELS      = int(os.getenv("CHANNELS", "1"))
+    RTSP_SUBTYPE  = os.getenv("RTSP_SUBTYPE", "1")
+    NVR_ENABLE    = (os.getenv("NVR_ENABLE", "false").lower() == "true")
+    ENABLE_RTSP_VALIDATION = (os.getenv("ENABLE_RTSP_VALIDATION", "true").lower() == "true")
+    SKIP_ABDULLAH_CHECK    = (os.getenv("SKIP_ABDULLAH_CHECK", "false").lower() == "true")
+
+    # 1) Kumpulkan final_ips
+    if NVR_ENABLE:
+        # Subnet scanning
+        final_ips = collect_subnet_ips(NVR_SUBNET, ping_timeout=1)
+    else:
+        # Single IP => ping
+        reachable, rtt_ms = ping_host_with_rtt(RTSP_IP, count=1, timeout=2)
+        final_ips = [{
+            "ip": RTSP_IP,
+            "reachable": reachable,
+            "ping_time_ms": rtt_ms
+        }]
+
+    # 2) channel_list
+    if TEST_CHANNEL.lower() == "off":
+        channel_list = list(range(1, CHANNELS + 1))
+    else:
+        channel_list = []
+        for c in TEST_CHANNEL.split(","):
+            c = c.strip()
+            if c.isdigit():
+                channel_list.append(int(c))
+
+    # 3) Ping ke luar (google.com), sekadar cek internet
+    outside_ok, outside_rtt = ping_host_with_rtt(PING_OUTSIDE_HOST, count=1, timeout=2)
+
+    data = {
+        "stream_title": STREAM_TITLE,
+        "rtsp_ip": RTSP_IP,
+        "nvr_subnet": NVR_SUBNET,
+        "test_channel": TEST_CHANNEL,
+        "channels": CHANNELS,
+        "rtsp_subtype": RTSP_SUBTYPE,
+        "nvr_enable": NVR_ENABLE,
+        "enable_rtsp_validation": ENABLE_RTSP_VALIDATION,
+        "skip_abdullah_check": SKIP_ABDULLAH_CHECK,
+        "final_ips": final_ips,
+        "ping_outside_host": PING_OUTSIDE_HOST,
+        "ping_outside_ok": outside_ok,
+        "ping_outside_ms": outside_rtt,
+        "channel_list": channel_list
+    }
     return data
 
 ###############################################################################
 # MAIN LOOP
 ###############################################################################
 def main():
-    logger.info("[Resource-Monitor] Memulai pemantauan resource.")
-    logger.info(f"[Resource-Monitor] Hasil akan ditulis di: {MONITOR_STATE_FILE}")
-    logger.info(f"[Resource-Monitor] Interval pemantauan: {RESOURCE_MONITOR_INTERVAL} detik")
+    logger.info("[Resource-Monitor] Memulai pemantauan resource & stream info.")
+    logger.info(f"[Resource-Monitor] Output JSON => {MONITOR_STATE_FILE}")
+    logger.info(f"[Resource-Monitor] Interval => {RESOURCE_MONITOR_INTERVAL} detik")
 
     while True:
         try:
-            # 1. Kumpulkan data resource lengkap
-            data = collect_resource_data()
+            # 1) Resource usage
+            resource_data = collect_resource_data()
 
-            # 2. Tulis ke file JSON
+            # 2) Info stream (NVR/IP, channels, dsb.)
+            stream_data = collect_stream_info()
+
+            # 3) Gabungkan
+            combined_data = {
+                "resource_usage": resource_data,
+                "stream_config": stream_data
+            }
+
+            # 4) Tulis ke file JSON
             with open(MONITOR_STATE_FILE, "w") as f:
-                json.dump(data, f, indent=2)
+                json.dump(combined_data, f, indent=2)
 
-            # 3. Tampilkan ringkasan CPU & RAM di log
-            cpu_short = data["cpu"]["usage_percent"]
-            ram_short = data["ram"]["usage_percent"]
+            # 5) Log ringkasan CPU & RAM
+            cpu_short = resource_data["cpu"]["usage_percent"]
+            ram_short = resource_data["ram"]["usage_percent"]
+            ts_local  = resource_data["timestamp_local"]
             logger.info(
                 f"[Resource-Monitor] CPU={cpu_short:.1f}% RAM={ram_short:.1f}% => "
-                f"Data diperbarui. (LocalTime={data['timestamp_local']})"
+                f"Data diperbarui (LocalTime={ts_local})."
             )
 
         except Exception as e:
-            logger.error(f"[Resource-Monitor] Gagal memproses data resource: {e}")
+            logger.error(f"[Resource-Monitor] Gagal memproses data: {e}")
 
-        # 4. Tunggu sebelum loop berikutnya
+        # 6) Tunggu sebelum loop berikutnya
         time.sleep(RESOURCE_MONITOR_INTERVAL)
 
 if __name__ == "__main__":

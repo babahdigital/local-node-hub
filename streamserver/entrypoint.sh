@@ -12,12 +12,12 @@ HLS_PATH="/app/hls"
 # Jika Anda ingin mematikan validasi RTSP, set ENABLE_RTSP_VALIDATION=false
 ENABLE_RTSP_VALIDATION="${ENABLE_RTSP_VALIDATION:-true}"
 
-# Jika Anda ingin mem‐skip cek user abdullah, set SKIP_ABDULLAH_CHECK=true
+# Jika Anda ingin mem-skip cek user abdullah, set SKIP_ABDULLAH_CHECK=true
 SKIP_ABDULLAH_CHECK="${SKIP_ABDULLAH_CHECK:-false}"
 
 # Apakah script Python (validate_cctv.py) dijalankan secara loop atau single-run
 # LOOP_ENABLE=true => loop di background
-# LOOP_ENABLE=false => single-run (blocking)
+# LOOP_ENABLE=false => single-run
 LOOP_ENABLE="${LOOP_ENABLE:-false}"
 
 ###############################################################################
@@ -34,8 +34,6 @@ log_error() {
 ###############################################################################
 # LOAD CREDENTIALS (OPTIONAL)
 ###############################################################################
-# Jika Anda menempatkan RTSP_USER_BASE64, RTSP_PASSWORD_BASE64 di /app/config/credentials.sh,
-# Anda bisa "source" di sini. Jika environment sudah diset di .env, ini bisa di-skip.
 if [ -f /app/config/credentials.sh ]; then
     source /app/config/credentials.sh
 fi
@@ -49,7 +47,7 @@ check_dependencies() {
     for dep in "${deps[@]}"; do
         if ! command -v "$dep" >/dev/null 2>&1; then
             log_error "Dependency '$dep' tidak ditemukan di PATH!"
-            log_error "Pastikan image Docker Anda meng‐install '$dep'."
+            log_error "Pastikan image Docker Anda meng-install '$dep'."
             exit 1
         fi
     done
@@ -62,6 +60,7 @@ check_dependencies() {
 ###############################################################################
 decode_credentials() {
     log_info "AUTH: Mendekode kredensial RTSP..."
+
     if [ -n "${RTSP_USER_BASE64:-}" ] && [ -n "${RTSP_PASSWORD_BASE64:-}" ]; then
         export RTSP_USER
         export RTSP_PASSWORD
@@ -84,8 +83,6 @@ decode_credentials() {
 # FUNGSI: URL-ENCODE (menggunakan Python)
 ###############################################################################
 urlencode() {
-    # Fungsi ini akan meng-encode semua karakter spesial, termasuk '@'
-    # Contoh: "Admin123@" => "Admin123%40"
     python3 -c "import urllib.parse, sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "$1"
 }
 
@@ -95,37 +92,37 @@ urlencode() {
 validate_environment() {
     log_info "Memvalidasi variabel lingkungan..."
 
-    # Pastikan RTSP_IP terisi (untuk DVR/NVR).
+    # Pastikan RTSP_IP terisi
     if [ -z "${RTSP_IP:-}" ]; then
         log_error "NETWORK: RTSP_IP tidak diset!"
         exit 1
     fi
 
-    # Pastikan RTSP_USER dan RTSP_PASSWORD sudah diset
+    # Pastikan RTSP_USER dan RTSP_PASSWORD sudah ada
     if [ -z "${RTSP_USER:-}" ] || [ -z "${RTSP_PASSWORD:-}" ]; then
-        log_error "AUTH: RTSP_USER atau RTSP_PASSWORD tidak diset!"
+        log_error "AUTH: RTSP_USER / RTSP_PASSWORD tidak diset!"
         exit 1
     fi
 
-    # RTSP_SUBTYPE default
+    # RTSP_SUBTYPE
     if [ -z "${RTSP_SUBTYPE:-}" ]; then
-        log_info "RTSP_SUBTYPE tidak diset. Menggunakan default = 1."
+        log_info "RTSP_SUBTYPE tidak diset. default=1"
         export RTSP_SUBTYPE=1
     fi
 
     # TEST_CHANNEL vs CHANNELS
     if [ "${TEST_CHANNEL:-off}" != "off" ]; then
-        log_info "Mode Testing Hidup, Variabel CHANNELS diabaikan."
+        log_info "TEST_CHANNEL diisi => Channel list diambil dari situ."
     else
         if [[ "${CHANNELS:-1}" =~ ^[0-9]+$ ]]; then
-            log_info "CHANNELS diatur sebagai angka: ${CHANNELS:-1}."
+            log_info "CHANNELS = ${CHANNELS:-1}"
         else
-            log_error "CHANNELS harus berupa angka (contoh: 8, 16, 32)."
+            log_error "CHANNELS harus berupa angka. (8,16,32 dsb)"
             exit 1
         fi
     fi
 
-    # Cek user abdullah, kalau tidak di-skip
+    # Cek user abdullah
     if [ "$SKIP_ABDULLAH_CHECK" = "false" ]; then
         log_info "Memverifikasi user abdullah..."
         if ! id abdullah &>/dev/null; then
@@ -134,35 +131,43 @@ validate_environment() {
         fi
         log_info "User abdullah tersedia."
     else
-        log_info "SKIP_ABDULLAH_CHECK=true => Melewati pengecekan user abdullah."
+        log_info "SKIP_ABDULLAH_CHECK=true => lewati cek user abdullah."
     fi
 
-    log_info "Semua variabel lingkungan valid."
+    log_info "Environment valid."
 }
 
 ###############################################################################
 # FUNGSI: MEMBUAT DIREKTORI LOG
 ###############################################################################
 create_log_dirs() {
-    log_info "Memeriksa dan membuat folder log yang dibutuhkan..."
+    log_info "Membuat folder log (Nginx, CCTV)..."
 
-    # 1. Folder log Nginx
+    # Nginx
     mkdir -p "$NGINX_LOG_PATH" || {
-        log_error "Gagal membuat folder $NGINX_LOG_PATH!"
+        log_error "Gagal buat folder $NGINX_LOG_PATH!"
         exit 1
     }
     touch "$NGINX_LOG_PATH/error.log" "$NGINX_LOG_PATH/access.log"
     chmod -R 750 "$NGINX_LOG_PATH"
-    log_info "Folder $NGINX_LOG_PATH siap digunakan."
 
-    # 2. Folder log CCTV
+    # CCTV
     mkdir -p "$CCTV_LOG_PATH" || {
-        log_error "Gagal membuat folder $CCTV_LOG_PATH!"
+        log_error "Gagal buat folder $CCTV_LOG_PATH!"
         exit 1
     }
     touch "$CCTV_LOG_PATH/validation.log" "$CCTV_LOG_PATH/cctv_status.log"
     chmod -R 750 "$CCTV_LOG_PATH"
-    log_info "Folder $CCTV_LOG_PATH siap digunakan."
+}
+
+###############################################################################
+# OPSIONAL: PERBAIKI PERMISSION FOLDER HLS
+###############################################################################
+fix_hls_permissions() {
+    # as needed, misalnya chown -R root:root
+    chown -R abdullah:abdullah "$HLS_PATH"
+    chmod -R 775 "$HLS_PATH"
+    log_info "Permissions di $HLS_PATH => abdullah:abdullah & 775"
 }
 
 ###############################################################################
@@ -172,60 +177,82 @@ cleanup_hls() {
     log_info "Membersihkan direktori HLS..."
     if [ -d "$HLS_PATH" ]; then
         rm -rf "${HLS_PATH:?}/"*
-        log_info "Direktori HLS berhasil dibersihkan."
+        log_info "HLS dikosongkan."
     else
-        log_info "Direktori HLS tidak ditemukan. Membuat baru..."
+        log_info "Direktori HLS blm ada => buat baru"
         mkdir -p "$HLS_PATH"
     fi
+
+    fix_hls_permissions
 }
 
 ###############################################################################
 # FUNGSI: MEMULAI STREAMING HLS (FFmpeg)
 ###############################################################################
 start_hls_stream() {
-    local channel_name=$1
-    local folder_name="ch${channel_name}"  # Format folder ch<n>
+    local ch="$1"
+    local folder_name="ch${ch}"
 
-    local encoded_password
-    encoded_password="$(urlencode "$RTSP_PASSWORD")"
+    # encode pass
+    local encoded_pass
+    encoded_pass="$(urlencode "$RTSP_PASSWORD")"
 
     local masked_cred="${RTSP_USER}:*****"
-    local actual_cred="${RTSP_USER}:${encoded_password}"
+    local actual_cred="${RTSP_USER}:${encoded_pass}"
 
-    local rtsp_url="rtsp://${actual_cred}@${RTSP_IP}:554/cam/realmonitor?channel=${channel_name}&subtype=${RTSP_SUBTYPE}"
-    local hls_output="$HLS_PATH/${folder_name}/live.m3u8"
+    local rtsp_url="rtsp://${actual_cred}@${RTSP_IP}:554/cam/realmonitor?channel=${ch}&subtype=${RTSP_SUBTYPE}"
+    local hls_dir="$HLS_PATH/$folder_name"
+    local hls_output="$hls_dir/live.m3u8"
 
-    local metadata_title="${STREAM_TITLE:-Default Stream} - Channel ${channel_name}"
-    log_info "STREAMING-HLS: Menjalankan CCTV ${metadata_title}"
-    log_info "STREAMING-HLS: Akses HLS => folder: $folder_name"
+    # metadata
+    local title="${STREAM_TITLE:-Default Stream} - Channel ${ch}"
+    log_info "STREAM: $title => folder: $folder_name"
+    log_info "RTSP (masked): rtsp://${masked_cred}@${RTSP_IP}:554/...ch=${ch}..."
 
-    mkdir -p "$HLS_PATH/$folder_name"
+    mkdir -p "$hls_dir"
 
     ffmpeg \
         -hide_banner \
         -loglevel error \
         -rtsp_transport tcp \
         -i "$rtsp_url" \
-        -c:v copy -c:a aac \
-        -metadata title="${metadata_title}" \
-        -f hls -hls_time 4 -hls_list_size 10 -hls_flags delete_segments \
+        -c copy \
+        -f hls \
+        -hls_time 10 \
+        -hls_list_size 30 \
+        -hls_flags delete_segments+append_list \
+        -metadata title="${title}" \
         "$hls_output" &>/dev/null &
 
-    log_info "STREAMING-HLS: FFmpeg channel ${channel_name} berjalan di background (PID=$!)."
+#    ffmpeg \
+#        -hide_banner \
+#        -loglevel error \
+#        -rtsp_transport tcp \
+#        -i "$rtsp_url" \
+#        -c:v libx264 -preset ultrafast -r 15 -g 30 -crf 28 -threads 4 \
+#        -an \
+#        -f hls \
+#        -hls_time 8 \
+#        -hls_list_size 10 \
+#        -hls_flags delete_segments+append_list \
+#        -metadata title="${title}" \
+#        "$hls_output" &>/dev/null &
+
+    log_info "FFmpeg channel $ch => background (PID=$!)."
 }
 
 start_hls_streams() {
-    log_info "Memulai seluruh HLS stream..."
+    log_info "Mulai seluruh HLS stream..."
 
     local channels
     if [ "${TEST_CHANNEL:-off}" != "off" ]; then
-        IFS=',' read -ra channels <<< "$TEST_CHANNEL"
+        IFS=',' read -ra channels <<< "${TEST_CHANNEL}"
     else
         channels=($(seq 1 "${CHANNELS:-1}"))
     fi
 
-    for channel in "${channels[@]}"; do
-        start_hls_stream "$channel"
+    for c in "${channels[@]}"; do
+        start_hls_stream "$c"
     done
 }
 
@@ -233,54 +260,51 @@ start_hls_streams() {
 # FUNGSI UTAMA
 ###############################################################################
 main() {
-    # 0. Pastikan dependencies ada
+    # cek dependencies
     check_dependencies
 
-    # 1. Decode credentials
+    # decode credentials
     decode_credentials
 
-    # 2. Validasi environment
+    # validate environment
     validate_environment
 
-    # 3. Buat folder log (Nginx, CCTV)
+    # buat folder log
     create_log_dirs
 
-    # 4. Bersihkan (atau buat) direktori HLS
+    # bersihkan folder hls
     cleanup_hls
 
-    # 5. Validasi RTSP dengan Python (opsional)
+    # opsional => jalankan validate_cctv
     if [ "$ENABLE_RTSP_VALIDATION" = "true" ]; then
-        local validation_script="/app/streamserver/scripts/validate_cctv.py"
+        local script="/app/streamserver/scripts/validate_cctv.py"
+        if [ -f "$script" ]; then
+            log_info "Menjalankan $script..."
 
-        if [ -f "$validation_script" ]; then
-            log_info "Menjalankan script Python untuk validasi RTSP..."
-
-            # Periksa LOOP_ENABLE
             if [ "$LOOP_ENABLE" = "true" ]; then
-                # Jalankan script loop di background
-                python3 "$validation_script" &
-                log_info "validate_cctv.py (LOOP) dijalankan di background."
+                # loop => background
+                python3 "$script" &
+                log_info "validate_cctv => loop di background"
             else
-                # Jalankan sekali secara blocking
-                if ! python3 "$validation_script"; then
-                    log_error "Terjadi error menjalankan validate_cctv.py (exit code != 0)."
-                    # Anda bisa exit 1 atau ignore agar kontainer tetap hidup
-                    # exit 1
+                # single-run
+                if ! python3 "$script"; then
+                    log_error "validate_cctv exit !=0"
+                    # opsional: exit 1
                 fi
             fi
         else
-            log_error "File $validation_script tidak ditemukan! Skipping validation..."
+            log_error "script $script tidak ada => skip validation"
         fi
     else
-        log_info "RTSP validation dimatikan (ENABLE_RTSP_VALIDATION=false)."
+        log_info "RTSP validation dimatikan"
     fi
 
-    # 6. Mulai streaming HLS
+    # mulai streaming
     start_hls_streams
 
-    # 7. Jalankan perintah akhir (misal: Nginx, jika tidak ada argumen).
+    # cek arg
     if [ $# -eq 0 ]; then
-        log_info "Tidak ada argumen. Menjalankan default: nginx -g 'daemon off;'."
+        log_info "No arg => jalankan nginx -g 'daemon off;'"
         exec nginx -g 'daemon off;'
     else
         log_info "Menjalankan perintah akhir: $*"
@@ -288,5 +312,4 @@ main() {
     fi
 }
 
-# Panggil fungsi main
 main

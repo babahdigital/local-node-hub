@@ -1,10 +1,11 @@
+#!/usr/bin/env python3
 import os
 import sys
 import subprocess
-import ipaddress
 import time
 import json
 from datetime import datetime
+import ipaddress
 
 # Pastikan folder scripts ada di PATH (jika utils.py ada di /app/scripts)
 sys.path.append("/app/scripts")
@@ -12,8 +13,7 @@ sys.path.append("/app/scripts")
 from utils import (
     setup_logger,
     get_local_time,
-    decode_credentials,
-    generate_channels
+    decode_credentials
 )
 
 ###############################################################################
@@ -21,106 +21,109 @@ from utils import (
 ###############################################################################
 LOG_PATH = os.getenv("LOG_PATH", "/mnt/Data/Syslog/rtsp/cctv/validation.log")
 CCTV_LOG_PATH = os.getenv("CCTV_LOG_PATH", "/mnt/Data/Syslog/rtsp/cctv/cctv_status.log")
-
-# Gunakan "RTSP-Validation" sebagai nama logger
 logger = setup_logger("RTSP-Validation", LOG_PATH)
 
 ###############################################################################
-# Opsi Loop & Interval
+# MODE LOOP
 ###############################################################################
 LOOP_ENABLE = os.getenv("LOOP_ENABLE", "false").lower() == "true"
-CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", "300"))  # default 300 detik (5 menit)
+CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", "300"))  # Default 5 menit
 
 ###############################################################################
-# FREEZE SENSITIVITY (Bisa diubah Dinamis)
+# FREEZE & BLACKDETECT CONFIG
 ###############################################################################
-# Nilai default dari environment (misal 0.5)
-DEFAULT_FREEZE_SENSITIVITY = float(os.getenv("FREEZE_SENSITIVITY", "0.5"))
+DEFAULT_FREEZE_SENSITIVITY = float(os.getenv("FREEZE_SENSITIVITY", "3.0"))
+FREEZE_RECHECK_TIMES = int(os.getenv("FREEZE_RECHECK_TIMES", "3"))
+FREEZE_RECHECK_DELAY = float(os.getenv("FREEZE_RECHECK_DELAY", "2.0"))
+ENABLE_FREEZE_CHECK = os.getenv("ENABLE_FREEZE_CHECK", "true").lower() == "true"
+FREEZE_COOLDOWN = int(os.getenv("FREEZE_COOLDOWN", "10"))
 
-# File JSON berisi resource server (contoh: /mnt/Data/Syslog/resource/resource_monitor_state.json)
+###############################################################################
+# RESOURCE STATE PATH (JSON) => MENGAMBIL DATA IP/CHANNEL DARI SANA
+###############################################################################
 RESOURCE_STATE_PATH = os.getenv("RESOURCE_STATE_PATH", "/mnt/Data/Syslog/resource/resource_monitor_state.json")
 
 ###############################################################################
-# FUNGSI MEMBACA RESOURCE STATE JSON
+# LAST ONLINE TIMESTAMP (untuk cooldown freeze)
 ###############################################################################
-def read_resource_state(json_path: str) -> dict:
+last_online_timestamp = {}
+
+###############################################################################
+# FUNGSI: LOAD JSON MONITOR
+###############################################################################
+def load_monitor_json(path: str) -> dict:
     """
-    Membaca file JSON resource monitor (CPU, RAM, dll.).
-    Return dictionary, atau {} jika gagal.
-    {
-      "cpu": {"usage_percent": 0.0, ...},
-      "ram": {...}, "disk": {...}, ...
-    }
+    Membaca file JSON yang dihasilkan oleh combined_resource_and_rtsp_monitor.py.
+    Return dict, atau {} jika gagal.
     """
     try:
-        with open(json_path, "r") as f:
+        with open(path, "r") as f:
             data = json.load(f)
         return data
     except FileNotFoundError:
-        logger.warning(f"Resource JSON {json_path} tidak ditemukan.")
+        logger.warning(f"[validate_cctv] File JSON {path} tidak ditemukan.")
+        return {}
     except Exception as e:
-        logger.error(f"Gagal membaca resource JSON {json_path}: {e}")
-    return {}
+        logger.error(f"[validate_cctv] Gagal membaca JSON {path}: {e}")
+        return {}
 
 ###############################################################################
-# FUNGSI MENENTUKAN FREEZE SENSITIVITY (OTOMATIS)
+# FUNGSI BACA CPU USAGE & ATUR FREEZE SENSITIVITY
 ###############################################################################
-def get_dynamic_freeze_sensitivity(default_sensitivity: float) -> float:
+def get_cpu_usage_and_sensitivity(default_sensitivity: float):
     """
-    Membaca resource_usage (misal CPU usage) dari file JSON.
-    Jika CPU usage tinggi => naikkan sensitivitas (agar freeze detect kurang sensitif).
-    Jika CPU usage rendah => turunkan sensitivitas (lebih sensitif).
-    
-    Bebas Anda kustom logikanya. Contoh sederhana:
-      - CPU usage > 80% => freeze_sens = default_sensitivity * 2  (kurang sensitif)
-      - CPU usage < 30% => freeze_sens = default_sensitivity * 0.5
-      - lainnya => default_sens
+    Membaca CPU usage dari resource_usage.cpu.usage_percent (file JSON),
+    menyesuaikan freeze_sensitivity jika CPU usage tinggi/rendah.
+    Jika CPU usage >90, kita skip freeze-check (return None).
     """
-    state = read_resource_state(RESOURCE_STATE_PATH)
-    cpu_usage = 0.0
-    if "cpu" in state and "usage_percent" in state["cpu"]:
-        cpu_usage = float(state["cpu"]["usage_percent"])
+    monitor_data = load_monitor_json(RESOURCE_STATE_PATH)
+    if not monitor_data:
+        logger.warning("[validate_cctv] Tidak ada data resource_usage => gunakan default freeze_sensitivity.")
+        return 0.0, default_sensitivity
 
-    # Log resource
-    logger.info(f"Resource Monitor => CPU usage: {cpu_usage}%")
+    resource_usage = monitor_data.get("resource_usage", {})
+    cpu_dict = resource_usage.get("cpu", {})
+    cpu_usage = float(cpu_dict.get("usage_percent", 0.0))
 
-    # Contoh logika penyesuaian
-    if cpu_usage > 80:
+    logger.info(f"[validate_cctv] CPU usage: {cpu_usage:.1f}% => menyesuaikan freeze_sensitivity.")
+
+    # Skip freeze-check entirely jika CPU usage > 90 (opsional)
+    if cpu_usage > 90:
+        logger.warning("[validate_cctv] CPU sangat tinggi (>90%) => skip freeze-check sepenuhnya.")
+        return cpu_usage, None
+
+    # Jika CPU 80-90 => gandakan sensitivitas (lebih “longgar”).
+    if 80 < cpu_usage <= 90:
         new_sens = default_sensitivity * 2.0
-        logger.info(f"CPU tinggi => FREEZE_SENSITIVITY diset {new_sens:.2f}")
-        return new_sens
+        logger.info(f"[validate_cctv] CPU tinggi => freeze_sens={new_sens:.2f}")
+        return cpu_usage, new_sens
+
+    # Jika CPU <30 => perketat sensitivitas (0.5x).
     elif cpu_usage < 30:
         new_sens = default_sensitivity * 0.5
-        logger.info(f"CPU rendah => FREEZE_SENSITIVITY diset {new_sens:.2f}")
-        return new_sens
-    else:
-        return default_sensitivity
+        logger.info(f"[validate_cctv] CPU rendah => freeze_sens={new_sens:.2f}")
+        return cpu_usage, new_sens
+
+    # Sisanya => default
+    return cpu_usage, default_sensitivity
 
 ###############################################################################
-# FUNGSI MEMBANTU (LOG STATUS)
+# FUNGSI WRITE STATUS LOG
 ###############################################################################
-def write_status_log(channel: int, status: str) -> None:
-    """
-    Menulis status kamera (Online/Offline/dsb.) ke file log CCTV.
-    """
+def write_status_log(channel: int, status: str):
     timestamp = get_local_time()
     try:
         with open(CCTV_LOG_PATH, "a") as f:
             f.write(f"{timestamp} - Channel {channel}: {status}\n")
     except IOError as e:
-        logger.error(
-            f"Gagal menulis ke {CCTV_LOG_PATH}: {e} "
-            f"(Channel {channel}, Status: {status})"
-        )
+        logger.error(f"Gagal menulis ke {CCTV_LOG_PATH}: {e} (Channel={channel}, Status={status})")
 
 ###############################################################################
-# CEK BLACK FRAMES
+# BLACKDETECT & FREEZEDETECT
 ###############################################################################
-def check_black_frames(rtsp_url: str, timeout: int = 5) -> bool:
+def check_black_frames(rtsp_url: str, timeout=5) -> bool:
     """
-    Menggunakan filter 'blackdetect' di FFmpeg untuk mendeteksi frame hitam.
-    - Return True jika TIDAK ada black frames (aman).
-    - Return False jika TERDETEKSI black frames.
+    Return True jika TIDAK ada black frames (stream normal).
     """
     try:
         cmd = [
@@ -133,32 +136,26 @@ def check_black_frames(rtsp_url: str, timeout: int = 5) -> bool:
             "-f", "null",
             "-"
         ]
-        result = subprocess.run(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout + 5
-        )
-        # Jika "black_start" muncul di stderr => black frames => return False
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout+5)
         return b"black_start" not in result.stderr
     except subprocess.TimeoutExpired:
-        logger.error(f"Timeout saat memeriksa frame hitam: {rtsp_url}")
+        logger.error(f"[validate_cctv] check_black_frames TIMEOUT => {rtsp_url}")
         return False
     except Exception as e:
-        logger.error(f"Kesalahan saat memeriksa frame hitam: {e}")
+        logger.error(f"[validate_cctv] check_black_frames error: {e}")
         return False
 
-###############################################################################
-# CEK FREEZE FRAMES (DENGAN SENSITIVITAS DINAMIS)
-###############################################################################
-def check_freeze_frames(rtsp_url: str, freeze_sensitivity: float, timeout: int = 5) -> bool:
+def check_freeze_frames(rtsp_url: str, freeze_sensitivity: float, timeout=5) -> bool:
     """
-    Menggunakan filter 'freezedetect' untuk mendeteksi freeze frames.
-    - freeze_sensitivity => parameter d=0.5 (misalnya) => durasi minimal freeze
-    - Return True jika TIDAK ada freeze frames.
-    - Return False jika freeze frames terdeteksi.
+    Return True jika TIDAK freeze. 
+    freeze_sensitivity=None => skip => return True.
     """
-    try:
-        # Kita inject freeze_sensitivity ke filter "freezedetect=n=-60dB:d=..."
-        freezedetect_filter = f"freezedetect=n=-60dB:d={freeze_sensitivity}"
+    # Jika freeze_sensitivity=None => kita skip freeze-check => True
+    if freeze_sensitivity is None:
+        return True
 
+    try:
+        freezedetect_filter = f"freezedetect=n=-60dB:d={freeze_sensitivity}"
         cmd = [
             "ffmpeg",
             "-rtsp_transport", "tcp",
@@ -169,44 +166,25 @@ def check_freeze_frames(rtsp_url: str, freeze_sensitivity: float, timeout: int =
             "-f", "null",
             "-"
         ]
-        logger.debug(f"Perintah freeze-check: {' '.join(cmd)}")
-
-        result = subprocess.run(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout + 5
-        )
-        # Jika "freeze_start" muncul => freeze frames => return False
+        logger.debug(f"[validate_cctv] freeze-check cmd: {' '.join(cmd)}")
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout+5)
         return b"freeze_start" not in result.stderr
     except subprocess.TimeoutExpired:
-        logger.error(f"Timeout saat memeriksa freeze frames: {rtsp_url}")
+        logger.error(f"[validate_cctv] check_freeze_frames TIMEOUT => {rtsp_url}")
         return False
     except Exception as e:
-        logger.error(f"Kesalahan saat memeriksa freeze frames: {e}")
+        logger.error(f"[validate_cctv] check_freeze_frames error: {e}")
         return False
 
 ###############################################################################
-# PARSE SUBNET (NVR MODE)
-###############################################################################
-def parse_subnet(nvr_subnet: str):
-    """
-    Membuat daftar IP dari subnet (misal 192.168.1.0/24).
-    """
-    try:
-        net = ipaddress.ip_network(nvr_subnet, strict=False)
-        return list(net.hosts())
-    except Exception as e:
-        logger.error(f"Parse subnet gagal: {nvr_subnet} => {e}")
-        return []
-
-###############################################################################
-# VALIDASI RTSP STREAM
+# VALIDASI STREAM (ffprobe)
 ###############################################################################
 def validate_rtsp_stream(rtsp_url: str, rtsp_url_log: str) -> bool:
     """
-    Menggunakan ffprobe untuk cek apakah stream valid.
-    - Return True jika valid, False jika invalid.
+    Memakai ffprobe untuk cek apakah stream valid (tidak error).
     """
     try:
-        logger.info(f"Memvalidasi RTSP stream (ffprobe): {rtsp_url_log}")
+        logger.info(f"[validate_cctv] ffprobe => {rtsp_url_log}")
         cmd = [
             "ffprobe",
             "-rtsp_transport", "tcp",
@@ -215,139 +193,151 @@ def validate_rtsp_stream(rtsp_url: str, rtsp_url_log: str) -> bool:
             "-of", "default=noprint_wrappers=1",
             rtsp_url
         ]
-        result = subprocess.run(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10
-        )
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)
         if result.returncode == 0:
-            logger.info("RTSP stream valid.")
+            logger.info("[validate_cctv] RTSP stream valid.")
             return True
         else:
             stderr_txt = result.stderr.decode(errors="replace").strip()
-            logger.error(f"RTSP stream tidak valid: {stderr_txt}")
+            logger.error(f"[validate_cctv] Stream invalid => {stderr_txt}")
             return False
     except subprocess.TimeoutExpired:
-        logger.error("Timeout saat memvalidasi RTSP stream.")
+        logger.error("[validate_cctv] ffprobe TIMEOUT.")
         return False
     except Exception as e:
-        logger.error(f"Kesalahan tidak terduga saat memvalidasi RTSP: {e}")
+        logger.error(f"[validate_cctv] validate_rtsp_stream error: {e}")
         return False
 
 ###############################################################################
 # VALIDASI SATU CHANNEL
 ###############################################################################
-def validate_one_channel(ip, ch, rtsp_user, rtsp_password,
-                         rtsp_subtype, do_black_check, do_freeze_check,
-                         freeze_sensitivity):
+def validate_one_channel(ip_str, channel, rtsp_user, rtsp_pass, rtsp_subtype,
+                         freeze_sens, do_black=True, do_freeze=True):
     """
-    Memvalidasi satu channel di satu IP:
-      1) ffprobe => cek valid stream
-      2) blackdetect => offline jika black frames
-      3) freezedetect => offline jika freeze frames
+    1) ffprobe => cek valid
+    2) blackdetect => offline jika black frames
+    3) freezedetect => offline jika freeze frames
     """
-    actual_cred = f"{rtsp_user}:{rtsp_password}"
-    rtsp_url_full = f"rtsp://{actual_cred}@{ip}:554/cam/realmonitor?channel={ch}&subtype={rtsp_subtype}"
+    rtsp_url_full = f"rtsp://{rtsp_user}:{rtsp_pass}@{ip_str}:554/cam/realmonitor?channel={channel}&subtype={rtsp_subtype}"
     masked_cred = f"{rtsp_user}:*****"
-    rtsp_url_log = f"rtsp://{masked_cred}@{ip}:554/cam/realmonitor?channel={ch}&subtype={rtsp_subtype}"
+    rtsp_url_log = f"rtsp://{masked_cred}@{ip_str}:554/cam/realmonitor?channel={channel}&subtype={rtsp_subtype}"
 
+    # Step 1: ffprobe
     if not validate_rtsp_stream(rtsp_url_full, rtsp_url_log):
-        logger.error(f"Channel {ch} tidak valid pada IP {ip}")
-        write_status_log(ch, "Offline")
+        logger.error(f"[validate_cctv] Channel {channel} => Offline (stream invalid) IP={ip_str}")
+        write_status_log(channel, "Offline")
         return "Offline"
 
-    logger.info(f"Channel {ch} valid pada IP {ip}")
-    write_status_log(ch, "Online")
+    # Mark as Online
+    logger.info(f"[validate_cctv] Channel {channel} valid (IP={ip_str}).")
+    write_status_log(channel, "Online")
+    last_online_timestamp[channel] = time.time()
 
-    if do_black_check:
-        ok_black = check_black_frames(rtsp_url_full, timeout=5)
-        if not ok_black:
-            logger.warning(f"Channel {ch} di IP {ip}: Frame hitam terdeteksi.")
-            write_status_log(ch, "Offline (Black Frames)")
+    # Step 2: blackdetect
+    if do_black:
+        no_black = check_black_frames(rtsp_url_full, timeout=5)
+        if not no_black:
+            logger.warning(f"[validate_cctv] Channel {channel} => black frames.")
+            write_status_log(channel, "Offline (Black Frames)")
             return "Offline (Black Frames)"
 
-    if do_freeze_check:
-        freeze_failed_count = 0
-        recheck_times = 2
-        for i in range(recheck_times):
-            ok_freeze = check_freeze_frames(rtsp_url_full, freeze_sensitivity, timeout=3)
-            if not ok_freeze:
-                freeze_failed_count += 1
-            time.sleep(1)
+    # Step 3: freeze detect
+    if do_freeze and ENABLE_FREEZE_CHECK and (freeze_sens is not None):
+        now = time.time()
+        elapsed = now - last_online_timestamp[channel]
+        # Cooldown => skip freeze-check jika belum melewati FREEZE_COOLDOWN
+        if elapsed < FREEZE_COOLDOWN:
+            logger.info(f"[validate_cctv] Channel {channel} => skip freeze-check (cooldown {FREEZE_COOLDOWN}s).")
+            return "Online"
 
-        if freeze_failed_count >= 2:
-            logger.warning(f"Channel {ch} di IP {ip}: Freeze frames terdeteksi.")
-            write_status_log(ch, "Offline (Freeze Frames)")
+        freeze_fail = 0
+        for i in range(FREEZE_RECHECK_TIMES):
+            ok_freeze = check_freeze_frames(rtsp_url_full, freeze_sens, timeout=3)
+            if not ok_freeze:
+                freeze_fail += 1
+            if i < (FREEZE_RECHECK_TIMES - 1):
+                time.sleep(FREEZE_RECHECK_DELAY)
+
+        if freeze_fail >= FREEZE_RECHECK_TIMES:
+            logger.warning(f"[validate_cctv] Channel {channel} => Freeze frames terdeteksi.")
+            write_status_log(channel, "Offline (Freeze Frames)")
             return "Offline (Freeze Frames)"
 
     return "Online"
 
 ###############################################################################
-# VALIDASI SEMUA CHANNEL (SATU PUTARAN)
+# MENJALANKAN VALIDASI (SATU PUTARAN)
 ###############################################################################
 def run_validation_once():
     """
-    Menjalankan validasi satu kali untuk semua IP dan channel.
-    Juga menyesuaikan freeze_sensitivity secara dinamis sebelum memulai loop.
+    1) Baca JSON monitor => final_ips & channel_list
+    2) Baca RTSP_USER/PASS
+    3) Validasi tiap IP & channel
     """
-    try:
-        rtsp_user, rtsp_password = decode_credentials()
-    except RuntimeError as e:
-        logger.error(f"Kesalahan saat mendekode kredensial: {e}")
+    monitor_data = load_monitor_json(RESOURCE_STATE_PATH)
+    if not monitor_data:
+        logger.error("[validate_cctv] JSON monitor kosong => tidak bisa lanjut validasi.")
         return
 
-    rtsp_ip = os.getenv("RTSP_IP", "")
-    rtsp_subtype = os.getenv("RTSP_SUBTYPE", "1")
-    nvr_enable = os.getenv("NVR_ENABLE", "false").lower() == "true"
-    nvr_subnet = os.getenv("NVR_SUBNET", "")
+    # Ambil data stream_config
+    stream_config = monitor_data.get("stream_config", {})
+    final_ips = stream_config.get("final_ips", [])
+    channel_list = stream_config.get("channel_list", [])
 
+    # Baca credentials
+    try:
+        rtsp_user, rtsp_pass = decode_credentials()
+    except RuntimeError as e:
+        logger.error(f"[validate_cctv] decode_credentials error => {e}")
+        return
+
+    # RTSP_SUBTYPE + NVR mode
+    rtsp_subtype = stream_config.get("rtsp_subtype", "1")
+    nvr_enable = bool(stream_config.get("nvr_enable", False))
+
+    # Apakah black/freeze check?
     if nvr_enable:
-        if not nvr_subnet:
-            logger.error("NVR_ENABLE=true tetapi NVR_SUBNET kosong.")
-            return
-        ips = parse_subnet(nvr_subnet)
-        logger.info(f"[NVR-Mode] Subnet: {nvr_subnet}, total IP found: {len(ips)}")
+        logger.info("[validate_cctv] NVR mode => skip black/freeze detection.")
         do_black_check = False
         do_freeze_check = False
     else:
-        if not rtsp_ip:
-            logger.error("Mode DVR: RTSP_IP tidak di-set.")
-            return
-        ips = [rtsp_ip]
-        logger.info(f"[DVR-Mode] IP: {rtsp_ip}")
         do_black_check = True
-        do_freeze_check = True
+        # Walau ENABLE_FREEZE_CHECK=false di ENV, kita tetap cek `ENABLE_FREEZE_CHECK` di global
+        do_freeze_check = True if ENABLE_FREEZE_CHECK else False
 
-    channels = generate_channels()
-    logger.info(f"Channels yang akan divalidasi: {channels}")
+    # CPU usage & freeze_sensitivity
+    cpu_usage, freeze_sens = get_cpu_usage_and_sensitivity(DEFAULT_FREEZE_SENSITIVITY)
 
-    # Dapatkan freeze_sensitivity dinamis
-    freeze_sensitivity = get_dynamic_freeze_sensitivity(DEFAULT_FREEZE_SENSITIVITY)
+    # Validasi IP => channel
+    for ip_obj in final_ips:
+        ip_str = ip_obj.get("ip", "")
+        if not ip_str:
+            continue
+        if not ip_obj.get("reachable", False):
+            logger.warning(f"[validate_cctv] IP={ip_str} unreachable => skip.")
+            continue
 
-    for ip in ips:
-        for ch in channels:
-            _final_status = validate_one_channel(
-                ip, ch,
-                rtsp_user, rtsp_password,
+        for ch in channel_list:
+            validate_one_channel(
+                ip_str, ch,
+                rtsp_user, rtsp_pass,
                 rtsp_subtype,
-                do_black_check, do_freeze_check,
-                freeze_sensitivity
+                freeze_sens,
+                do_black=do_black_check,
+                do_freeze=do_freeze_check
             )
 
-    logger.info("Validasi selesai untuk semua channel.")
+    logger.info("[validate_cctv] Validasi selesai untuk semua channel & IP.")
 
 ###############################################################################
-# MAIN LOOP / SINGLE RUN
+# MAIN LOOP / SINGLE-RUN
 ###############################################################################
 def main():
-    """
-    Main entry point:
-      - Jika LOOP_ENABLE=true, jalankan run_validation_once() setiap CHECK_INTERVAL detik.
-      - Jika LOOP_ENABLE=false, jalankan run_validation_once() sekali saja.
-    """
     if LOOP_ENABLE:
-        logger.info(f"LOOP_ENABLE=true => Script akan mengulang setiap {CHECK_INTERVAL} detik.")
+        logger.info(f"[validate_cctv] LOOP_ENABLE=true => Loop setiap {CHECK_INTERVAL} detik.")
         while True:
             run_validation_once()
-            logger.info(f"Menunggu {CHECK_INTERVAL} detik sebelum pengecekan ulang...")
+            logger.info(f"[validate_cctv] Menunggu {CHECK_INTERVAL} detik sebelum ulang...")
             time.sleep(CHECK_INTERVAL)
     else:
         run_validation_once()

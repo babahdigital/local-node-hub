@@ -24,6 +24,8 @@ services:
     restart: unless-stopped
     networks:
       babahdigital:
+    env_file:
+      - .env
     healthcheck:
       test: ["CMD-SHELL", "find /mnt/Data/Syslog/resource/resource_monitor_state.json -mmin -1 || exit 1"]
       interval: 30s
