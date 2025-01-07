@@ -49,7 +49,7 @@ services:
       - RESOURCE_MONITOR_INTERVAL=5
     volumes:
       # File Json Monitor
-      - /mnt/Data/Syslog/resource:/mnt/Data/Syslog/resource
+      - /mnt/Data/Syslog:/mnt/Data/Syslog
       # Folder scripts (Python, dsb.)
       - ./scripts/utils.py:/app/scripts/utils.py
       # Mount Bind Log Messages
@@ -58,6 +58,8 @@ services:
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
     restart: unless-stopped
+    depends_on:
+      - syslog
     networks:
       babahdigital:
     env_file:

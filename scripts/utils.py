@@ -1,3 +1,14 @@
+"""
+utils.py
+
+Modul utilitas yang menyediakan:
+1) Fungsi logger (RotatingFileHandler, opsional SysLogHandler).
+2) Fungsi-fungsi umum: get_local_time, decode_credentials, dsb.
+3) Kemudahan penggunaan log kategori (LOG_CATEGORIES).
+
+Bisa digunakan di script lain seperti resource_monitor.py, validate_cctv.py, dsb.
+"""
+
 import os
 import json
 import logging
@@ -8,12 +19,12 @@ import pytz
 from dotenv import load_dotenv
 
 ###############################################################################
-# MUAT ENVIRONMENT VARIABLES
+# 1. MUAT ENVIRONMENT VARIABLES (opsional dari .env)
 ###############################################################################
 load_dotenv()  # Memuat environment variables dari .env (jika ada)
 
 ###############################################################################
-# KONSTANTA & DEFAULT
+# 2. KONSTANTA & DEFAULT
 ###############################################################################
 DEFAULT_SYSLOG_SERVER = "syslog-ng"
 DEFAULT_SYSLOG_PORT = 1514
@@ -33,16 +44,19 @@ DEFAULT_BACKUP_COUNT = 5
 # Jika tidak valid atau tidak di-set, akan fallback ke system local time.
 TIMEZONE = os.getenv("TIMEZONE", "Asia/Makassar")
 
-# Ambil dari .env, dengan fallback
+# Environment fallback
 LOG_MESSAGES_FILE = os.getenv("LOG_MESSAGES_FILE", DEFAULT_MESSAGES_FILE)
 ENABLE_SYSLOG = os.getenv("ENABLE_SYSLOG", "false").lower() == "true"
 SYSLOG_SERVER = os.getenv("SYSLOG_SERVER", DEFAULT_SYSLOG_SERVER)
 SYSLOG_PORT = int(os.getenv("SYSLOG_PORT", DEFAULT_SYSLOG_PORT))
+
+# DEBUG_MODE => menentukan level logging (DEBUG vs INFO)
 DEBUG_MODE = os.getenv("DEBUG", "false").lower() == "true"
 
 ###############################################################################
-# KATEGORI LOG (DICTIONARY)
+# 3. KATEGORI LOG (DICTIONARY)
 ###############################################################################
+# Anda bisa menambahkan kategori lain, misalnya "Resource-Monitor" jika diinginkan.
 LOG_CATEGORIES = {
     "PERFORMANCE": {
         "description": "Mencatat metrik kinerja sistem (CPU/RAM, eksekusi).",
@@ -92,6 +106,12 @@ LOG_CATEGORIES = {
         "description": "Log level debug (untuk dev).",
         "path": f"{DEFAULT_LOG_DIR}/debug/debug.log"
     },
+
+     "Resource-Monitor": {
+         "description": "Log pemantauan CPU/RAM dsb. (resource_monitor.py).",
+         "path": "/mnt/Data/Syslog/resource/resource_monitor.log"
+    },
+
     "default": {
         "description": "Fallback untuk log umum.",
         "path": DEFAULT_LOG_PATH
@@ -99,12 +119,18 @@ LOG_CATEGORIES = {
 }
 
 ###############################################################################
-# LOAD PESAN LOG DARI JSON (OPSIONAL)
+# 4. LOAD PESAN LOG DARI JSON (OPSIONAL)
 ###############################################################################
 def load_log_messages(file_path: str) -> dict:
     """
-    Memuat pesan log dari file JSON.
-    Berguna jika ada penanganan log berbasis template message.
+    Memuat pesan log dari file JSON (opsional).
+    Berguna jika ada penanganan log berbasis template message (get_log_message).
+
+    Args:
+        file_path (str): Path ke file JSON.
+
+    Returns:
+        dict: Isi file JSON sebagai dictionary. {} jika gagal.
     """
     try:
         with open(file_path, "r") as f:
@@ -125,19 +151,25 @@ def load_log_messages(file_path: str) -> dict:
 LOG_MESSAGES = load_log_messages(LOG_MESSAGES_FILE)
 
 ###############################################################################
-# FUNGSI UTILITY LOGGER
+# 5. FUNGSI UTILITY LOGGER
 ###############################################################################
 def setup_logger(logger_name: str, log_path: str) -> logging.Logger:
     """
     Membuat logger dengan RotatingFileHandler dan opsional SyslogHandler.
-    - logger_name: nama logger (bebas).
-    - log_path   : path file log.
+
+    Args:
+        logger_name (str): Nama logger (bebas).
+        log_path   (str): Path file log (misal /mnt/Data/Syslog/...).
+
+    Returns:
+        logging.Logger: Objek logger yang siap digunakan (level INFO/DEBUG).
     """
     logger = logging.getLogger(logger_name)
     if logger.hasHandlers():
-        # Sudah pernah dibuat, langsung kembalikan
+        # Sudah pernah dibuat => kembalikan existing
         return logger
 
+    # Set level logging
     logger.setLevel(logging.DEBUG if DEBUG_MODE else logging.INFO)
 
     # Setup Rotating File Handler
@@ -158,7 +190,7 @@ def setup_logger(logger_name: str, log_path: str) -> logging.Logger:
     except Exception as e:
         print(f"[ERROR] Gagal mengatur file handler untuk {log_path}: {e}")
 
-    # Setup Syslog Handler (opsional)
+    # Setup Syslog Handler (jika ENABLE_SYSLOG=true di ENV)
     if ENABLE_SYSLOG:
         try:
             syslog_handler = SysLogHandler(address=(SYSLOG_SERVER, SYSLOG_PORT))
@@ -172,8 +204,14 @@ def setup_logger(logger_name: str, log_path: str) -> logging.Logger:
 
 def setup_category_logger(category: str) -> logging.Logger:
     """
-    Membuat logger berdasarkan kategori LOG_CATEGORIES.
-    Jika tidak ditemukan, fallback ke 'default'.
+    Membuat logger berdasarkan kategori di LOG_CATEGORIES.
+    Jika kategori tidak ditemukan, fallback ke 'default'.
+
+    Args:
+        category (str): Nama kategori (e.g. 'RTSP', 'NETWORK', dsb.)
+
+    Returns:
+        logging.Logger: Logger dengan path & handler sesuai kategori.
     """
     if category not in LOG_CATEGORIES:
         category = "default"
@@ -182,8 +220,16 @@ def setup_category_logger(category: str) -> logging.Logger:
 
 def get_log_message(key: str) -> str:
     """
-    Mengambil pesan log berdasarkan kunci (key) dari LOG_MESSAGES global.
+    Mengambil pesan log berdasarkan kunci dari LOG_MESSAGES.
+
     Format key: "some.key.path" => messages[some][key][path]
+    Contoh: get_log_message("resource.start") => "Memulai pemantauan resource..."
+
+    Raises:
+        RuntimeError: Jika key tidak ditemukan di file JSON.
+
+    Returns:
+        str: Pesan log yang sesuai key.
     """
     try:
         parts = key.split('.')
@@ -195,24 +241,25 @@ def get_log_message(key: str) -> str:
         raise RuntimeError(f"Pesan log untuk kunci '{key}' tidak ditemukan.")
 
 ###############################################################################
-# FUNGSI UTILITY UMUM
+# 6. FUNGSI UTILITY UMUM
 ###############################################################################
 def get_local_time() -> str:
     """
     Mengembalikan waktu lokal dengan format 'dd-MM-yyyy HH:mm:ss TZZZ+Offset'.
-    - Jika ENV TIMEZONE valid, gunakan pytz.timezone() => Contoh: Asia/Makassar (WITA).
+
+    - Jika ENV TIMEZONE valid (misal "Asia/Makassar"), gunakan itu.
     - Jika TIMEZONE tidak valid / tidak ada, fallback ke system local time.
+
+    Returns:
+        str: Contoh "08-01-2025 10:12:01 WITA+0800"
     """
     try:
         tz_name = TIMEZONE.strip() if TIMEZONE else ""
         if tz_name:
-            # Mencoba timezone yang di-set
             local_tz = pytz.timezone(tz_name)
             local_time = datetime.now(local_tz)
         else:
-            # TIMEZONE kosong => fallback ke system local time
             local_time = datetime.now().astimezone()
-
         return local_time.strftime('%d-%m-%Y %H:%M:%S %Z%z')
     except Exception:
         # Jika TIMEZONE tidak valid => fallback system local time
@@ -221,12 +268,17 @@ def get_local_time() -> str:
 
 def decode_credentials() -> tuple:
     """
-    Dekode RTSP_USER_BASE64 dan RTSP_PASSWORD_BASE64 dari ENV.
-    Return (rtsp_user, rtsp_password).
+    Dekode ENV: RTSP_USER_BASE64, RTSP_PASSWORD_BASE64 => (user, password).
 
-    Pastikan env:
-      RTSP_USER_BASE64=<base64 dr user>
-      RTSP_PASSWORD_BASE64=<base64 dr password>
+    Pastikan di .env atau environment:
+      RTSP_USER_BASE64=<base64 user>
+      RTSP_PASSWORD_BASE64=<base64 password>
+
+    Returns:
+        tuple: (user, password)
+
+    Raises:
+        RuntimeError: Jika env tidak diset atau decode gagal.
     """
     u_b64 = os.getenv("RTSP_USER_BASE64", "")
     p_b64 = os.getenv("RTSP_PASSWORD_BASE64", "")
@@ -245,8 +297,12 @@ def decode_credentials() -> tuple:
 def generate_channels() -> list:
     """
     Membuat list channel berdasarkan TEST_CHANNEL atau CHANNELS.
+
     - Jika TEST_CHANNEL != 'off', parse string "1,3,4" => [1,3,4].
     - Jika TEST_CHANNEL=='off', gunakan range(1..CHANNELS).
+
+    Returns:
+        list: daftar channel (int).
     """
     tc = os.getenv("TEST_CHANNEL", "off").lower()
     if tc != "off":
@@ -260,8 +316,14 @@ def generate_channels() -> list:
 
 def load_json_file(file_path: str) -> dict:
     """
-    Membaca file JSON dan mengembalikan dict. 
+    Membaca file JSON dan mengembalikan dict.
     Return {} jika gagal atau file tidak ditemukan.
+
+    Args:
+        file_path (str): Path ke file JSON
+
+    Returns:
+        dict: Isi file, atau {} jika tidak ditemukan/error.
     """
     try:
         with open(file_path, "r") as f:
@@ -277,53 +339,48 @@ def load_json_file(file_path: str) -> dict:
         return {}
 
 ###############################################################################
-# DOKUMENTASI PENGGUNAAN
+# 7. DOKUMENTASI PENGGUNAAN
 ###############################################################################
 """
-Dokumentasi Penggunaan
+Dokumentasi Penggunaan:
 
 1. Konfigurasi ENV:
-   - TIMEZONE (default: "Asia/Makassar" => WITA).
-     Jika kosong atau tidak valid, akan fallback ke system local time.
-     Contoh: TIMEZONE="Asia/Jakarta" => WIB, TIMEZONE="Asia/Jayapura" => WIT, dsb.
+   - TIMEZONE (default: "Asia/Makassar").
+     Jika kosong/invalid => fallback system local time (misal Asia/Jakarta).
+   - ENABLE_SYSLOG, SYSLOG_SERVER, SYSLOG_PORT => untuk mengaktifkan Syslog Handler.
+   - DEBUG (default "false") => Menentukan logger.setLevel(DEBUG vs INFO).
 
-2. Contoh Penggunaan di Script Lain (validate_cctv / resource_monitor):
+2. Contoh Penggunaan di Script Lain:
    from utils import (
-       setup_logger, get_local_time, decode_credentials, load_json_file, ...
+       setup_logger, setup_category_logger, get_local_time,
+       decode_credentials, load_json_file, ...
    )
 
-   # Membuat logger
-   logger = setup_logger("NamaLoggerBebas", "/path/to/log/file.log")
-   logger.info("Halo, saya log info")
+   logger = setup_logger("MyLogger", "/path/to/log/file.log")
+   logger.info("Hello from MyLogger")
 
-   # Mendapatkan waktu lokal (WITA/WIB fallback)
-   now_str = get_local_time()
+   # atau, kategori
+   logger_resource = setup_category_logger("Resource-Monitor")
+   logger_resource.info("Memulai pemantauan resource...")
 
-   # Decode user pass
-   user, pwd = decode_credentials()
+3. Rotasi Log & Syslog:
+   - Rotasi otomatis (10MB) dengan 5 backup.
+   - Jika ENABLE_SYSLOG=true => log juga ke server syslog-ng (UDP/TCP 1514).
+   - Pastikan environment SYSLOG_SERVER, SYSLOG_PORT.
 
-   # Membaca file JSON
-   data = load_json_file("/mnt/Data/Syslog/resource/resource_monitor_state.json")
+4. Fungsi decode_credentials():
+   - Mengambil RTSP_USER_BASE64 & RTSP_PASSWORD_BASE64, decode ke (user, pass).
 
-3. Logging Kategori
-   - Jika Anda ingin log dengan kategori, gunakan:
-       logger_rtsp = setup_category_logger("RTSP")
-       logger_rtsp.info("Log dari kategori RTSP")
+5. Fungsi generate_channels():
+   - Parsing channel dari TEST_CHANNEL (jika tidak 'off'),
+     atau range(1..CHANNELS).
 
-4. Pesan Log via get_log_message(key)
-   - Jika Anda menyimpan template log di LOG_MESSAGES_FILE,
-     panggil get_log_message("some.path") untuk mengambil string template.
+6. Fungsi load_json_file():
+   - Membaca file JSON, kembalikan dict => berguna untuk config dynamic.
 
-5. Rotasi Log & Syslog
-   - Log dirotasi ketika ukuran > DEFAULT_LOG_SIZE (10MB), disimpan 5 backup.
-   - Jika ENABLE_SYSLOG=true, maka log juga dikirim ke server Syslog.
-   - Pastikan SYSLOG_SERVER, SYSLOG_PORT di-set.
-
-Dengan struktur ini, Anda dapat menggunakan `utils.py` untuk
-- Mendapatkan logger (file rotating / syslog).
-- Membaca credensial RTSP (Base64).
-- Membaca file JSON.
-- Mengambil waktu lokal dengan format dd-MM-yyyy HH:mm:ss [TimeZone][Offset],
-  default "Asia/Makassar" (WITA), fallback ke system local time jika TIMEZONE tidak valid.
-  
+Dengan demikian, modul `utils.py` ini memudahkan:
+- Logging (file & syslog).
+- Timezone local time.
+- Decode credential base64.
+- Baca file JSON dsb.
 """

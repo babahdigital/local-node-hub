@@ -105,6 +105,7 @@ clean_logs() {
     "streaming/hls.log"
     "network/network.log"
     "resource/resource_monitor.log"
+    "resource/resource_monitor_error.log"
   )
 
   for dir in "${directories[@]}"; do
