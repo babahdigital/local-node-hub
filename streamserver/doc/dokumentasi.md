@@ -1,213 +1,210 @@
 # Dokumentasi Sistem CCTV Streaming & Validasi
 
-Di bawah ini adalah contoh dokumentasi lengkap untuk 3 script yang Anda gunakan:
+Dokumentasi ini menjelaskan 3 skrip yang digunakan:
 
-- **entrypoint.sh** – (Shell script) yang berfungsi sebagai entrypoint Docker.
-- **validate_cctv.py** – (Script Python) yang berfungsi untuk memvalidasi RTSP stream, mendeteksi frame hitam (black frames), freeze frames, dan menulis status ke log.
-- **utils.py** – (Script Python) yang berisi berbagai fungsi utilitas (utility) untuk logging, decoding credentials, generating channel list, dsb.
+- **entrypoint.sh** – Skrip Shell yang menjadi Docker ENTRYPOINT.
+- **validate_cctv.py** – Skrip Python untuk validasi RTSP stream (cek online/offline, black frames, freeze frames) dan menulis status ke log.
+- **utils.py** – Skrip Python berisi fungsi utilitas (logging, decoding credentials, generate channels, dsb.).
 
-Dokumentasi ini mencakup:
-
-- Struktur File & Flow
-- Penjelasan Tiap Script
-- Environment Variables yang dipakai
-- Cara Pengembangan & Tips
-
-## 1. Struktur File dan Alur (High-Level Flow)
+## 1. Struktur File & Alur (High-Level Flow)
 
 ```bash
-.
-├─ entrypoint.sh                      # Script bash untuk Docker ENTRYPOINT
-├─ streamserver/
-│  ├─ scripts/
-│  │  ├─ validate_cctv.py            # Validasi RTSP, black/freeze detection
-│  │  └─ utils.py                    # Fungsi utilitas Python (logger, credential, dsb.)
-│  └─ ... (mungkin file lain)
-├─ Dockerfile
-├─ .env (opsional, berisi environment)
-└─ ...
+/home/abdullah
+scripts
+├── check_unhealthy.sh
+├── utils.py
+└── validate_model.py
+streamserver
+├── config
+│   └── nginx.conf
+├── doc
+│   ├── dokumentasi.md
+│   └── peta-logs.md
+├── Dockerfile
+├── entrypoint.sh
+├── html
+│   ├── error
+│   │   ├── 404.html
+│   │   └── 50x.html
+│   └── index.html
+└── scripts
+    ├── motion_detect.py
+    └── validate_cctv.py
+config
+├── credentials.sh
+└── log_messages.json
 ```
 
-Docker mengeksekusi `entrypoint.sh` saat kontainer dijalankan.
+### Alur Singkat:
 
-### Di entrypoint.sh:
+1. Docker mengeksekusi `entrypoint.sh` saat kontainer dijalankan.
+2. Di `entrypoint.sh`, dilakukan:
+    - Decode credentials (Base64 RTSP_USER/PASSWORD).
+    - Validasi environment (RTSP_IP, CHANNELS/TEST_CHANNEL, dsb.).
+    - (Opsional) Memanggil `validate_cctv.py` untuk validasi RTSP (jika ENABLE_RTSP_VALIDATION=true).
+    - Memulai streaming HLS via FFmpeg (tiap channel).
+    - Menjalankan Nginx (`nginx -g 'daemon off;'`) agar kontainer tetap hidup.
 
-- Melakukan decode_credentials (Base64 user/password).
-- Melakukan validate_environment (cek RTSP_IP, user “abdullah” dsb.).
-- (Opsional) Memanggil `validate_cctv.py` untuk memvalidasi RTSP (jika `ENABLE_RTSP_VALIDATION=true`).
-- Menjalankan FFmpeg streaming HLS.
-- Menjalankan `nginx -g 'daemon off;'` (atau proses lain) agar kontainer tetap hidup.
-
-### validate_cctv.py:
+### `validate_cctv.py` (jika dipanggil):
 
 - Membaca environment (RTSP_IP, RTSP_USER_BASE64, RTSP_PASSWORD_BASE64, dsb.).
-- Dekode credential (melalui `utils.decode_credentials()`).
-- Mengecek setiap channel (memakai `generate_channels()` dari utils).
-- Memakai ffprobe untuk validasi RTSP. Jika valid, lanjut cek black frames (`check_black_frames`) dan freeze frames (`check_freeze_frames`).
-- Menulis status channel (Online/Offline) ke file log (`cctv_status.log`).
+- Dekode credential (via `utils.decode_credentials()`).
+- Loop channel → `ffprobe` untuk validasi, jika valid → cek black frames / freeze frames.
+- Menulis status “Online/Offline” ke `cctv_status.log`. Bisa dijalankan sekali atau loop setiap X detik.
 
-### utils.py:
+### `utils.py` menyediakan:
 
-- Menyediakan `setup_logger` untuk menulis log ke file (rotating file, syslog, dsb. tergantung konfigurasi).
-- Menyediakan `decode_credentials` untuk dekode Base64.
-- Menyediakan `generate_channels` yang membaca TEST_CHANNEL atau CHANNELS.
-- Fungsi `get_local_time` untuk menampilkan timestamp sesuai zona waktu.
+- Logger (dengan rotating file).
+- `decode_credentials` (Base64).
+- `generate_channels` (TEST_CHANNEL / CHANNELS).
+- `get_local_time` (timestamp sesuai TIMEZONE).
 
 ## 2. Penjelasan Tiap Script
 
-### 2.1 entrypoint.sh
+### 2.1. `entrypoint.sh`
 
-**Fungsi Utama:** Menginisialisasi environment, men-decode credential, memvalidasi environment, dan men-start proses streaming HLS & Nginx. Sebagai Docker entrypoint, ia harus:
+**Fungsi Utama:**
 
-- Mengecek dependencies (opsional) – ffmpeg, python3, nginx, dsb.
-- Decode RTSP credentials
-- Validasi environment (RTSP_IP, CHANNELS, dsb.)
-- Membuat folder log Nginx
-- Membersihkan direktori HLS (opsional)
-- (Opsional) Jalankan `validate_cctv.py` jika `ENABLE_RTSP_VALIDATION=true`.
-- Memulai streaming dengan FFmpeg (tiap channel).
-- Men-exec `nginx -g 'daemon off;'` (jika tidak ada argumen lain).
+- Menginisialisasi environment Docker.
+- Mengecek dependencies (ffmpeg, python3, nginx).
+- Decode credentials (RTSP_USER_BASE64 / RTSP_PASSWORD_BASE64).
+- Validasi environment (RTSP_IP, CHANNELS, dsb.).
+- Membuat folder log (Nginx, CCTV).
+- (Opsional) Memanggil `validate_cctv.py`.
+- Memulai FFmpeg streaming HLS.
+- Menjalankan Nginx (`exec nginx -g 'daemon off;'`).
 
-**Struktur (rangkuman):**
+**Environment Variables penting di `entrypoint.sh`:**
 
-```bash
-#!/bin/bash
-set -Eeuo pipefail
+- `RTSP_IP` – Alamat IP CCTV (DVR).
+- `RTSP_USER_BASE64`, `RTSP_PASSWORD_BASE64` – Kredensial RTSP base64.
+- `TEST_CHANNEL` / `CHANNELS` – Daftar channel (menentukan channel mana yang di‐stream).
+- `ENABLE_RTSP_VALIDATION` – true => jalankan `validate_cctv.py`.
+- `LOOP_ENABLE` – true => jalankan `validate_cctv.py` loop di background, false => single-run.
+- `NGINX_LOG_PATH`, `CCTV_LOG_PATH`, `HLS_PATH` – Direktori log, dsb.
 
-# 1. Cek environment, decode credentials
-# 2. Validasi environment
-# 3. Setup log directory (Nginx, CCTV)
-# 4. Cleanup HLS
-# 5. Jalankan python validate_cctv.py (opsional)
-# 6. start_hls_streams
-# 7. exec nginx atau argumen lain
-```
+**Kelebihan:**
 
-**Environment Variables yang sering dibaca di entrypoint.sh:**
+- Fleksibel: bisa single-run / loop untuk validasi (diatur lewat ENV).
+- Memastikan Nginx tetap jadi proses utama, sehingga kontainer tidak exit.
 
-- `RTSP_IP` – Alamat IP CCTV (mode DVR).
-- `RTSP_USER_BASE64`, `RTSP_PASSWORD_BASE64` – Base64 username & password.
-- `TEST_CHANNEL`, `CHANNELS` – Daftar channel.
-- `ENABLE_RTSP_VALIDATION` – Jika true, jalankan `validate_cctv.py`.
-- `NGINX_LOG_PATH`, `CCTV_LOG_PATH`, `HLS_PATH` – Jalur folder log, dsb.
+### 2.2. `validate_cctv.py`
 
-### 2.2 validate_cctv.py
+**Fungsi Utama:**
 
-**Fungsi Utama:** Memvalidasi RTSP stream & menulis status. Secara garis besar:
+- Validasi RTSP stream menggunakan `ffprobe`.
+- Cek black frames (dengan `blackdetect`) dan freeze frames (dengan `freezedetect`).
+- Menulis “Online” / “Offline” ke `cctv_status.log`.
 
-- `decode_credentials()` – Dapat user & password RTSP.
-- Baca environment – RTSP_IP, NVR_ENABLE, NVR_SUBNET, dsb.
-- Tentukan IP list:
-    - Jika `NVR_ENABLE=true`, parse subnet (NVR_SUBNET) => banyak IP.
-    - Jika `NVR_ENABLE=false`, pakai RTSP_IP.
-- Generate Channels (pakai `generate_channels()` dari utils).
-- Loop setiap IP dan Channel:
-    - Build RTSP URL (dengan kredensial asli).
-    - Jalankan ffprobe => validasi.
-    - Kalau valid => cek black frames, freeze frames (jika “DVR mode”).
-    - Tulis status (Online/Offline) ke file `cctv_status.log`.
+**Opsi:**
 
-**Opsi Loop:**
+- `LOOP_ENABLE=true` => script akan loop setiap `CHECK_INTERVAL` detik (default 300).
+- `LOOP_ENABLE=false` => script hanya dijalankan sekali, lalu selesai.
 
-Anda dapat menambahkan “loop” di script jika butuh pengecekan periodik (misalnya tiap 5 menit). Environment `LOOP_ENABLE=true` dan `CHECK_INTERVAL=300` akan membuat script jalan terus.
+**Log Output:**
 
-**Log Files:**
+- `validation.log` (log detail, mencatat semua info/command ffmpeg, ffprobe).
+- `cctv_status.log` (ringkasan, menampilkan Online/Offline per channel).
 
-- Log detail: `validation.log` (LOG_PATH).
-- Status ringkas: `cctv_status.log` (CCTV_LOG_PATH).
+### 2.3. `utils.py`
 
-### 2.3 utils.py
+**Fungsi Utama:**
 
-**Fungsi Utama:** Kumpulan utility yang membantu script Python lain.
+- `setup_logger(logger_name, log_path)` – Membuat logger Python (rotating file).
+- `decode_credentials()` – Membaca & decode RTSP_USER_BASE64 / RTSP_PASSWORD_BASE64.
+- `generate_channels()` – Membuat list channel (misal [1,2,3] dari TEST_CHANNEL atau CHANNELS).
+- `get_local_time()` – Mengembalikan timestamp lokal sesuai TIMEZONE.
 
-- `setup_logger(logger_name, log_path)`
-    - Membuat logger dengan RotatingFileHandler agar file log tidak membengkak.
-    - Opsional: menambahkan SysLogHandler jika `ENABLE_SYSLOG=true`.
-- `decode_credentials()`
-    - Membaca environment `RTSP_USER_BASE64`, `RTSP_PASSWORD_BASE64` => decode Base64 => kembalikan (user, pass).
-- `generate_channels()`
-    - Jika `TEST_CHANNEL != 'off'`, parse string jadi list int.
-    - Jika `TEST_CHANNEL == 'off'`, buat range(1..CHANNELS).
-- `get_local_time()`
-    - Mengembalikan string waktu sesuai TIMEZONE (default: Asia/Makassar).
-- (Opsional) `get_log_message(key)`
-    - Jika ada `LOG_MESSAGES_FILE` (JSON berisi template pesan log), bisa mengambil pesan berdasarkan key.
+**Kelebihan:**
+
+- Memisahkan logika umum, sehingga `validate_cctv.py` dan script lain dapat memakai fungsi yang sama.
+- Mempermudah debugging (log rotating, syslog opsional).
 
 ## 3. Environment Variables Penting
 
 ### Common
 
-- `RTSP_IP`
-    - Alamat IP DVR. Contoh: 172.16.10.252.
-- `RTSP_USER_BASE64` / `RTSP_PASSWORD_BASE64`
-    - Base64 dari username & password RTSP. Contoh `echo -n "babahdigital" | base64`.
-- `CHANNELS`
-    - Jumlah channel. Contoh 8 => Channel 1..8.
-- `TEST_CHANNEL`
-    - Override channel list. Contoh `TEST_CHANNEL=1,3,4`.
-- `ENABLE_RTSP_VALIDATION`
-    - Jika true, jalankan `validate_cctv.py` di `entrypoint.sh`.
-- `NVR_ENABLE`, `NVR_SUBNET`
-    - Jika NVR mode, `NVR_ENABLE=true` dan `NVR_SUBNET=172.16.10.0/24` misalnya.
+- `RTSP_IP`, `RTSP_USER_BASE64`, `RTSP_PASSWORD_BASE64`.
+- `CHANNELS`, `TEST_CHANNEL`.
+- `ENABLE_RTSP_VALIDATION` (true/false).
+- `SKIP_ABDULLAH_CHECK` (true/false).
 
-### Untuk Logging
+### Loop & Interval
 
-- `LOG_PATH`
-    - Default "/mnt/Data/Syslog/rtsp/cctv/validation.log" – tempat menulis log detail `validate_cctv.py`.
-- `CCTV_LOG_PATH`
-    - Default "/mnt/Data/Syslog/rtsp/cctv/cctv_status.log" – tempat menulis ringkasan status Online/Offline.
-- `ENABLE_SYSLOG` / `SYSLOG_SERVER` / `SYSLOG_PORT`
-    - Jika `ENABLE_SYSLOG=true`, kirim log juga ke server Syslog di (`SYSLOG_SERVER`, `SYSLOG_PORT`).
+- `LOOP_ENABLE` (true/false) – Apakah `validate_cctv.py` loop atau sekali.
+- `CHECK_INTERVAL` (detik) – Interval loop (misalnya 300 = 5 menit).
 
-### Opsi Loop
+### Log & Path
 
-- `LOOP_ENABLE`
-    - true => `validate_cctv.py` jalan terus (per interval). false => hanya sekali.
-- `CHECK_INTERVAL`
-    - Interval (detik) antar loop, misalnya 300 detik = 5 menit.
+- `NGINX_LOG_PATH`, `CCTV_LOG_PATH`, `HLS_PATH`.
+- `LOG_PATH`, `ENABLE_SYSLOG`, dsb.
 
-## 4. Cara Pengembangan & Tips Kesempurnaan
+### NVR Mode (opsional)
+
+- `NVR_ENABLE=true`, `NVR_SUBNET=192.168.1.0/24` => validasi beberapa IP.
+
+## 4. Cara Pengembangan & Tips
 
 ### Testing di Luar Docker
 
-- Jalankan `entrypoint.sh` langsung di host (dengan environment seolah-olah). Pastikan path python3 dan ffmpeg sudah ada.
-- Jalankan `validate_cctv.py` di host: `python3 validate_cctv.py`. Lihat hasil di `cctv_status.log` dan `validation.log`.
+- Jalankan `entrypoint.sh` langsung di host. Pastikan python3, ffmpeg, nginx tersedia.
+- Jalankan `validate_cctv.py`: `python3 validate_cctv.py`. Cek log di `cctv_status.log` & `validation.log`.
 
 ### Perhatikan Timeout
 
-- ffprobe dan ffmpeg bisa memakan waktu jika jaringan lambat. Anda bisa menyesuaikan `timeout=10` jadi 15 atau 20 agar tidak terlalu sering “Timeout”.
+- `ffprobe`/`ffmpeg` bisa lambat jika koneksi CCTV lambat. Sesuaikan parameter `timeout=10` → 15 or 20.
 
 ### Tangani Freeze Frames
 
-- Freeze frames (terdeteksi oleh freezedetect) bisa false positive jika scene kamera sedang diam/statis.
-- Anda bisa menurunkan sensitivitas dengan mengubah `freezedetect=n=-60dB:d=0.5` => `freezedetect=n=-60dB:d=1.0`.
+- Freeze detection kadang false positive bila scene CCTV diam. Atur `freezedetect=n=-60dB:d=0.5` jadi 1.0 dsb.
 
 ### Pengaturan Loop
 
-- Jika beban CPU tinggi, perpanjang `CHECK_INTERVAL`.
-- Jika Anda butuh status “real-time”, Anda bisa perpendek interval, tapi CPU usage akan naik.
+- `LOOP_ENABLE=true` + `CHECK_INTERVAL=300` => per 5 menit.
+- Perpendek interval jika butuh status lebih sering, tetapi beban CPU/net akan naik.
 
-### Integrasi dengan Nginx
+### Integrasi Nginx
 
-- Pastikan `exec nginx -g 'daemon off;'` di bagian akhir `entrypoint.sh` agar kontainer tidak mati.
-- Jika `validate_cctv.py` di mode loop, dan Anda masih ingin Nginx jalan, jalankan Python script di background atau gunakan supervisor (misalnya supervisord).
+- Pastikan di akhir `entrypoint.sh`: `exec nginx -g 'daemon off;'`.
+- Jika `validate_cctv.py` mode loop, jalankan di background: `python3 validate_cctv.py &`.
 
 ### Pengaturan Log Rotation
 
-- `utils.py` sudah menyiapkan RotatingFileHandler (10MB max, 5 backup). Pastikan disk cukup.
-- Anda bisa menyesuaikan `DEFAULT_LOG_SIZE` atau `DEFAULT_BACKUP_COUNT` di `utils.py`.
+- `utils.py` menyediakan `RotatingFileHandler` (limit 10MB, 5 backup).
+- Sesuaikan agar disk tidak penuh.
 
 ### Security
 
-- Di log, password di-masking (*****).
-- Pastikan credential `.env` atau environment variable tidak muncul di history atau Git repo publik.
+- Password di‐masking di log (*****).
+- Pastikan credential `.env` tidak bocor di repo publik.
 
 ## 5. Ringkasan
 
-- **entrypoint.sh:** Script shell yang men-setup environment di Docker, men-decode credential, validasi environment, memanggil `validate_cctv.py` (opsional), kemudian memulai proses FFmpeg & Nginx.
-- **validate_cctv.py:** Script Python khusus untuk memvalidasi RTSP (apakah Online, ada black frames, freeze frames, dsb.), lalu menulis hasilnya ke log. Bisa dijalankan sekali atau loop.
-- **utils.py:** Kumpulan fungsi Python (logging, decoding, dsb.) yang dipakai di `validate_cctv.py`.
+### `entrypoint.sh`:
 
-Dengan struktur ini, pengembangan menjadi modular: jika Anda perlu menambah deteksi lain (misal “motion detection” atau “watermark detection”), Anda cukup menambahkan fungsi di `validate_cctv.py` atau `utils.py`. Jika Anda perlu menambah environment variable baru (misal `FREEZE_SENSITIVITY`), cukup tambahkan di `.env` dan baca di `validate_cctv.py`.
+- Mengecek dependencies, decode credential, validasi environment.
+- Opsi: Menjalankan `validate_cctv.py` (single-run / loop).
+- Memulai FFmpeg HLS, Nginx di foreground.
 
-Semoga dokumentasi ini membantu Anda memahami, menjaga, dan mengembangkan sistem CCTV streaming & validasi dengan lebih mudah. Terima kasih!
+### `validate_cctv.py`:
+
+- Mem‐ffprobe tiap channel => cek online/offline.
+- Deteksi black frames & freeze frames (opsional).
+- Tulis status di `cctv_status.log`.
+- Bisa loop terus (`LOOP_ENABLE=true`) atau sekali (`LOOP_ENABLE=false`).
+
+### `utils.py`:
+
+- `setup_logger` untuk rotating file log.
+- `decode_credentials` (base64).
+- `generate_channels`, `get_local_time`, dsb.
+
+Dengan struktur ini, Anda dapat mengembangkan sistem CCTV streaming & validasi dengan:
+
+- Modular & Mudah Dimaintain – Setiap script punya tanggung jawab jelas.
+- Fleksibel (ENV `LOOP_ENABLE`, `CHECK_INTERVAL`, `ENABLE_RTSP_VALIDATION`).
+- Aman (base64 credential, mask password di log).
+
+Semoga dokumentasi sederhana ini dapat membantu Anda memahami alur kerja, menambah fitur (seperti motion detection, freeze sensitivitas, dsb.), serta menjaga sistem streaming CCTV Anda dengan lebih efisien dan mudah.
+
+Selamat mengembangkan!
