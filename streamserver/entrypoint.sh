@@ -24,11 +24,11 @@ LOOP_ENABLE="${LOOP_ENABLE:-false}"
 # FUNGSI LOGGING SEDERHANA
 ###############################################################################
 log_info() {
-    echo "$(date '+%d-%m-%Y %H:%M:%S %Z') [INFO] $*"
+    echo "$(date '+%d-%m-%Y %H:%M:%S') [INFO] $*"
 }
 
 log_error() {
-    echo "$(date '+%d-%m-%Y %H:%M:%S %Z') [ERROR] $*" >&2
+    echo "$(date '+%d-%m-%Y %H:%M:%S') [ERROR] $*" >&2
 }
 
 ###############################################################################

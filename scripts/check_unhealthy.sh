@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-CONTAINER_NAME="stream-server"
+CONTAINER_NAME="stream"
 LOGFILE="/mnt/Data/Syslog/default/check_unhealthy.log"
 touch "$LOGFILE"
 

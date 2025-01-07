@@ -78,15 +78,15 @@ services:
     build:
       context: .
       dockerfile: ./streamserver/Dockerfile
-    image: stream-server
-    container_name: stream-server
+    image: stream
+    container_name: stream
     networks:
       babahdigital:
     ports:
       # HLS Services
       - "80:8080"
     volumes:
-      # File Json Monitor
+      # File Json
       - /mnt/Data/Syslog/resource/resource_monitor_state.json:/mnt/Data/Syslog/resource/resource_monitor_state.json
       # Folder scripts (Python, dsb.)
       - ./scripts/utils.py:/app/scripts/utils.py
@@ -97,8 +97,30 @@ services:
       # Bind-mount Data Sistem
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
-    env_file:
-      - .env
+    environment:
+    # Konfigurasi Umum
+    - STREAM_TITLE="KC. Ayani"
+    - RTSP_IP=172.16.10.252
+    - NVR_SUBNET=172.16.1.0/24
+    - TEST_CHANNEL=1,3,4
+    - CHANNELS=1
+    - RTSP_SUBTYPE=0
+    - NVR_ENABLE=false
+    - SKIP_ABDULLAH_CHECK=false
+    # Konfigurasi Validasi
+    - ENABLE_RTSP_VALIDATION=true
+    - LOOP_ENABLE=true
+    - CHECK_INTERVAL=300
+    - FREEZE_SENSITIVITY=6.0
+    - FREEZE_RECHECK_TIMES=5
+    - FREEZE_RECHECK_DELAY=3.0
+    - FREEZE_COOLDOWN=15
+    - ENABLE_FREEZE_CHECK=true
+    # Konfigurasi Syslog
+    - ENABLE_SYSLOG=true
+    - ENABLE_FILE_LOG=false
+    - ENABLE_STREAM_LOG=true
+    - DEBUG=false
 
   # =========================================================
   # HDD Monitor (misalnya memantau /mnt/Data/Backup dsb.)
