@@ -33,6 +33,11 @@ scripts
 └── utils.py
 config
 └── log_messages.json
+syslog
+├── config
+│   └── syslog-ng.conf
+├── Dockerfile
+└── entrypoint.sh
 ```
 
 ### Penjelasan File
