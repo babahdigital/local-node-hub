@@ -30,14 +30,9 @@ detection
 ├── requirements.txt
 └── validate_model.py
 scripts
-└── utils.py
+└── utils.py (Script sudah ada tinggal di integrasikan)
 config
-└── log_messages.json
-syslog
-├── config
-│   └── syslog-ng.conf
-├── Dockerfile
-└── entrypoint.sh
+└── log_messages.json (Berisi pesan statis)
 ```
 
 ### Penjelasan File
