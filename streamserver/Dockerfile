@@ -64,15 +64,11 @@ RUN mkdir -p /var/cache/nginx/client_temp \
 WORKDIR /app/streamserver
 
 # 4) Copy aplikasi dan konfigurasi
-COPY ./scripts/utils.py           /app/scripts/utils.py
-COPY ./scripts/validate_model.py  /app/scripts/validate_model.py
-COPY ./config/log_messages.json   /app/config/log_messages.json
 COPY ./config/credentials.sh      /app/config/credentials.sh
 COPY ./streamserver               /app/streamserver
 COPY ./streamserver/html/error/404.html  /app/streamserver/html/error/404.html
 COPY ./streamserver/html/error/50x.html  /app/streamserver/html/error/50x.html
 COPY ./streamserver/html/index.html      /app/streamserver/html/index.html
-COPY ./models/mobilenet_ssd       /app/models/mobilenet_ssd
 COPY ./streamserver/config/nginx.conf /etc/nginx/nginx.conf
 COPY ./streamserver/entrypoint.sh /app/streamserver/entrypoint.sh
 
@@ -120,7 +116,6 @@ RUN adduser --disabled-password --gecos "" --uid 1000 abdullah
 COPY --from=builder /usr/sbin/nginx        /usr/sbin/nginx
 COPY --from=builder /etc/nginx             /etc/nginx
 COPY --from=builder /var/cache/nginx       /var/cache/nginx
-COPY --from=builder /app/scripts           /app/scripts
 COPY --from=builder /app/config            /app/config
 COPY --from=builder /app/streamserver      /app/streamserver
 

@@ -1,5 +1,35 @@
 services:
   # =========================================================
+  # Syslog (syslog-ng)
+  # =========================================================
+  syslog:
+    build:
+      context: .
+      dockerfile: ./syslog/Dockerfile
+    image: syslog
+    container_name: syslog
+    hostname: syslog-ng
+    restart: unless-stopped
+    ports:
+      - "1514:1514/tcp"
+      - "1514:1514/udp"
+    volumes:
+      # Folder
+      - /mnt/Data/Syslog:/mnt/Data/Syslog
+      # Sistem Timezone
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      # Mount Bind Log Messages
+      - ./config/log_messages.json:/app/config/log_messages.json
+    healthcheck:
+      test: ["CMD", "pgrep", "syslog-ng"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      babahdigital:
+
+  # =========================================================
   # Resource Monitor
   # =========================================================
   monitor:
@@ -8,17 +38,18 @@ services:
       dockerfile: ./resource/Dockerfile
     image: monitor
     container_name: monitor
-    depends_on:
-      - syslog
     environment:
       - LOG_PATH=/mnt/Data/Syslog/resource/resource_monitor.log
       - MONITOR_STATE_FILE=/mnt/Data/Syslog/resource/resource_monitor_state.json
       - RESOURCE_MONITOR_INTERVAL=5
     volumes:
-      - monitor-data:/app/resource
-      - /mnt/Data/Syslog/resource:/mnt/Data/Syslog/resource    
+      # File Json Monitor
+      - /mnt/Data/Syslog/resource:/mnt/Data/Syslog/resource
       # Folder scripts (Python, dsb.)
       - ./scripts/utils.py:/app/scripts/utils.py
+      # Mount Bind Log Messages
+      - ./config/log_messages.json:/app/config/log_messages.json
+      # Sistem Timezone
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
     restart: unless-stopped
@@ -32,64 +63,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
-  # =========================================================
-  # Syslog (syslog-ng)
-  # =========================================================
-  syslog:
-    build: 
-      context: .
-      dockerfile: ./syslog/Dockerfile
-    image: syslog-ng
-    container_name: syslog-ng
-    hostname: ${SYSLOG_HOSTNAME:-syslog-ng}
-    restart: unless-stopped
-    command: ["syslog-ng", "--foreground", "-f", "/app/syslog/config/syslog-ng.conf", "--persist-file=/app/syslog/var-run/syslog-ng.persist"]
-    ports:
-      - "1514:1514/tcp"
-      - "1514:1514/udp"
-    entrypoint: ["/app/syslog/entrypoint.sh"]
-    volumes:
-      - /mnt/Data/Syslog:/mnt/Data/Syslog
-      - logrotate-data:/app/syslog/logrotate
-      - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
-    environment:
-      LOG_MESSAGES_FILE: "/app/config/log_messages.json"
-    networks:
-      babahdigital:
-    healthcheck:
-      test: ["CMD", "pgrep", "syslog-ng"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  # =========================================================
-  # Logrotate
-  # =========================================================
-  logrotate:
-    build:
-      context: .
-      dockerfile: ./syslog/Dockerfile
-    image: logrotate
-    container_name: logrotate
-    depends_on:
-      - syslog
-    restart: on-failure
-    entrypoint: ["/app/syslog/entrypoint-logrotate.sh"]
-    environment:
-      LOG_MESSAGES_FILE: "/app/config/log_messages.json"
-    volumes:
-      - /mnt/Data/Syslog:/mnt/Data/Syslog
-      - logrotate-data:/app/syslog/logrotate
-      - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
-    networks:
-      babahdigital:
-    healthcheck:
-      test: ["CMD", "pgrep", "syslog-ng"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
   # =========================================================
   # Stream Server (Nginx-RTMP) 
@@ -106,19 +79,17 @@ services:
       # HLS Services
       - "80:8080"
     volumes:
+      # File Json Monitor
+      - /mnt/Data/Syslog/resource/resource_monitor_state.json:/mnt/Data/Syslog/resource/resource_monitor_state.json
       # Folder scripts (Python, dsb.)
-      - ./scripts:/app/scripts
+      - ./scripts/utils.py:/app/scripts/utils.py
       # File konfigurasi log messages
-      - ./config:/app/config
-      # File hls
-      - hls-data:/app/hls
+      - ./config/log_messages.json:/app/config/log_messages.json
       # Bind Syslog Truenas
       - /mnt/Data/Syslog:/mnt/Data/Syslog
       # Bind-mount Data Sistem
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
-    depends_on:
-      - syslog
     env_file:
       - .env
 
@@ -133,7 +104,7 @@ services:
     container_name: hdd-monitor
     restart: always
     volumes:
-      - syslog-data:/mnt/Data/Syslog
+      - /mnt/Data/Syslog:/mnt/Data/Syslog
       - /mnt/Data/Backup:/mnt/Data/Backup
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
@@ -154,7 +125,6 @@ services:
     restart: always
     volumes:
       - /mnt/Data/Backup:/mnt/Data/Backup
-      #- syslog-data:/mnt/Data/Syslog
       - ./api/data:/app/data
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
@@ -183,28 +153,3 @@ networks:
   babahdigital:
     name: babah-network
     driver: bridge
-
-volumes:
-  syslog-data:
-    driver: local
-    name: syslog-data
-    driver_opts:
-      type: none
-      o: bind
-      device: /mnt/Data/Syslog
-  backup-data:
-    driver: local
-    name: backup-data
-    driver_opts:
-      type: none
-      o: bind
-      device: /mnt/Data/Backup
-  logrotate-data:
-    driver: local
-    name: logrotate-data
-  hls-data:
-    driver: local
-    name: hls-data
-  monitor-data:
-    driver: local
-    name: monitor-data
