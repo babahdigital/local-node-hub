@@ -30,7 +30,7 @@ detection
 ├── requirements.txt
 └── validate_model.py
 scripts
-└── utils.py (Script sudah ada tinggal di integrasikan)
+└── utils.py (Integrasikan dengan sistem detection menggunakan syslog pusat logging)
 config
 └── log_messages.json (Berisi pesan statis)
 ```
