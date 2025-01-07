@@ -15,6 +15,11 @@ ENABLE_RTSP_VALIDATION="${ENABLE_RTSP_VALIDATION:-true}"
 # Jika Anda ingin mem‐skip cek user abdullah, set SKIP_ABDULLAH_CHECK=true
 SKIP_ABDULLAH_CHECK="${SKIP_ABDULLAH_CHECK:-false}"
 
+# Apakah script Python (validate_cctv.py) dijalankan secara loop atau single-run
+# LOOP_ENABLE=true => loop di background
+# LOOP_ENABLE=false => single-run (blocking)
+LOOP_ENABLE="${LOOP_ENABLE:-false}"
+
 ###############################################################################
 # FUNGSI LOGGING SEDERHANA
 ###############################################################################
@@ -109,8 +114,6 @@ validate_environment() {
     fi
 
     # TEST_CHANNEL vs CHANNELS
-    # - TEST_CHANNEL bisa berupa "1,2,3" (dipisahkan koma).
-    # - CHANNELS default-nya 1 (jika tidak di-set).
     if [ "${TEST_CHANNEL:-off}" != "off" ]; then
         log_info "Mode Testing Hidup, Variabel CHANNELS diabaikan."
     else
@@ -152,12 +155,11 @@ create_log_dirs() {
     chmod -R 750 "$NGINX_LOG_PATH"
     log_info "Folder $NGINX_LOG_PATH siap digunakan."
 
-    # 2. Folder log CCTV (untuk Python validation)
+    # 2. Folder log CCTV
     mkdir -p "$CCTV_LOG_PATH" || {
         log_error "Gagal membuat folder $CCTV_LOG_PATH!"
         exit 1
     }
-    # Bisa juga siapkan file cctv_status.log dsb. sesuai kebutuhan
     touch "$CCTV_LOG_PATH/validation.log" "$CCTV_LOG_PATH/cctv_status.log"
     chmod -R 750 "$CCTV_LOG_PATH"
     log_info "Folder $CCTV_LOG_PATH siap digunakan."
@@ -184,26 +186,18 @@ start_hls_stream() {
     local channel_name=$1
     local folder_name="ch${channel_name}"  # Format folder ch<n>
 
-    # Lakukan URL-encode untuk password agar tidak terjadi '@@' dsb.
     local encoded_password
     encoded_password="$(urlencode "$RTSP_PASSWORD")"
 
-    # Bagi logging, kita mask password agar tidak terlihat
     local masked_cred="${RTSP_USER}:*****"
-    # Untuk URL asli, pakai password yang sudah di-encode
     local actual_cred="${RTSP_USER}:${encoded_password}"
 
-    # Pakai -rtsp_transport tcp agar FFmpeg memaksa RTSP via TCP (beberapa DVR butuh ini)
     local rtsp_url="rtsp://${actual_cred}@${RTSP_IP}:554/cam/realmonitor?channel=${channel_name}&subtype=${RTSP_SUBTYPE}"
     local hls_output="$HLS_PATH/${folder_name}/live.m3u8"
 
-    # Metadata Title: Gabungkan STREAM_TITLE (dari ENV) dengan informasi channel
     local metadata_title="${STREAM_TITLE:-Default Stream} - Channel ${channel_name}"
-
-    #log_info "STREAMING-HLS: Memulai proses conversi untuk channel: $channel_name (folder: $folder_name)..."
-    #log_info "STREAMING-HLS: RTSP URL: rtsp://${masked_cred}@${RTSP_IP}...[REDACTED PATH]"
     log_info "STREAMING-HLS: Menjalankan CCTV ${metadata_title}"
-    log_info "STREAMING-HLS: Akses lokal melalui URL: http://bankkalsel/$folder_name/"
+    log_info "STREAMING-HLS: Akses HLS => folder: $folder_name"
 
     mkdir -p "$HLS_PATH/$folder_name"
 
@@ -217,14 +211,12 @@ start_hls_stream() {
         -f hls -hls_time 4 -hls_list_size 10 -hls_flags delete_segments \
         "$hls_output" &>/dev/null &
 
-    #log_info "STREAMING-HLS: FFmpeg untuk channel $channel_name berjalan di background (PID=$!)."
+    log_info "STREAMING-HLS: FFmpeg channel ${channel_name} berjalan di background (PID=$!)."
 }
 
 start_hls_streams() {
     log_info "Memulai seluruh HLS stream..."
 
-    # Jika TEST_CHANNEL di-set, maka pakai daftar channel dari situ.
-    # Kalau tidak, pakai range 1..CHANNELS.
     local channels
     if [ "${TEST_CHANNEL:-off}" != "off" ]; then
         IFS=',' read -ra channels <<< "$TEST_CHANNEL"
@@ -250,7 +242,7 @@ main() {
     # 2. Validasi environment
     validate_environment
 
-    # 3. Buat folder log (Nginx, CCTV, dsb.)
+    # 3. Buat folder log (Nginx, CCTV)
     create_log_dirs
 
     # 4. Bersihkan (atau buat) direktori HLS
@@ -259,19 +251,23 @@ main() {
     # 5. Validasi RTSP dengan Python (opsional)
     if [ "$ENABLE_RTSP_VALIDATION" = "true" ]; then
         local validation_script="/app/streamserver/scripts/validate_cctv.py"
+
         if [ -f "$validation_script" ]; then
             log_info "Menjalankan script Python untuk validasi RTSP..."
 
-            # Jika Anda ingin script Python loop berjalan di background:
-            python3 "$validation_script" &
-
-            # === Kalau cuma mau jalankan sekali (blocking), pakai tanpa ampersand ===
-            # if ! python3 "$validation_script"; then
-            #     log_error "Terjadi error saat menjalankan validate_cctv.py (exit code != 0)."
-            #     # Jika mau kontainer tetap jalan meski validasi gagal, JANGAN exit 1 di sini.
-            #     # exit 1
-            # fi
-
+            # Periksa LOOP_ENABLE
+            if [ "$LOOP_ENABLE" = "true" ]; then
+                # Jalankan script loop di background
+                python3 "$validation_script" &
+                log_info "validate_cctv.py (LOOP) dijalankan di background."
+            else
+                # Jalankan sekali secara blocking
+                if ! python3 "$validation_script"; then
+                    log_error "Terjadi error menjalankan validate_cctv.py (exit code != 0)."
+                    # Anda bisa exit 1 atau ignore agar kontainer tetap hidup
+                    # exit 1
+                fi
+            fi
         else
             log_error "File $validation_script tidak ditemukan! Skipping validation..."
         fi

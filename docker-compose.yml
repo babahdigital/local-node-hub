@@ -18,7 +18,7 @@ services:
       - monitor-data:/app/resource
       - /mnt/Data/Syslog/resource:/mnt/Data/Syslog/resource    
       # Folder scripts (Python, dsb.)
-      - ./scripts:/app/scripts
+      - ./scripts/utils.py:/app/scripts/utils.py
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
     restart: unless-stopped
