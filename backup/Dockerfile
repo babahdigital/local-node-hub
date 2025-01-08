@@ -13,13 +13,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxrender-dev \
     ffmpeg \
     jq \
+    iputils-ping \
     && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /mnt/Data/Syslog/rtsp
 
 # 2. Tetapkan direktori kerja
 WORKDIR /app/backup
 
 # 3. Copy dahulu file requirements.txt agar caching layer efektif
 COPY ./backup/requirements.txt /app/backup/requirements.txt
+COPY ./config/credentials.sh /app/config/credentials.sh
 
 # 4. Install dependencies Python (OpenCV, dsb.)
 RUN pip install --no-cache-dir -r requirements.txt
@@ -27,8 +31,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 5. Copy sisa source code (main.py, motion_detection.py, dsb.)
 COPY ./backup /app/backup
 
-# 6. (Opsional) Jika ada validate_model.py:
-# RUN python validate_model.py
+# 6. Credentials:
+RUN chmod +x /app/config/credentials.sh
 
 # 7. Jalankan main.py secara default
-CMD ["python", "main.py"]
+CMD ["/bin/bash", "-c", "source /app/config/credentials.sh && exec python main.py"]

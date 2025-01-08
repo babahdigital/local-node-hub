@@ -106,8 +106,8 @@ services:
       dockerfile: ./backup/Dockerfile
     image: backup
     container_name: backup
-    #depends_on:
-    #  - stream
+    depends_on:
+      - monitor
     volumes:
       # Data Monitoring
       - /mnt/Data/Syslog/resource:/mnt/Data/Syslog/resource
@@ -116,17 +116,22 @@ services:
       # File konfigurasi log messages
       - ./config/log_messages.json:/app/config/log_messages.json
       # Mount Truenas
-      - /mnt/Data/Syslog:/mnt/Data/Syslog
       - /mnt/Data/Backup:/mnt/Data/Backup
       # Sistem Timezone
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
     environment:
-      # RTSP credentials
-      - RTSP_USER=babahdigital
-      - RTSP_PASSWORD=Admin123@
-    env_file:
-      - .env
+      - STREAM_TITLE=KC. Ayani
+      - RTSP_SUBTYPE=0
+      - TEST_CHANNEL=1,3,4
+      - CHANNEL_COUNT=1
+      - MAX_RECORD=600
+      - MOTION_TIMEOUT=10
+      - ENABLE_FREEZE_CHECK=true
+      - ENABLE_BLACKOUT=true
+      - ENABLE_RTSP_VALIDATION=true
+      - ENABLE_OBJECT_DETECTION=true
+      - LOOP_ENABLE=true
     networks:
       babahdigital:
 
