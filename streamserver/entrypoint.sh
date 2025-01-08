@@ -211,32 +211,32 @@ start_hls_stream() {
 
     mkdir -p "$hls_dir"
 
-#    ffmpeg \
-#        -hide_banner \
-#        -loglevel error \
-#        -rtsp_transport tcp \
-#        -i "$rtsp_url" \
-#        -c copy \
-#        -f hls \
-#        -hls_time 10 \
-#        -hls_list_size 30 \
-#        -hls_flags delete_segments+append_list \
-#        -metadata title="${title}" \
-#        "$hls_output" &>/dev/null &
-
     ffmpeg \
         -hide_banner \
         -loglevel error \
         -rtsp_transport tcp \
         -i "$rtsp_url" \
-        -c:v libx264 -preset ultrafast -r 15 -g 30 -crf 28 -threads 4 \
-        -an \
+        -c copy \
         -f hls \
         -hls_time 10 \
         -hls_list_size 30 \
         -hls_flags delete_segments+append_list \
         -metadata title="${title}" \
         "$hls_output" &>/dev/null &
+
+#    ffmpeg \
+#        -hide_banner \
+#        -loglevel error \
+#        -rtsp_transport tcp \
+#        -i "$rtsp_url" \
+#        -c:v libx264 -preset ultrafast -r 15 -g 30 -crf 28 -threads 4 \
+#        -an \
+#        -f hls \
+#        -hls_time 10 \
+#        -hls_list_size 30 \
+#        -hls_flags delete_segments+append_list \
+#        -metadata title="${title}" \
+#        "$hls_output" &>/dev/null &
 
     log_info "FFmpeg channel $ch => background (PID=$!)."
 }
