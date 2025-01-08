@@ -16,6 +16,7 @@ services:
     volumes:
       # Folder
       - /mnt/Data/Syslog:/mnt/Data/Syslog
+      - syslog-data:/mnt/Data/Syslog
       # Sistem Timezone
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
@@ -234,3 +235,8 @@ networks:
   babahdigital:
     name: babah-network
     driver: bridge
+
+volumes:
+  syslog-data:
+    driver: local
+    name: syslog-data

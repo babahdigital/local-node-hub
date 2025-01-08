@@ -1,0 +1,44 @@
+FROM alpine:3.21
+# atau python:3.10-alpine jika script butuh Python bawaan
+
+ENV APK_MIRROR=http://mirror.leaseweb.com/alpine/
+
+RUN sed -i "s|http://dl-cdn.alpinelinux.org/alpine/|${APK_MIRROR}|g" /etc/apk/repositories \
+  && apk update \
+  && apk add --no-cache \
+       libcap \
+       syslog-ng \
+       syslog-ng-json \
+       logrotate \
+       jq \
+       dcron \
+       sudo \
+       bash \
+       procps \
+       util-linux \
+       python3 \
+       py3-pip \
+       dos2unix \
+  && id -u abdullah &>/dev/null || adduser -D -s /bin/bash abdullah \
+  && chmod 755 /usr/sbin/crond \
+  && mkdir -p /run /app/syslog/var-run \
+              /app/syslog/logrotate/crontabs \
+  && chmod 755 /etc/logrotate.d
+
+WORKDIR /app/syslog
+
+# 1. Copy file main.py ke dalam container
+COPY ./syslog /app/syslog
+
+# 2. Konversi CRLF → LF dengan dos2unix
+RUN dos2unix /app/syslog/main.py
+
+# 3. Pastikan file dapat dieksekusi
+RUN chmod +x /app/syslog/main.py
+
+# Expose port syslog
+EXPOSE 1514/tcp
+EXPOSE 1514/udp
+
+# Jalankan Python di foreground (pastikan baris shebang valid, atau jalankan python3)
+ENTRYPOINT ["/app/syslog/main.py"]

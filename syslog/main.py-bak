@@ -1,0 +1,317 @@
+#!/usr/bin/env python3
+"""
+entrypoint.py (Python version)
+
+Menggantikan fungsi bash script:
+1. Memuat environment variables.
+2. Memformat log dengan WITA/WIB/UTC (berdasarkan offset jam).
+3. Load pesan log_messages.json.
+4. Bersihkan & buat folder-file log.
+5. Generate file logrotate config (jika belum ada).
+6. Setup cron + jalankan logrotate pertama kali.
+7. Menjalankan syslog-ng di foreground.
+
+Pastikan Anda memiliki `jq` (untuk load_messages.json) atau
+gunakan parsing python JSON. Di sini kita pakai python json.
+"""
+
+import os
+import subprocess
+import shutil
+import json
+import time
+from datetime import datetime
+import sys
+
+# ================ 1. Fungsi Logging Zona Waktu  ================
+def log(*args):
+    """
+    Mirip fungsi 'log()' di bash,
+    menampilkan waktu + zone + pesan.
+    """
+    # Format date: "%d-%m-%Y %H:%M:%S"
+    time_format = "%d-%m-%Y %H:%M:%S"
+    now = datetime.now().astimezone()
+    date_str = now.strftime(time_format)
+
+    # Hitung offset jam (±7, ±8, dsb.)
+    offset_str = now.strftime("%z")  # misal +0800
+    # offset_str: +0800 => sign=+, hours=08, minutes=00
+    sign = offset_str[0]
+    hours = int(offset_str[1:3])
+    minutes = int(offset_str[3:5])
+    total = hours + (minutes/60)
+    if sign == "-":
+        total = -total
+
+    # Tentukan zone
+    if int(total) == 8:
+        zone = "WITA"
+    elif int(total) == 7:
+        zone = "WIB"
+    else:
+        zone = "UTC"
+
+    # Gabung pesan
+    msg = " ".join(str(a) for a in args)
+    print(f"{date_str} {zone} - {msg}", flush=True)
+
+
+# ================ 2. Variabel dan Konfigurasi Dasar ================
+LOG_MESSAGES_FILE_PATH = os.getenv("LOG_MESSAGES_FILE_PATH", "/app/config/log_messages.json")
+SYSLOG_CONFIG = os.getenv("SYSLOG_CONFIG", "/app/syslog/config/syslog-ng.conf")
+
+CONFIG_SOURCE = os.getenv("CONFIG_SOURCE", "/app/syslog/logrotate/syslog-ng")
+CONFIG_TARGET = os.getenv("CONFIG_TARGET", "/etc/logrotate.d/syslog-ng")
+LOGROTATE_STATE_FILE = os.getenv("LOGROTATE_STATE_FILE", "/mnt/Data/Syslog/default/logrotate/logrotate.status")
+LOGROTATE_LOG = os.getenv("LOGROTATE_LOG", "/mnt/Data/Syslog/default/logrotate/logrotate.log")
+CRON_FILE = os.getenv("CRON_FILE", "/app/syslog/logrotate/crontabs/root")
+CRON_JOB = os.getenv("CRON_JOB", "0 * * * * logrotate -v -f -s /mnt/Data/Syslog/default/logrotate/logrotate.status /etc/logrotate.d/syslog-ng >> /mnt/Data/Syslog/default/logrotate/cron.log 2>&1")
+
+USER_OWNER = os.getenv("USER_OWNER", "abdullah")
+GROUP_OWNER = os.getenv("GROUP_OWNER", "abdullah")
+CHMOD_DIR = int(os.getenv("CHMOD_DIR", "755"))
+CHMOD_FILE = int(os.getenv("CHMOD_FILE", "644"))
+
+LOG_BASE_DIR = os.getenv("LOG_BASE_DIR", "/mnt/Data/Syslog")
+CLEAN_ON_STARTUP = os.getenv("CLEAN_ON_STARTUP", "true").lower() == "true"
+
+
+# ================ 3. Load Pesan dari JSON ================
+MESSAGES = {}
+
+def load_messages():
+    global MESSAGES
+    if os.path.isfile(LOG_MESSAGES_FILE_PATH):
+        with open(LOG_MESSAGES_FILE_PATH, "r", encoding="utf-8") as f:
+            MESSAGES = json.load(f)
+        log(f"Memuat file log_messages.json: {LOG_MESSAGES_FILE_PATH}")
+    else:
+        log(f"WARNING: File log_messages.json tidak ditemukan di {LOG_MESSAGES_FILE_PATH}")
+        MESSAGES = {}
+
+def get_message(key):
+    """
+    Mirip bash function get_message(), tapi pakai python JSON di MESSAGES global.
+    Contoh: MESSAGES[key]
+    """
+    parts = key.split('.')
+    data = MESSAGES
+    try:
+        for p in parts:
+            data = data[p]
+        return data
+    except KeyError:
+        return ""
+
+
+# ================ 4. Bersihkan & Buat Folder-file Log ================
+def clean_logs():
+    if CLEAN_ON_STARTUP:
+        log(f"Membersihkan isi {LOG_BASE_DIR} (CLEAN_ON_STARTUP=true)")
+        # find "$LOG_BASE_DIR" -mindepth 1 -delete
+        try:
+            for item in os.scandir(LOG_BASE_DIR):
+                # mindepth=1 => hapus isi, kecuali LOG_BASE_DIR itu sendiri
+                if item.is_dir():
+                    shutil.rmtree(item.path, ignore_errors=True)
+                else:
+                    os.remove(item.path)
+        except Exception as e:
+            log(f"WARNING: Gagal membersihkan {LOG_BASE_DIR}: {e}")
+    else:
+        log("CLEAN_ON_STARTUP=false, tidak menghapus log lama.")
+
+    os.makedirs(LOG_BASE_DIR, exist_ok=True)
+
+    directories = [
+        "default/logrotate",
+        "debug",
+        "test",
+        "auth",
+        "streaming",
+        "network",
+        "resource"
+    ]
+    files = [
+        "default/default.log",
+        "default/logrotate/logrotate.status",
+        "default/logrotate/logrotate.log",
+        "default/logrotate/cron.log",
+        "debug/debug.log",
+        "test/test.log",
+        "auth/auth.log",
+        "streaming/hls.log",
+        "network/network.log",
+        "resource/resource_monitor.log",
+        "resource/resource_monitor_error.log"
+    ]
+
+    for d in directories:
+        dpath = os.path.join(LOG_BASE_DIR, d)
+        os.makedirs(dpath, exist_ok=True)
+        try:
+            os.chown(dpath, -1, -1)  # optional if we want set
+        except:
+            pass
+        try:
+            os.chmod(dpath, CHMOD_DIR)
+        except:
+            pass
+
+    for f in files:
+        fpath = os.path.join(LOG_BASE_DIR, f)
+        os.makedirs(os.path.dirname(fpath), exist_ok=True)
+        # Pastikan file exist
+        if not os.path.exists(fpath):
+            open(fpath, 'w').close()
+        # chown & chmod
+        try:
+            os.chmod(fpath, CHMOD_FILE)
+        except:
+            pass
+
+    log("INFO: Proses pembuatan folder/file log selesai.")
+
+    # --- Tambahan: Pastikan permission & ownership keseluruhan ---
+    # Hanya lakukan ini jika container dijalankan sebagai root.
+    try:
+        import subprocess
+        log("Menjalankan chown -R abdullah:abdullah /mnt/Data/Syslog ...")
+        subprocess.run(["chown", "-R", f"{USER_OWNER}:{GROUP_OWNER}", LOG_BASE_DIR], check=True)
+        log("Menjalankan chmod -R 755 /mnt/Data/Syslog ...")
+        subprocess.run(["chmod", "-R", "755", LOG_BASE_DIR], check=True)
+    except Exception as e:
+        log(f"WARNING: Gagal mengatur permission/ownership => {e}")
+
+# ================ 5. Generate file logrotate (jika belum ada) ================
+def generate_logrotate_config():
+    CONFIG_FILE = CONFIG_SOURCE
+    GENERATE_LOG = os.path.join(LOG_BASE_DIR, "default/logrotate/generate.log")
+
+    log(f"Memastikan direktori logrotate ada: {os.path.dirname(CONFIG_FILE)}")
+    os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
+
+    if os.path.isfile(CONFIG_FILE):
+        log(f"Config logrotate sudah ada di {CONFIG_FILE} (skip generate)")
+        return
+
+    # Membuat config logrotate
+    log(f"Membuat config logrotate: {CONFIG_FILE}")
+    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+        f.write(f"# Babah Digital\n# Generated by entrypoint.py\n# Date: {time.strftime('%d-%m-%Y %H:%M:%S %Z')}\n")
+
+    log(f"Memindai semua file .log di {LOG_BASE_DIR}")
+    # find "$LOG_BASE_DIR" -type f -name "*.log"
+    LOG_FILES = []
+    for root, dirs, files in os.walk(LOG_BASE_DIR):
+        for fl in files:
+            if fl.endswith(".log"):
+                LOG_FILES.append(os.path.join(root, fl))
+
+    if len(LOG_FILES) == 0:
+        log(f"Tidak ditemukan file .log di {LOG_BASE_DIR}")
+    else:
+        with open(CONFIG_FILE, "a", encoding="utf-8") as f:
+            for lf in LOG_FILES:
+                f.write(f"\"{lf}\" {{\n"
+                        f"    size 5M\n"
+                        f"    rotate 7\n"
+                        f"    compress\n"
+                        f"    delaycompress\n"
+                        f"    missingok\n"
+                        f"    notifempty\n"
+                        f"    copytruncate\n"
+                        f"    su {USER_OWNER} {GROUP_OWNER}\n"
+                        f"    create 0644 {USER_OWNER} {GROUP_OWNER}\n"
+                        f"    postrotate\n"
+                        f"        kill -HUP \"$(pgrep syslog-ng)\" 2>/dev/null || true\n"
+                        f"    endscript\n"
+                        f"}}\n\n")
+                log(f"Menambahkan logrotate config untuk: {lf}")
+
+    # Salin config logrotate => default/logrotate/syslog-ng.conf.generated
+    dst = os.path.join(LOG_BASE_DIR, "default/logrotate/syslog-ng.conf.generated")
+    try:
+        shutil.copy(CONFIG_FILE, dst)
+    except Exception as e:
+        log(f"WARNING: Gagal menyalin config logrotate => {dst}: {e}")
+
+
+# ================ 6. Setup cron + jalankan logrotate pertama kali ================
+def setup_logrotate_and_cron():
+    log(f"Memeriksa cron file: {CRON_FILE}")
+    os.makedirs(os.path.dirname(CRON_FILE), exist_ok=True)
+    if not os.path.isfile(CRON_FILE):
+        open(CRON_FILE, 'w').close()
+
+    try:
+        os.chmod(CRON_FILE, 0o600)
+    except:
+        pass
+
+    # Generate config jika belum ada
+    if not os.path.isfile(CONFIG_SOURCE):
+        log("Config logrotate belum ada, generate...")
+        generate_logrotate_config()
+
+    if not os.path.isfile(CONFIG_SOURCE):
+        log(f"ERROR: File konfigurasi logrotate tidak ditemukan di {CONFIG_SOURCE}")
+        sys.exit(1)
+
+    # Salin / etc/logrotate.d
+    if not os.path.isfile(CONFIG_TARGET):
+        shutil.copy(CONFIG_SOURCE, CONFIG_TARGET)
+
+    log("Memulai cron...")
+    # crond -c "$(dirname "$CRON_FILE")" -b -l 8 -L "$LOG_BASE_DIR/default/logrotate/cron.log" -p /app/syslog/var-run/crond.pid
+    # => python: subprocess
+    cron_cmd = [
+        "crond",
+        "-c", os.path.dirname(CRON_FILE),
+        "-b",
+        "-l", "8",
+        "-L", os.path.join(LOG_BASE_DIR, "default/logrotate/cron.log"),
+        "-p", "/app/syslog/var-run/crond.pid"
+    ]
+    subprocess.Popen(cron_cmd)
+
+    log("Menjalankan logrotate manual (force) sekali...")
+    # logrotate -v -f -s "$LOGROTATE_STATE_FILE" "$CONFIG_TARGET" >> "$LOGROTATE_LOG" 2>&1
+    with open(LOGROTATE_LOG, "a") as f:
+        ret = subprocess.call(["logrotate", "-v", "-f", "-s", LOGROTATE_STATE_FILE, CONFIG_TARGET],
+                              stdout=f, stderr=f)
+        if ret == 0:
+            log("Logrotate tidak memutar log (no rotation).")
+        else:
+            log("Logrotate melakukan rotasi.")
+
+    # Tambah cron job jika belum ada
+    with open(CRON_FILE, "r+") as cr:
+        lines = cr.read().splitlines()
+        if CRON_JOB not in lines:
+            cr.write(f"{CRON_JOB}\n")
+            log(f"Menambahkan cron job: {CRON_JOB}")
+
+
+# ================ 7. Main: Jalankan semuanya ================
+def main():
+    load_messages()
+    clean_logs()
+    setup_logrotate_and_cron()
+
+    log(f"Memeriksa config syslog-ng: {SYSLOG_CONFIG}")
+    if os.path.isfile(SYSLOG_CONFIG):
+        log("Config syslog-ng ditemukan.")
+    else:
+        log(f"WARNING: syslog-ng.conf tidak ditemukan di {SYSLOG_CONFIG}")
+        # Optionally copy default config
+
+    log("Menjalankan syslog-ng (foreground) ...")
+    # exec syslog-ng --foreground -f "$SYSLOG_CONFIG"
+    # => python:
+    os.execvp("syslog-ng", ["syslog-ng", "--foreground", "-f", SYSLOG_CONFIG])
+
+
+if __name__ == "__main__":
+    main()

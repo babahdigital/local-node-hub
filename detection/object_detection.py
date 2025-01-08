@@ -3,9 +3,13 @@ import numpy as np
 
 class ObjectDetector:
     """
-    Kustom threshold per label => human=0.5, car=0.3, motorbike=0.3
+    Detektor MobileNet SSD dengan threshold custom per label:
+    - person -> 0.6
+    - car -> 0.4
+    - motorbike -> 0.4
     """
-    def __init__(self, prototxt_path, model_path, conf_person=0.5, conf_car=0.3, conf_motor=0.3):
+    def __init__(self, prototxt_path, model_path,
+                 conf_person=0.6, conf_car=0.4, conf_motor=0.4):
         print("[INFO] loading MobileNet SSD model...")
         self.net = cv2.dnn.readNetFromCaffe(prototxt_path, model_path)
         self.conf_person = conf_person
@@ -30,33 +34,32 @@ class ObjectDetector:
         self.net.setInput(blob)
         detections = self.net.forward()
 
-        results=[]
+        results = []
         for i in range(detections.shape[2]):
-            conf = detections[0, 0, i, 2]
-            if conf > 100:
-                conf/=100.0
+            raw_conf = detections[0, 0, i, 2]
+            if raw_conf>100:  # normalisasi
+                raw_conf/=100.0
 
             class_id = int(detections[0, 0, i, 1])
-            label="Unknown"
-            if 0<= class_id< len(self.CLASSES):
-                label= self.CLASSES[class_id]
+            label = "Unknown"
+            if 0 <= class_id < len(self.CLASSES):
+                label = self.CLASSES[class_id]
 
-            # Kustom threshold
-            pass_check= False
-            if label=="person" and conf>= self.conf_person:
+            # custom check
+            pass_check = False
+            if label=="person" and raw_conf>=self.conf_person:
                 pass_check= True
-            elif label=="car" and conf>= self.conf_car:
+            elif label=="car" and raw_conf>=self.conf_car:
                 pass_check= True
-            elif label=="motorbike" and conf>= self.conf_motor:
+            elif label=="motorbike" and raw_conf>=self.conf_motor:
                 pass_check= True
 
             if not pass_check:
                 continue
 
-            box = detections[0,0,i,3:7]*[w,h,w,h]
-            (startX, startY, endX, endY)= box.astype("int")
-            startX, startY= max(0,startX), max(0,startY)
-            endX, endY= min(w-1,endX), min(h-1,endY)
-            results.append((label, float(conf), startX, startY, endX-startX, endY-startY))
-
+            box = detections[0, 0, i, 3:7] * [w, h, w, h]
+            (startX, startY, endX, endY) = box.astype("int")
+            startX, startY = max(0,startX), max(0,startY)
+            endX, endY     = min(w-1,endX), min(h-1,endY)
+            results.append((label, float(raw_conf), startX, startY, endX-startX, endY-startY))
         return results
