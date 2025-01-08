@@ -17,7 +17,7 @@ class MotionDetector:
     def detect(self, frame, area_threshold=500):
         """
         Menerapkan background subtraction + morph. 
-        Kembalikan bounding boxes gerakan dengan area >= area_threshold.
+        Kembalikan list bounding boxes (x,y,w,h) dengan area >= area_threshold.
         """
         fg_mask = self.back_sub.apply(frame)
 
@@ -25,7 +25,7 @@ class MotionDetector:
         fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_OPEN, self.kernel)
         fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_CLOSE, self.kernel)
 
-        # Cari kontur
+        # Temukan kontur
         contours, _ = cv2.findContours(fg_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         bboxes = []
