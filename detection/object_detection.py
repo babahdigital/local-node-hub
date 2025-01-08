@@ -1,48 +1,62 @@
 import cv2
 import numpy as np
 
-class MotionDetector:
-    def __init__(self, history=500, varThreshold=16, detectShadows=True):
-        """
-        Deteksi gerakan menggunakan BackgroundSubtractorMOG2.
-        """
-        self.back_sub = cv2.createBackgroundSubtractorMOG2(
-            history=history,
-            varThreshold=varThreshold,
-            detectShadows=detectShadows
-        )
-        # Kernel morphological (untuk mengurangi noise)
-        self.kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+class ObjectDetector:
+    """
+    Kustom threshold per label => human=0.5, car=0.3, motorbike=0.3
+    """
+    def __init__(self, prototxt_path, model_path, conf_person=0.5, conf_car=0.3, conf_motor=0.3):
+        print("[INFO] loading MobileNet SSD model...")
+        self.net = cv2.dnn.readNetFromCaffe(prototxt_path, model_path)
+        self.conf_person = conf_person
+        self.conf_car = conf_car
+        self.conf_motor = conf_motor
 
-        # Default threshold area gerakan
-        self.area_threshold = 500
-
-    def set_area_threshold(self, val):
-        """
-        Memperbarui ambang area threshold secara adaptif (opsional).
-        """
-        self.area_threshold = max(100, val)
+        self.CLASSES = [
+            "background", "aeroplane", "bicycle", "bird", "boat",
+            "bottle", "bus", "car", "cat", "chair", "cow", "diningtable",
+            "dog", "horse", "motorbike", "person", "pottedplant",
+            "sheep", "sofa", "train", "tvmonitor"
+        ]
 
     def detect(self, frame):
-        """
-        Menerapkan background subtraction + morph. 
-        Kembalikan list bounding boxes (x,y,w,h) dengan area >= self.area_threshold.
-        """
-        fg_mask = self.back_sub.apply(frame)
+        (h, w) = frame.shape[:2]
+        blob = cv2.dnn.blobFromImage(
+            frame,
+            scalefactor=0.007843,
+            size=(300, 300),
+            mean=127.5
+        )
+        self.net.setInput(blob)
+        detections = self.net.forward()
 
-        # Morph open + close
-        fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_OPEN, self.kernel)
-        fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_CLOSE, self.kernel)
+        results=[]
+        for i in range(detections.shape[2]):
+            conf = detections[0, 0, i, 2]
+            if conf > 100:
+                conf/=100.0
 
-        # Temukan kontur
-        contours, _ = cv2.findContours(fg_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            class_id = int(detections[0, 0, i, 1])
+            label="Unknown"
+            if 0<= class_id< len(self.CLASSES):
+                label= self.CLASSES[class_id]
 
-        bboxes = []
-        for c in contours:
-            area = cv2.contourArea(c)
-            if area < self.area_threshold:
+            # Kustom threshold
+            pass_check= False
+            if label=="person" and conf>= self.conf_person:
+                pass_check= True
+            elif label=="car" and conf>= self.conf_car:
+                pass_check= True
+            elif label=="motorbike" and conf>= self.conf_motor:
+                pass_check= True
+
+            if not pass_check:
                 continue
-            x, y, w, h = cv2.boundingRect(c)
-            bboxes.append([x, y, w, h])
 
-        return bboxes
+            box = detections[0,0,i,3:7]*[w,h,w,h]
+            (startX, startY, endX, endY)= box.astype("int")
+            startX, startY= max(0,startX), max(0,startY)
+            endX, endY= min(w-1,endX), min(h-1,endY)
+            results.append((label, float(conf), startX, startY, endX-startX, endY-startY))
+
+        return results

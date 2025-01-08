@@ -1,226 +1,251 @@
+#!/usr/bin/env python3
+"""
+main.py (Multi-thread, tanpa NVR_ENABLE, bounding box disimpan ke JSON).
+
+1) Baca ENV => blackdetect, freeze check, motion detection
+2) Hasil bounding box disimpan ke file JSON (untuk analisis), 
+   sementara log di Docker cukup ringkas.
+3) multi-channel concurrency.
+"""
+
 import os
-import cv2
-import json
-import time
-import threading
 import sys
+import time
+import json
+import subprocess
+import threading
+import cv2
 from datetime import datetime
 
-from motion_detection import MotionDetector
-from object_detection import ObjectDetector
-
-# Pastikan folder scripts ada di PATH (untuk utils.py).
 sys.path.append("/app/scripts")
-from utils import setup_category_logger, file_write_lock
+from utils import setup_logger
+from motion_detection import MotionDetector
+from backup_manager import BackupSession  # class handle rolling backup
 
-logger = setup_category_logger("Resource-Monitor")
+# Opsional object detection
+ENABLE_OBJECT_DETECTION = os.getenv("ENABLE_OBJECT_DETECTION","false").lower()=="true"
+if ENABLE_OBJECT_DETECTION:
+    from object_detection import ObjectDetector
 
-DETECTION_JSON_PATH = "/mnt/Data/Syslog/resource/detection_events.json"
-RESOURCE_STATE_JSON = "/mnt/Data/Syslog/resource/resource_monitor_state.json"
+LOG_PATH = "/mnt/Data/Syslog/rtsp/cctv/validation.log"
+logger = setup_logger("RTSP-Validation", LOG_PATH)
 
+# ENV
+RTSP_IP       = os.getenv("RTSP_IP","172.16.10.252")
+RTSP_USER     = os.getenv("RTSP_USER","admin")
+RTSP_PASSWORD = os.getenv("RTSP_PASSWORD","admin123")
+TEST_CHANNEL  = os.getenv("TEST_CHANNEL","1,3,4").lower()
+CHANNELS      = int(os.getenv("CHANNELS","1"))
+RTSP_SUBTYPE  = os.getenv("RTSP_SUBTYPE","0")
 
-# ----- Adaptive parameter manager -----
-class AdaptiveParams:
-    def __init__(self, motion_detector, object_detector):
-        self.motion_detector = motion_detector
-        self.object_detector = object_detector
+LOOP_ENABLE   = os.getenv("LOOP_ENABLE","true").lower()=="true"
+CHECK_INTERVAL= int(os.getenv("CHECK_INTERVAL","300"))
 
-        # Statistik
-        self.total_motion = 0
-        self.total_person_detected = 0
+ENABLE_BLACKOUT      = os.getenv("ENABLE_BLACKOUT","true").lower()=="true"
+ENABLE_FREEZE_CHECK  = os.getenv("ENABLE_FREEZE_CHECK","true").lower()=="true"
+FREEZE_SENSITIVITY   = float(os.getenv("FREEZE_SENSITIVITY","6.0"))
+FREEZE_RECHECK_TIMES = int(os.getenv("FREEZE_RECHECK_TIMES","5"))
+FREEZE_RECHECK_DELAY = float(os.getenv("FREEZE_RECHECK_DELAY","3.0"))
+FREEZE_COOLDOWN      = int(os.getenv("FREEZE_COOLDOWN","15"))
 
-        # Waktu update adaptif
-        self.last_update_time = time.time()
-        self.update_interval = 60  # setiap 60 detik update param
+# Backup rolling config
+MAX_RECORD= 300  # 5 menit
+MOTION_TIMEOUT= 5
 
-    def record_event(self, motion_found, person_found):
-        if motion_found:
-            self.total_motion += 1
-        if person_found:
-            self.total_person_detected += 1
+# File JSON tempat menyimpan bounding box
+MOTION_EVENTS_JSON = "/mnt/Data/Syslog/rtsp/motion_events.json"
 
-        now = time.time()
-        if now - self.last_update_time > self.update_interval:
-            self.update_adaptive()
-            self.last_update_time = now
-
-    def update_adaptive(self):
-        if self.total_motion == 0:
-            return
-
-        ratio = self.total_person_detected / float(self.total_motion)
-        logger.info(f"[ADAPTIVE] ratio person= {ratio:.2f} (person/motion). Update threshold..")
-
-        if ratio < 0.1:
-            old_conf = self.object_detector.conf_threshold
-            new_conf = max(0.05, old_conf * 0.9)
-            self.object_detector.set_conf_threshold(new_conf)
-
-            old_area = self.motion_detector.area_threshold
-            new_area = max(100, old_area - 50)
-            self.motion_detector.set_area_threshold(new_area)
-
-            logger.info(f"[ADAPTIVE] Turunkan conf_threshold: {old_conf:.2f}->{new_conf:.2f}, area: {old_area}->{new_area}")
-        elif ratio > 0.5:
-            old_conf = self.object_detector.conf_threshold
-            new_conf = min(1.0, old_conf * 1.1)
-            self.object_detector.set_conf_threshold(new_conf)
-
-            old_area = self.motion_detector.area_threshold
-            new_area = old_area + 50
-            self.motion_detector.set_area_threshold(new_area)
-
-            logger.info(f"[ADAPTIVE] Naikkan conf_threshold: {old_conf:.2f}->{new_conf:.2f}, area: {old_area}->{new_area}")
-
-        # Reset
-        self.total_motion = 0
-        self.total_person_detected = 0
-
-
-def save_motion_event(channel, bounding_boxes, object_label=None, object_conf=None):
-    event_data = {
+###############################################################
+def save_motion_event_to_json(channel, bboxes):
+    """
+    Menyimpan bounding boxes ke file JSON (append).
+    Format 1 event / baris => line-based JSON.
+    """
+    event_data= {
         "timestamp": datetime.now().isoformat(),
         "channel": channel,
-        "bounding_boxes": bounding_boxes
+        "bboxes": bboxes
     }
-    if object_label:
-        event_data["object_label"] = object_label
-        # confidence kita simpan 0..1, di log pun boleh *100 jika mau
-        event_data["object_confidence"] = round(object_conf, 3)
+    # Append line-based JSON
+    try:
+        with open(MOTION_EVENTS_JSON, "a") as f:
+            f.write(json.dumps(event_data) + "\n")
+    except Exception as e:
+        logger.error(f"[main] Gagal tulis motion_events.json => {e}")
 
-    with file_write_lock:
-        try:
-            with open(DETECTION_JSON_PATH, "a") as f:
-                f.write(json.dumps(event_data) + "\n")
-        except Exception as e:
-            logger.error(f"Gagal menulis event gerakan ke {DETECTION_JSON_PATH}: {e}")
+def check_black_frames(rtsp_url, timeout=5):
+    if not ENABLE_BLACKOUT:
+        return True
+    cmd= [
+        "ffmpeg","-hide_banner","-loglevel","error",
+        "-rtsp_transport","tcp",
+        "-i", rtsp_url,
+        "-vf","blackdetect=d=0.1:pic_th=0.98",
+        "-an",
+        "-t", str(timeout),
+        "-f","null","-"
+    ]
+    try:
+        r= subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout+5)
+        return (b"black_start" not in r.stderr)
+    except subprocess.TimeoutExpired:
+        logger.error(f"[main] blackdetect TIMEOUT => {rtsp_url}")
+        return False
+    except Exception as e:
+        logger.error(f"[main] blackdetect error => {e}")
+        return False
 
+def check_freeze_frames(rtsp_url):
+    if not ENABLE_FREEZE_CHECK:
+        return True
 
-def detect_motion_in_channel(channel, host_ip, motion_detector, object_detector=None, adaptive=None):
-    stream_url = f"http://{host_ip}/ch{channel}/"
-    logger.info(f"[THREAD-{channel}] Membuka stream: {stream_url}")
+    freeze_fail=0
+    for i in range(FREEZE_RECHECK_TIMES):
+        ok= _check_freeze_once(rtsp_url, FREEZE_SENSITIVITY, timeout=5)
+        if not ok:
+            freeze_fail+=1
+        if i<(FREEZE_RECHECK_TIMES-1):
+            time.sleep(FREEZE_RECHECK_DELAY)
 
-    cap = cv2.VideoCapture(stream_url)
+    return (freeze_fail< FREEZE_RECHECK_TIMES)
+
+def _check_freeze_once(rtsp_url, freeze_sens, timeout=5):
+    filter_str= f"freezedetect=n=-60dB:d={freeze_sens}"
+    cmd= [
+        "ffmpeg","-hide_banner","-loglevel","error",
+        "-rtsp_transport","tcp",
+        "-i", rtsp_url,
+        "-vf", filter_str,
+        "-an",
+        "-t", str(timeout),
+        "-f","null","-"
+    ]
+    try:
+        r= subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout+5)
+        return (b"freeze_start" not in r.stderr)
+    except subprocess.TimeoutExpired:
+        logger.error(f"[main] freezedetect TIMEOUT => {rtsp_url}")
+        return False
+    except Exception as e:
+        logger.error(f"[main] freezedetect error => {e}")
+        return False
+
+def motion_pipeline(rtsp_url, ch):
+    cap= cv2.VideoCapture(rtsp_url)
     if not cap.isOpened():
-        logger.error(f"[THREAD-{channel}] ERROR: Gagal membuka stream.")
+        logger.error(f"[main] channel={ch} => fail open {rtsp_url}")
         return
 
-    try:
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                logger.warning(f"[THREAD-{channel}] Stream terputus/frame kosong.")
-                break
+    motion= MotionDetector(history=500, varThreshold=16, detectShadows=True, area_threshold=1000)
+    obj_detect= None
+    if ENABLE_OBJECT_DETECTION:
+        from object_detection import ObjectDetector
+        # threshold person=0.5, car=0.3, motor=0.3
+        obj_detect= ObjectDetector("/app/detection/models/mobilenet_ssd/MobileNetSSD_deploy.prototxt",
+                                   "/app/detection/models/mobilenet_ssd/MobileNetSSD_deploy.caffemodel",
+                                   conf_person=0.5, conf_car=0.3, conf_motor=0.3)
 
-            bboxes = motion_detector.detect(frame)
-            motion_found = (len(bboxes) > 0)
-            person_found = False
-
-            if bboxes and object_detector:
-                local_person_detected = False
-                best_conf = 0.0
-
-                # 1) ROI detection
-                for (mx, my, mw, mh) in bboxes:
-                    sub_frame = frame[my:my+mh, mx:mx+mw]
-                    detections = object_detector.detect(sub_frame)
-
-                    if detections:
-                        logger.info(f"[THREAD-{channel}] ROI => {len(detections)} obj")
-                    for (label, conf, sx, sy, sw, sh) in detections:
-                        logger.info(f"[THREAD-{channel}] ROI label={label}, conf={conf:.2f}")
-                        if label == "person" and conf > best_conf:
-                            best_conf = conf
-                            local_person_detected = True
-
-                # 2) Fallback full-frame if no person
-                if not local_person_detected:
-                    logger.info(f"[THREAD-{channel}] ROI tidak temukan 'person'. Coba full-frame detection.")
-                    full_detections = object_detector.detect(frame)
-                    if full_detections:
-                        logger.info(f"[THREAD-{channel}] FULL => {len(full_detections)} obj")
-                    for (label, conf, x, y, w, h) in full_detections:
-                        logger.info(f"[THREAD-{channel}] FULL label={label}, conf={conf:.2f}")
-                        if label == "person" and conf > best_conf:
-                            best_conf = conf
-                            local_person_detected = True
-
-                if local_person_detected:
-                    person_found = True
-                    logger.info(f"[THREAD-{channel}] Person terdeteksi (conf={best_conf*100:.2f}%). Bboxes: {bboxes}")
-                    save_motion_event(channel, bboxes, "person", best_conf)
-                else:
-                    logger.info(f"[THREAD-{channel}] Ada gerakan, tapi no person => skip log.")
-            elif bboxes and not object_detector:
-                # Tanpa object detector
-                logger.info(f"[THREAD-{channel}] Gerakan terdeteksi: {bboxes}")
-                save_motion_event(channel, bboxes)
-
-            # Rekam event di adaptif
-            if adaptive:
-                adaptive.record_event(motion_found, person_found)
-
-    except KeyboardInterrupt:
-        logger.warning(f"[THREAD-{channel}] Dihentikan oleh user (Ctrl+C).")
-    finally:
-        cap.release()
-        logger.info(f"[THREAD-{channel}] Selesai.")
-
-
-def load_channels_from_json(json_path=RESOURCE_STATE_JSON):
-    try:
-        with open(json_path, "r") as f:
-            data = json.load(f)
-        stream_config = data.get("stream_config", {})
-        channel_list = stream_config.get("channel_list", [])
-        return [str(ch) for ch in channel_list]
-    except (FileNotFoundError, json.JSONDecodeError) as e:
-        logger.warning(f"Gagal memuat channel dari {json_path}: {e}")
-        return []
-
-
-def main():
-    host_ip = os.getenv("HOST_IP", "127.0.0.1")
-
-    # Inisialisasi motion detector
-    motion_detector = MotionDetector(history=500, varThreshold=16, detectShadows=True)
-
-    # Inisialisasi object detector
-    prototxt_path = "/app/detection/models/mobilenet_ssd/MobileNetSSD_deploy.prototxt"
-    caffemodel_path = "/app/detection/models/mobilenet_ssd/MobileNetSSD_deploy.caffemodel"
-    object_detector = ObjectDetector(prototxt_path, caffemodel_path, confidence_threshold=0.2)
-
-    # Manager adaptif
-    adaptive_manager = AdaptiveParams(motion_detector, object_detector)
+    backup_sess= None
+    is_recording= False
+    last_motion= 0
 
     while True:
-        channels = load_channels_from_json()
-        if not channels:
-            logger.info("[MAIN] Tidak ada data channel. Tunggu 10 detik...")
-            time.sleep(10)
+        ret, frame= cap.read()
+        if not ret or frame is None:
+            logger.warning(f"[main] channel={ch} => read() fail => sleep1")
+            time.sleep(1)
             continue
 
-        logger.info(f"[MAIN] Ditemukan channel: {channels}")
+        bboxes= motion.detect(frame)
+        if bboxes:
+            # simpan bboxes ke JSON, log ringkas
+            save_motion_event_to_json(ch, bboxes)
+            # logger.info(f"[main] channel={ch} => motion bboxes=...") # dihapus agar tak memenuhi docker logs
+            logger.debug(f"[main] channel={ch} => motion -> bounding box detail saved to JSON.")
+            last_motion= time.time()
 
-        threads = []
-        for ch in channels:
-            t = threading.Thread(
-                target=detect_motion_in_channel,
-                args=(ch, host_ip, motion_detector, object_detector, adaptive_manager),
-                daemon=True
-            )
-            t.start()
-            threads.append(t)
+            # AI => if needed
+            if obj_detect:
+                # per label checking
+                detections= obj_detect.detect(frame)
+                # if no relevant => skip => no recording
+                # example: if only person => do backup
+                person_found= any((lab=="person") for (lab, conf, x, y, w, h) in detections)
+                if not person_found:
+                    time.sleep(0.2)
+                    continue
 
-        try:
-            while True:
-                time.sleep(1)
-        except KeyboardInterrupt:
-            logger.warning("[MAIN] Dihentikan oleh user (Ctrl+C).")
-            break
+            # start or rolling
+            if not is_recording:
+                backup_sess= BackupSession(rtsp_url, ch)
+                path= backup_sess.start_recording()
+                logger.info(f"[main] channel={ch} => Start record => {path}")
+                is_recording= True
+            else:
+                # check 5 min
+                if not backup_sess.still_ok(MAX_RECORD):
+                    # rolling
+                    backup_sess.stop_recording()
+                    backup_sess= BackupSession(rtsp_url, ch)
+                    path= backup_sess.start_recording()
+                    logger.info(f"[main] channel={ch} => Rolling record => {path}")
+        else:
+            # no motion
+            if is_recording:
+                elapsed= time.time()- last_motion
+                if elapsed> MOTION_TIMEOUT:
+                    # stop
+                    backup_sess.stop_recording()
+                    backup_sess= None
+                    is_recording= False
+                    logger.info(f"[main] channel={ch} => stop record => no motion")
 
-    logger.info("[MAIN] Program selesai.")
+        time.sleep(0.2)
 
+def thread_for_channel(ch):
+    # Bentuk rtsp_url
+    rtsp_url= f"rtsp://{RTSP_USER}:{RTSP_PASSWORD}@{RTSP_IP}:554/cam/realmonitor?channel={ch}&subtype={RTSP_SUBTYPE}"
+    logger.info(f"[main] channel={ch} => {rtsp_url}")
 
-if __name__ == "__main__":
+    # black => if fail => skip
+    if not check_black_frames(rtsp_url):
+        logger.warning(f"[main] channel={ch} => black frames => skip pipeline.")
+        return
+
+    # freeze => re-check
+    ok_freeze= check_freeze_frames(rtsp_url)
+    if not ok_freeze:
+        logger.warning(f"[main] channel={ch} => freeze => skip pipeline.")
+        return
+
+    # normal => motion
+    motion_pipeline(rtsp_url, ch)
+
+def run_validation_once():
+    if TEST_CHANNEL=="off":
+        c_count= CHANNELS
+        channels= [str(i) for i in range(1,c_count+1)]
+    else:
+        channels= [x.strip() for x in TEST_CHANNEL.split(",") if x.strip()]
+
+    for c in channels:
+        t= threading.Thread(target=thread_for_channel, args=(c,), daemon=True)
+        t.start()
+    logger.info("[main] threads started for all channels")
+
+def main():
+    loop= LOOP_ENABLE
+    interval= CHECK_INTERVAL
+
+    if loop:
+        run_validation_once()
+        while True:
+            logger.info(f"[main] multi-thread => wait {interval}s")
+            time.sleep(interval)
+    else:
+        run_validation_once()
+        while True:
+            time.sleep(10)
+
+if __name__=="__main__":
     main()
