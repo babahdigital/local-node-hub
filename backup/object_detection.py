@@ -3,11 +3,10 @@ import numpy as np
 
 class ObjectDetector:
     """
-    MobileNet SSD. 
-    threshold: person=0.6, car=0.4, motorbike=0.4
+    MobileNet SSD 
+    person=0.6, car=0.4, motorbike=0.4
     """
-    def __init__(self, prototxt_path, model_path,
-                 conf_person=0.6, conf_car=0.4, conf_motor=0.4):
+    def __init__(self, prototxt_path, model_path, conf_person=0.6, conf_car=0.4, conf_motor=0.4):
         print("[INFO] loading MobileNet SSD model...")
         self.net = cv2.dnn.readNetFromCaffe(prototxt_path, model_path)
         self.conf_person = conf_person
@@ -22,7 +21,7 @@ class ObjectDetector:
         ]
 
     def detect(self, frame):
-        (h,w)= frame.shape[:2]
+        (h, w) = frame.shape[:2]
         blob= cv2.dnn.blobFromImage(
             frame, 0.007843, (300,300), 127.5
         )
@@ -34,13 +33,11 @@ class ObjectDetector:
             raw_conf= detections[0,0,i,2]
             if raw_conf>100:
                 raw_conf/=100.0
-
             class_id= int(detections[0,0,i,1])
-            if class_id<0 or class_id>=len(self.CLASSES):
+            if class_id<0 or class_id>= len(self.CLASSES):
                 continue
-            label= self.CLASSES[class_id]
 
-            # Tersedia threshold
+            label= self.CLASSES[class_id]
             pass_check= False
             if label=="person" and raw_conf>= self.conf_person:
                 pass_check= True
@@ -52,10 +49,10 @@ class ObjectDetector:
             if not pass_check:
                 continue
 
-            box= detections[0,0,i,3:7]* [w,h,w,h]
+            box= detections[0,0,i,3:7]*[w,h,w,h]
             (startX,startY,endX,endY)= box.astype("int")
             startX, startY= max(0,startX), max(0,startY)
-            endX, endY    = min(w-1,endX), min(h-1,endY)
+            endX, endY= min(w-1,endX), min(h-1,endY)
             results.append((label, float(raw_conf), startX, startY, endX-startX, endY-startY))
 
         return results

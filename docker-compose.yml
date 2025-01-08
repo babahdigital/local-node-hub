@@ -102,21 +102,21 @@ services:
       # Konfigurasi Umum
       - STREAM_TITLE="KC. Ayani"
       - RTSP_IP=172.16.10.252
-      - NVR_SUBNET=172.16.1.0/24
       - TEST_CHANNEL=1,3,4
       - CHANNELS=1
       - RTSP_SUBTYPE=0
-      - NVR_ENABLE=false
       - SKIP_ABDULLAH_CHECK=false
       # Konfigurasi Validasi
-      - ENABLE_RTSP_VALIDATION=true
-      - LOOP_ENABLE=true
-      - CHECK_INTERVAL=300
+      - CHECK_INTERVAL=60
       - FREEZE_SENSITIVITY=6.0
       - FREEZE_RECHECK_TIMES=5
       - FREEZE_RECHECK_DELAY=3.0
       - FREEZE_COOLDOWN=15
       - ENABLE_FREEZE_CHECK=true
+      - ENABLE_FREEZE_CHECK=true
+      - ENABLE_BLACKOUT=true
+      - LOOP_ENABLE=true
+      - ENABLE_RTSP_VALIDATION=true
       # Konfigurasi Syslog
       - ENABLE_SYSLOG=true
       - ENABLE_FILE_LOG=false
@@ -132,41 +132,25 @@ services:
       dockerfile: ./backup/Dockerfile
     image: backup
     container_name: backup
-    #depends_on:
-    #  - stream
+    depends_on:
+      - stream
     volumes:
+      # Data Monitoring
+      - /mnt/Data/Syslog/resource:/mnt/Data/Syslog/resource
       # Folder scripts (Python, dsb.)
       - ./scripts/utils.py:/app/scripts/utils.py
       # File konfigurasi log messages
       - ./config/log_messages.json:/app/config/log_messages.json
+      # Mount Truenas
       - /mnt/Data/Syslog:/mnt/Data/Syslog
       - /mnt/Data/Backup:/mnt/Data/Backup
       # Sistem Timezone
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
     environment:
-      # RTSP credentials + IP + channel
+      # RTSP credentials
       - RTSP_USER=babahdigital
       - RTSP_PASSWORD=Admin123@
-      - RTSP_IP=172.16.10.252
-
-      # Channel logic
-      - TEST_CHANNEL=1,3,4
-      - CHANNELS=1
-      - RTSP_SUBTYPE=0
-
-      # Multi-thread loop
-      - LOOP_ENABLE=true
-      - CHECK_INTERVAL=60
-
-      # Freeze config
-      - FREEZE_SENSITIVITY=6.0
-      - FREEZE_RECHECK_TIMES=5
-      - FREEZE_RECHECK_DELAY=3.0
-      - FREEZE_COOLDOWN=15
-      - ENABLE_FREEZE_CHECK=true
-      - ENABLE_BLACKOUT=true
-
       # Syslog + Logging
       - ENABLE_SYSLOG=true
       - ENABLE_FILE_LOG=false

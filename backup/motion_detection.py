@@ -4,8 +4,8 @@ import numpy as np
 class MotionDetector:
     def __init__(self, history=500, varThreshold=16, detectShadows=True, area_threshold=3000):
         """
-        area_threshold=3000 => gerakan kecil diabaikan
-        kernel 5x5 => hapus noise kecil
+        area_threshold=3000 => kurangi false alarm (kain terbang dsb.)
+        kernel (5,5) => lebih agresif
         """
         self.back_sub = cv2.createBackgroundSubtractorMOG2(
             history=history,
@@ -17,7 +17,6 @@ class MotionDetector:
 
     def detect(self, frame):
         fg_mask = self.back_sub.apply(frame)
-        # Morph open+close
         fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_OPEN, self.kernel)
         fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_CLOSE, self.kernel)
 
@@ -28,5 +27,5 @@ class MotionDetector:
             if area < self.area_threshold:
                 continue
             x, y, w, h = cv2.boundingRect(c)
-            bboxes.append((x, y, w, h))
+            bboxes.append((x,y,w,h))
         return bboxes

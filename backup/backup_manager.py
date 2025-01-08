@@ -5,18 +5,18 @@ import subprocess
 class BackupSession:
     """
     Satu sesi perekaman ffmpeg. 
-    start_recording() => panggil ffmpeg (tanpa -t).
-    still_ok(max_dur) => cek durasi.
-    stop_recording() => terminate ffmpeg.
+    start_recording() => panggil ffmpeg (tanpa -t)
+    still_ok(max_dur) => cek durasi
+    stop_recording() => terminate ffmpeg
     """
 
     def __init__(self, rtsp_url, channel, stream_title="Untitled"):
-        self.rtsp_url    = rtsp_url
-        self.channel     = channel
-        self.proc        = None
-        self.start_time  = None
-        self.file_path   = None
-        self.stream_title= stream_title  # metadata ffmpeg
+        self.rtsp_url     = rtsp_url
+        self.channel      = channel
+        self.stream_title = stream_title
+        self.proc         = None
+        self.start_time   = None
+        self.file_path    = None
 
     def start_recording(self):
         self.start_time = time.time()
@@ -25,7 +25,8 @@ class BackupSession:
 
         cmd = [
             "ffmpeg",
-            "-hide_banner", "-loglevel", "error",
+            "-hide_banner", 
+            "-loglevel", "error",
             "-rtsp_transport", "tcp",
             "-i", self.rtsp_url,
             "-c", "copy",
