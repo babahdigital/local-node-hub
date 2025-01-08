@@ -18,6 +18,65 @@ logger = setup_category_logger("Resource-Monitor")
 DETECTION_JSON_PATH = "/mnt/Data/Syslog/resource/detection_events.json"
 RESOURCE_STATE_JSON = "/mnt/Data/Syslog/resource/resource_monitor_state.json"
 
+
+# ----- Adaptive parameter manager -----
+class AdaptiveParams:
+    def __init__(self, motion_detector, object_detector):
+        self.motion_detector = motion_detector
+        self.object_detector = object_detector
+
+        # Statistik
+        self.total_motion = 0
+        self.total_person_detected = 0
+
+        # Waktu update adaptif
+        self.last_update_time = time.time()
+        self.update_interval = 60  # setiap 60 detik update param
+
+    def record_event(self, motion_found, person_found):
+        if motion_found:
+            self.total_motion += 1
+        if person_found:
+            self.total_person_detected += 1
+
+        now = time.time()
+        if now - self.last_update_time > self.update_interval:
+            self.update_adaptive()
+            self.last_update_time = now
+
+    def update_adaptive(self):
+        if self.total_motion == 0:
+            return
+
+        ratio = self.total_person_detected / float(self.total_motion)
+        logger.info(f"[ADAPTIVE] ratio person= {ratio:.2f} (person/motion). Update threshold..")
+
+        if ratio < 0.1:
+            old_conf = self.object_detector.conf_threshold
+            new_conf = max(0.05, old_conf * 0.9)
+            self.object_detector.set_conf_threshold(new_conf)
+
+            old_area = self.motion_detector.area_threshold
+            new_area = max(100, old_area - 50)
+            self.motion_detector.set_area_threshold(new_area)
+
+            logger.info(f"[ADAPTIVE] Turunkan conf_threshold: {old_conf:.2f}->{new_conf:.2f}, area: {old_area}->{new_area}")
+        elif ratio > 0.5:
+            old_conf = self.object_detector.conf_threshold
+            new_conf = min(1.0, old_conf * 1.1)
+            self.object_detector.set_conf_threshold(new_conf)
+
+            old_area = self.motion_detector.area_threshold
+            new_area = old_area + 50
+            self.motion_detector.set_area_threshold(new_area)
+
+            logger.info(f"[ADAPTIVE] Naikkan conf_threshold: {old_conf:.2f}->{new_conf:.2f}, area: {old_area}->{new_area}")
+
+        # Reset
+        self.total_motion = 0
+        self.total_person_detected = 0
+
+
 def save_motion_event(channel, bounding_boxes, object_label=None, object_conf=None):
     event_data = {
         "timestamp": datetime.now().isoformat(),
@@ -26,7 +85,8 @@ def save_motion_event(channel, bounding_boxes, object_label=None, object_conf=No
     }
     if object_label:
         event_data["object_label"] = object_label
-        event_data["object_confidence"] = object_conf
+        # confidence kita simpan 0..1, di log pun boleh *100 jika mau
+        event_data["object_confidence"] = round(object_conf, 3)
 
     with file_write_lock:
         try:
@@ -35,14 +95,8 @@ def save_motion_event(channel, bounding_boxes, object_label=None, object_conf=No
         except Exception as e:
             logger.error(f"Gagal menulis event gerakan ke {DETECTION_JSON_PATH}: {e}")
 
-def detect_motion_in_channel(channel, host_ip, motion_detector, object_detector=None):
-    """
-    Thread function:
-    1) Baca stream.
-    2) Motion detection => bounding boxes (bboxes).
-    3) Lakukan "ROI crop" per bbox => panggil object_detector di sub-frame.
-    4) Jika "person", catat event.
-    """
+
+def detect_motion_in_channel(channel, host_ip, motion_detector, object_detector=None, adaptive=None):
     stream_url = f"http://{host_ip}/ch{channel}/"
     logger.info(f"[THREAD-{channel}] Membuka stream: {stream_url}")
 
@@ -58,42 +112,60 @@ def detect_motion_in_channel(channel, host_ip, motion_detector, object_detector=
                 logger.warning(f"[THREAD-{channel}] Stream terputus/frame kosong.")
                 break
 
-            bboxes = motion_detector.detect(frame, area_threshold=500)
-            if bboxes:
-                if object_detector:
-                    # Kita akan memeriksa sub-frame per bbox
-                    person_detected = False
-                    best_conf = 0.0
+            bboxes = motion_detector.detect(frame)
+            motion_found = (len(bboxes) > 0)
+            person_found = False
 
-                    for (mx, my, mw, mh) in bboxes:
-                        # Crop sub-frame area gerakan
-                        sub_frame = frame[my:my+mh, mx:mx+mw]
+            if bboxes and object_detector:
+                local_person_detected = False
+                best_conf = 0.0
 
-                        # Deteksi objek di sub-frame
-                        detections = object_detector.detect(sub_frame)
+                # 1) ROI detection
+                for (mx, my, mw, mh) in bboxes:
+                    sub_frame = frame[my:my+mh, mx:mx+mw]
+                    detections = object_detector.detect(sub_frame)
 
-                        # Loop detections di sub-frame
-                        for (label, conf, x, y, w, h) in detections:
-                            # Koordinat bounding box di sub-frame
-                            # offset ke full-frame = (mx + x, my + y)
-                            if label == "person" and conf > best_conf:
-                                best_conf = conf
-                                person_detected = True
+                    if detections:
+                        logger.info(f"[THREAD-{channel}] ROI => {len(detections)} obj")
+                    for (label, conf, sx, sy, sw, sh) in detections:
+                        logger.info(f"[THREAD-{channel}] ROI label={label}, conf={conf:.2f}")
+                        if label == "person" and conf > best_conf:
+                            best_conf = conf
+                            local_person_detected = True
 
-                    if person_detected:
-                        logger.info(f"[THREAD-{channel}] Person terdeteksi (conf={best_conf:.2f}) di channel {channel}. Bboxes: {bboxes}")
-                        save_motion_event(channel, bboxes, "person", best_conf)
-                    else:
-                        logger.info(f"[THREAD-{channel}] Ada gerakan, tapi no person => skip log.")
+                # 2) Fallback full-frame if no person
+                if not local_person_detected:
+                    logger.info(f"[THREAD-{channel}] ROI tidak temukan 'person'. Coba full-frame detection.")
+                    full_detections = object_detector.detect(frame)
+                    if full_detections:
+                        logger.info(f"[THREAD-{channel}] FULL => {len(full_detections)} obj")
+                    for (label, conf, x, y, w, h) in full_detections:
+                        logger.info(f"[THREAD-{channel}] FULL label={label}, conf={conf:.2f}")
+                        if label == "person" and conf > best_conf:
+                            best_conf = conf
+                            local_person_detected = True
+
+                if local_person_detected:
+                    person_found = True
+                    logger.info(f"[THREAD-{channel}] Person terdeteksi (conf={best_conf*100:.2f}%). Bboxes: {bboxes}")
+                    save_motion_event(channel, bboxes, "person", best_conf)
                 else:
-                    # Tanpa object detector, langsung log
-                    logger.info(f"[THREAD-{channel}] Gerakan terdeteksi: {bboxes}")
-                    save_motion_event(channel, bboxes)
+                    logger.info(f"[THREAD-{channel}] Ada gerakan, tapi no person => skip log.")
+            elif bboxes and not object_detector:
+                # Tanpa object detector
+                logger.info(f"[THREAD-{channel}] Gerakan terdeteksi: {bboxes}")
+                save_motion_event(channel, bboxes)
+
+            # Rekam event di adaptif
+            if adaptive:
+                adaptive.record_event(motion_found, person_found)
+
     except KeyboardInterrupt:
         logger.warning(f"[THREAD-{channel}] Dihentikan oleh user (Ctrl+C).")
     finally:
         cap.release()
         logger.info(f"[THREAD-{channel}] Selesai.")
+
 
 def load_channels_from_json(json_path=RESOURCE_STATE_JSON):
     try:
@@ -106,15 +178,20 @@ def load_channels_from_json(json_path=RESOURCE_STATE_JSON):
         logger.warning(f"Gagal memuat channel dari {json_path}: {e}")
         return []
 
+
 def main():
     host_ip = os.getenv("HOST_IP", "127.0.0.1")
+
+    # Inisialisasi motion detector
     motion_detector = MotionDetector(history=500, varThreshold=16, detectShadows=True)
 
+    # Inisialisasi object detector
     prototxt_path = "/app/detection/models/mobilenet_ssd/MobileNetSSD_deploy.prototxt"
     caffemodel_path = "/app/detection/models/mobilenet_ssd/MobileNetSSD_deploy.caffemodel"
+    object_detector = ObjectDetector(prototxt_path, caffemodel_path, confidence_threshold=0.2)
 
-    # Pakai threshold 0.3 (lebih sensitif).
-    object_detector = ObjectDetector(prototxt_path, caffemodel_path, confidence_threshold=0.3)
+    # Manager adaptif
+    adaptive_manager = AdaptiveParams(motion_detector, object_detector)
 
     while True:
         channels = load_channels_from_json()
@@ -129,7 +206,7 @@ def main():
         for ch in channels:
             t = threading.Thread(
                 target=detect_motion_in_channel,
-                args=(ch, host_ip, motion_detector, object_detector),
+                args=(ch, host_ip, motion_detector, object_detector, adaptive_manager),
                 daemon=True
             )
             t.start()
@@ -143,6 +220,7 @@ def main():
             break
 
     logger.info("[MAIN] Program selesai.")
+
 
 if __name__ == "__main__":
     main()

@@ -148,7 +148,7 @@ services:
       - ENABLE_SYSLOG=true
       - ENABLE_FILE_LOG=false
       - ENABLE_STREAM_LOG=true
-      - DEBUG=false
+      - DEBUG=true
     networks:
       babahdigital:
 

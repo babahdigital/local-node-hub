@@ -14,10 +14,19 @@ class MotionDetector:
         # Kernel morphological (untuk mengurangi noise)
         self.kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
 
-    def detect(self, frame, area_threshold=500):
+        # area_threshold default (bisa diubah adaptif)
+        self.area_threshold = 500
+
+    def set_area_threshold(self, val):
+        """
+        Memperbarui ambang area threshold secara adaptif.
+        """
+        self.area_threshold = max(100, val)  # minimal 100 agar tidak nol
+
+    def detect(self, frame):
         """
         Menerapkan background subtraction + morph. 
-        Kembalikan list bounding boxes (x,y,w,h) dengan area >= area_threshold.
+        Kembalikan list bounding boxes (x,y,w,h) dengan area >= self.area_threshold.
         """
         fg_mask = self.back_sub.apply(frame)
 
@@ -31,7 +40,7 @@ class MotionDetector:
         bboxes = []
         for c in contours:
             area = cv2.contourArea(c)
-            if area < area_threshold:
+            if area < self.area_threshold:
                 continue
             x, y, w, h = cv2.boundingRect(c)
             bboxes.append([x, y, w, h])
