@@ -1,258 +1,242 @@
 #!/usr/bin/env python3
 """
-main.py
+resource_monitor.py
 
-Membaca config dari /mnt/Data/Syslog/resource/resource_monitor_state.json
--> CPU usage, stream_config => freeze, blackout, channels, stream_title
--> Jalankan multi-thread => motion detection => rolling backup
--> Minim environment => benar2 0 human touch
+Script produksi untuk memantau resource sistem (CPU, RAM, Disk, dsb.) + status IP RTSP + internet.
+Hasil dicatat ke MONITOR_STATE_FILE (JSON).
 
-utils.py => untuk logging & file_write_lock
+Fitur Utama:
+1) Baca interval & param dari environment (RESOURCE_MONITOR_INTERVAL, dsb.).
+2) Kumpulkan data resource (psutil).
+3) Ping RTSP_IP, ping keluar (google.com) untuk cek internet.
+4) Simpan data final ke MONITOR_STATE_FILE secara terjadwal.
+5) Logging menggunakan kategori "Resource-Monitor" (syslog-ng).
+
+Author: YourName
 """
 
 import os
 import sys
-import json
 import time
-import threading
-import cv2
+import json
+import psutil
+import subprocess
+import re
 from datetime import datetime
 
-# Pastikan folder scripts ada di PATH
+# Pastikan folder scripts ada di PATH (untuk import utils, dsb.)
 sys.path.append("/app/scripts")
 
-from utils import setup_logger, file_write_lock
-from motion_detection import MotionDetector
-from backup_manager import BackupSession
+from utils import setup_category_logger
 
-# Opsional object detection
-ENABLE_OBJECT_DETECTION = os.getenv("ENABLE_OBJECT_DETECTION","false").lower()=="true"
-if ENABLE_OBJECT_DETECTION:
-    from object_detection import ObjectDetector
+###############################################################################
+# 1. Kategori Log
+###############################################################################
+logger = setup_category_logger("Resource-Monitor")
 
-LOGGER = setup_logger("RTSP-Validation", "/mnt/Data/Syslog/rtsp/cctv/validation.log")
+###############################################################################
+# 2. Environment & Konstanta
+###############################################################################
+MONITOR_STATE_FILE = os.getenv("MONITOR_STATE_FILE",
+                               "/mnt/Data/Syslog/resource/resource_monitor_state.json")
+RESOURCE_MONITOR_INTERVAL = int(os.getenv("RESOURCE_MONITOR_INTERVAL", "5"))
 
-RESOURCE_JSON= "/mnt/Data/Syslog/resource/resource_monitor_state.json"
-MOTION_EVENTS_JSON= "/mnt/Data/Syslog/rtsp/motion_events.json"
+# Host luar untuk ping test (cek internet)
+PING_OUTSIDE_HOST = os.getenv("PING_OUTSIDE_HOST", "google.com")
 
-MAX_RECORD= 300   # 5 min rolling
-MOTION_TIMEOUT= 5 # stop rec if no motion >5s
+# Param freeze (disimpan di JSON juga, jika pipeline butuh info)
+CHECK_INTERVAL        = int(os.getenv("CHECK_INTERVAL", "60"))
+FREEZE_SENSITIVITY    = float(os.getenv("FREEZE_SENSITIVITY", "6.0"))
+FREEZE_RECHECK_TIMES  = int(os.getenv("FREEZE_RECHECK_TIMES", "5"))
+FREEZE_RECHECK_DELAY  = float(os.getenv("FREEZE_RECHECK_DELAY", "3.0"))
+FREEZE_COOLDOWN       = int(os.getenv("FREEZE_COOLDOWN", "15"))
 
-def load_resource_json():
+###############################################################################
+# 3. Fungsi Utilities
+###############################################################################
+def get_local_time() -> str:
     """
-    Baca /mnt/Data/Syslog/resource/resource_monitor_state.json
-    Return dict => {
-      "cpu_usage": float,
-      "stream_title": str,
-      "enable_freeze": bool,
-      "enable_blackout": bool,
-      "test_channel": "1,3,4",
-      "channel_count": 1,
-      "check_interval": 60,
-      ...
-      "rtsp_ip": "xxx", "rtsp_user": "xxx", ...
-    }
+    Mengembalikan waktu lokal (container/host) dalam format 'dd-MM-YYYY HH:mm:ss %Z%z'.
     """
-    config= {}
     try:
-        with open(RESOURCE_JSON,"r") as f:
-            data= json.load(f)
-        # CPU usage
-        cpu= data.get("resource_usage",{}).get("cpu",{}).get("usage_percent",0.0)
-        config["cpu_usage"]= float(cpu)
+        now = datetime.now().astimezone()
+        return now.strftime('%d-%m-%Y %H:%M:%S %Z%z')
+    except Exception:
+        logger.exception("[Resource-Monitor] Gagal mendapatkan waktu lokal.")
+        return "unknown"
 
-        stream_cfg= data.get("stream_config",{})
-        config["stream_title"]    = stream_cfg.get("stream_title","Untitled")
-        config["enable_freeze"]   = stream_cfg.get("enable_freeze", True)
-        config["enable_blackout"] = stream_cfg.get("enable_blackout", True)
-        config["test_channel"]    = stream_cfg.get("test_channel","1")
-        config["channel_count"]   = int(stream_cfg.get("channel_count",1))
-        config["check_interval"]  = int(stream_cfg.get("check_interval",60))
-        config["freeze_sensitivity"]= float(stream_cfg.get("freeze_sensitivity",6.0))
-        # dsb
-
-        rtsp_cfg= data.get("rtsp_config",{})
-        config["rtsp_ip"]       = rtsp_cfg.get("rtsp_ip","127.0.0.1")
-        config["rtsp_user"]     = rtsp_cfg.get("rtsp_user","admin")
-        config["rtsp_password"] = rtsp_cfg.get("rtsp_password","admin123")
-        config["rtsp_subtype"]  = rtsp_cfg.get("rtsp_subtype","0")
-    except Exception as e:
-        LOGGER.error(f"[main] Gagal load resource_monitor_state.json => {e}")
-        # fallback
-        config["cpu_usage"]=0.0
-        config["stream_title"]="Untitled"
-        config["enable_freeze"]=True
-        config["enable_blackout"]=True
-        config["test_channel"]="1"
-        config["channel_count"]=1
-        config["check_interval"]=60
-        config["freeze_sensitivity"]=6.0
-        config["rtsp_ip"]="127.0.0.1"
-        config["rtsp_user"]="admin"
-        config["rtsp_password"]="admin123"
-        config["rtsp_subtype"]="0"
-
-    return config
-
-def save_bboxes_to_json(channel, bboxes):
-    evt= {
-        "timestamp": datetime.now().isoformat(),
-        "channel": channel,
-        "bboxes": bboxes
-    }
-    with file_write_lock:
-        try:
-            with open(MOTION_EVENTS_JSON,"a") as f:
-                json.dump(evt, f)
-                f.write("\n")
-        except Exception as e:
-            LOGGER.error(f"[main] Gagal tulis bounding box => {e}")
-
-def check_black_frames(rtsp_url, do_blackout, cpu_usage):
-    # skip if do_blackout=False or cpu>90 => skip => hemat cpu
-    if not do_blackout or cpu_usage>90:
-        return True
-    import subprocess
-    cmd= [
-        "ffmpeg","-hide_banner","-loglevel","error",
-        "-rtsp_transport","tcp",
-        "-i", rtsp_url,
-        "-vf","blackdetect=d=0.1:pic_th=0.98",
-        "-an","-t","5","-f","null","-"
-    ]
+def ping_host_with_rtt(host: str, count=1, timeout=2) -> (bool, float):
+    """
+    Melakukan ping ke <host> menggunakan 'ping -c <count> -W <timeout>'.
+    Returns:
+        (reachable: bool, rtt_ms: float|None)
+    """
     try:
-        r= subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)
-        return (b"black_start" not in r.stderr)
-    except:
-        return False
-
-def check_freeze(rtsp_url, do_freeze, cpu_usage, freeze_sens):
-    # skip if do_freeze=False or cpu_usage>85 => skip freeze => hemat CPU
-    if not do_freeze or cpu_usage>85:
-        return True
-    import subprocess, time
-    freeze_fail=0
-    times=5
-    delay=3
-    for i in range(times):
-        cmd= [
-            "ffmpeg","-hide_banner","-loglevel","error",
-            "-rtsp_transport","tcp",
-            "-i", rtsp_url,
-            "-vf", f"freezedetect=n=-60dB:d={freeze_sens}",
-            "-an","-t","5","-f","null","-"
-        ]
-        try:
-            rr= subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)
-            ok= (b"freeze_start" not in rr.stderr)
-            if not ok:
-                freeze_fail+=1
-        except:
-            freeze_fail+=1
-        if i<(times-1):
-            time.sleep(delay)
-    return (freeze_fail<times)
-
-def motion_pipeline(rtsp_url, ch, config):
-    cap= cv2.VideoCapture(rtsp_url)
-    if not cap.isOpened():
-        LOGGER.error(f"[main] ch={ch} => fail open => {rtsp_url}")
-        return
-
-    motion= MotionDetector(area_threshold=3000)
-    # object detection
-    obj_detect= None
-    if ENABLE_OBJECT_DETECTION:
-        from object_detection import ObjectDetector
-        obj_detect= ObjectDetector("/app/detection/models/mobilenet_ssd/MobileNetSSD_deploy.prototxt",
-                                  "/app/detection/models/mobilenet_ssd/MobileNetSSD_deploy.caffemodel",
-                                  conf_person=0.6, conf_car=0.4, conf_motor=0.4)
-
-    backup_sess= None
-    is_recording= False
-    last_motion= 0
-    while True:
-        ret, frame= cap.read()
-        if not ret or frame is None:
-            time.sleep(1)
-            continue
-
-        bboxes= motion.detect(frame)
-        if bboxes:
-            save_bboxes_to_json(ch, bboxes)
-            last_motion= time.time()
-
-            # check object detection => if no person => skip
-            if obj_detect:
-                detections= obj_detect.detect(frame)
-                person_found= any((lab=="person") for (lab,conf,x,y,w,h) in detections)
-                if not person_found:
-                    time.sleep(0.2)
-                    continue
-
-            if not is_recording:
-                backup_sess= BackupSession(rtsp_url, ch, config["stream_title"])
-                path= backup_sess.start_recording()
-                LOGGER.info(f"[main] ch={ch} => start record => {path}")
-                is_recording= True
-            else:
-                if not backup_sess.still_ok(MAX_RECORD):
-                    backup_sess.stop_recording()
-                    backup_sess= BackupSession(rtsp_url, ch, config["stream_title"])
-                    path= backup_sess.start_recording()
-                    LOGGER.info(f"[main] ch={ch} => rolling => {path}")
+        cmd = ["ping", "-c", str(count), "-W", str(timeout), host]
+        output = subprocess.check_output(cmd, stderr=subprocess.STDOUT, universal_newlines=True)
+        match = re.search(r"time=([\d\.]+)\s*ms", output)
+        if match:
+            return True, float(match.group(1))
         else:
-            # no bounding box => if recording => check last motion
-            if is_recording:
-                if (time.time()- last_motion)> MOTION_TIMEOUT:
-                    backup_sess.stop_recording()
-                    backup_sess= None
-                    is_recording= False
-                    LOGGER.info(f"[main] ch={ch} => stop rec => no motion")
-        time.sleep(0.2)
+            return True, None
+    except subprocess.CalledProcessError:
+        return False, None
+    except Exception:
+        logger.exception(f"[Resource-Monitor] Ping error ke {host}")
+        return False, None
 
-def thread_for_channel(ch, config):
-    rtsp_url= f"rtsp://{config['rtsp_user']}:{config['rtsp_password']}@{config['rtsp_ip']}:554/cam/realmonitor?channel={ch}&subtype={config['rtsp_subtype']}"
-    LOGGER.info(f"[main] ch={ch} => {rtsp_url}")
+###############################################################################
+# 4. Kumpulkan Data Resource
+###############################################################################
+def collect_resource_data() -> dict:
+    cpu_usage_percent = psutil.cpu_percent(interval=None)
+    cpu_count_logical = psutil.cpu_count(logical=True)
 
-    cpu_usage= config["cpu_usage"]
-    do_blackout= config.get("enable_blackout",True)
-    if not check_black_frames(rtsp_url, do_blackout, cpu_usage):
-        LOGGER.warning(f"[main] ch={ch} => black => skip pipeline")
-        return
+    mem_info = psutil.virtual_memory()
+    ram_usage_percent = mem_info.percent
 
-    do_freeze= config.get("enable_freeze",True)
-    freeze_sens= float(config.get("freeze_sensitivity",6.0))
-    if not check_freeze(rtsp_url, do_freeze, cpu_usage, freeze_sens):
-        LOGGER.warning(f"[main] ch={ch} => freeze => skip pipeline")
-        return
+    disk_info = psutil.disk_usage('/')
+    disk_usage_percent = disk_info.percent
 
-    motion_pipeline(rtsp_url, ch, config)
+    swap_info = psutil.swap_memory()
 
-def run_validation_once(config):
-    test_channel  = config.get("test_channel","1").lower()
-    channel_count = config.get("channel_count",1)
+    try:
+        load_1, load_5, load_15 = os.getloadavg()
+    except OSError:
+        load_1, load_5, load_15 = (0, 0, 0)
 
-    if test_channel=="off":
-        channels= [str(i) for i in range(1, channel_count+1)]
+    net_io = psutil.net_io_counters()
+
+    return {
+        "cpu": {
+            "usage_percent": cpu_usage_percent,
+            "core_count_logical": cpu_count_logical
+        },
+        "ram": {
+            "total": mem_info.total,
+            "used": mem_info.used,
+            "free": mem_info.available,
+            "usage_percent": ram_usage_percent
+        },
+        "disk": {
+            "total": disk_info.total,
+            "used": disk_info.used,
+            "free": disk_info.free,
+            "usage_percent": disk_usage_percent
+        },
+        "swap": {
+            "total": swap_info.total,
+            "used": swap_info.used,
+            "free": swap_info.free,
+            "usage_percent": swap_info.percent
+        },
+        "load_average": {
+            "1min": load_1,
+            "5min": load_5,
+            "15min": load_15
+        },
+        "network": {
+            "bytes_sent": net_io.bytes_sent,
+            "bytes_received": net_io.bytes_recv
+        },
+        "timestamp_local": get_local_time()
+    }
+
+###############################################################################
+# 5. Kumpulkan Info Streaming (RTSP) + Ping Internet
+###############################################################################
+def collect_stream_info() -> dict:
+    """
+    Kumpulkan info streaming/IP dari environment & ping.
+    Disimpan di "stream_config" agar terbaca di main.py.
+    """
+    STREAM_TITLE  = os.getenv("STREAM_TITLE", "Unknown Title")
+    RTSP_IP       = os.getenv("RTSP_IP", "127.0.0.1")
+    TEST_CHANNEL  = os.getenv("TEST_CHANNEL", "1,3,4")
+    CHANNELS      = int(os.getenv("CHANNELS", "1"))
+    RTSP_SUBTYPE  = os.getenv("RTSP_SUBTYPE", "1")
+    ENABLE_RTSP_VALIDATION = (os.getenv("ENABLE_RTSP_VALIDATION", "true").lower() == "true")
+    SKIP_ABDULLAH_CHECK    = (os.getenv("SKIP_ABDULLAH_CHECK", "false").lower() == "true")
+
+    # Ping RTSP_IP
+    reachable, rtt_ms = ping_host_with_rtt(RTSP_IP, count=1, timeout=2)
+    final_ips = [{
+        "ip": RTSP_IP,
+        "reachable": reachable,
+        "ping_time_ms": rtt_ms
+    }]
+
+    # Channel list
+    if TEST_CHANNEL.lower() == "off":
+        channel_list = list(range(1, CHANNELS + 1))
     else:
-        channels= [x.strip() for x in test_channel.split(",") if x.strip()]
+        channel_list = []
+        for c in TEST_CHANNEL.split(","):
+            c = c.strip()
+            if c.isdigit():
+                channel_list.append(int(c))
 
-    for c in channels:
-        t= threading.Thread(target=thread_for_channel, args=(c, config), daemon=True)
-        t.start()
-    LOGGER.info("[main] threads started for all channels")
+    # Ping keluar => cek internet
+    outside_ok, outside_rtt = ping_host_with_rtt(PING_OUTSIDE_HOST, count=1, timeout=2)
 
+    data = {
+        "stream_title": STREAM_TITLE,
+        "rtsp_ip": RTSP_IP,
+        "test_channel": TEST_CHANNEL,
+        "channel_count": CHANNELS,
+        "rtsp_subtype": RTSP_SUBTYPE,
+        "enable_rtsp_validation": ENABLE_RTSP_VALIDATION,
+        "skip_abdullah_check": SKIP_ABDULLAH_CHECK,
+        "final_ips": final_ips,
+        "ping_outside_host": PING_OUTSIDE_HOST,
+        "ping_outside_ok": outside_ok,
+        "ping_outside_ms": outside_rtt,
+        "channel_list": channel_list,
+        "freeze_settings": {
+            "check_interval": CHECK_INTERVAL,
+            "freeze_sensitivity": FREEZE_SENSITIVITY,
+            "freeze_recheck_times": FREEZE_RECHECK_TIMES,
+            "freeze_recheck_delay": FREEZE_RECHECK_DELAY,
+            "freeze_cooldown": FREEZE_COOLDOWN
+        }
+    }
+    return data
+
+###############################################################################
+# 6. Main Loop Pemantauan
+###############################################################################
 def main():
-    # Baca config dari resource_monitor_state.json
-    config= load_resource_json()
-    interval= config.get("check_interval", 60)  # default 60
-    loop= True  # tidak perlu ENV lagi
+    logger.info("[Resource-Monitor] Memulai pemantauan resource & stream info.")
+    logger.info(f"[Resource-Monitor] Hasil disimpan di => {MONITOR_STATE_FILE}")
+    logger.info(f"[Resource-Monitor] Interval => {RESOURCE_MONITOR_INTERVAL} detik")
 
-    run_validation_once(config)
-    while loop:
-        LOGGER.info(f"[main] multi-thread => wait {interval}s => 0 human touch.")
-        time.sleep(interval)
+    while True:
+        try:
+            resource_data = collect_resource_data()
+            stream_data   = collect_stream_info()
 
-if __name__=="__main__":
+            combined_data = {
+                "resource_usage": resource_data,
+                "stream_config":  stream_data
+            }
+
+            # Tulis ke JSON
+            with open(MONITOR_STATE_FILE, "w") as f:
+                json.dump(combined_data, f, indent=2)
+
+            # Log ringkas CPU & RAM
+            cpu_short = resource_data["cpu"]["usage_percent"]
+            ram_short = resource_data["ram"]["usage_percent"]
+            ts_local  = resource_data["timestamp_local"]
+            logger.info(
+                f"[Resource-Monitor] CPU={cpu_short:.1f}% RAM={ram_short:.1f}% => "
+                f"Data diperbarui (LocalTime={ts_local})."
+            )
+
+        except Exception:
+            logger.exception("[Resource-Monitor] Gagal memproses data.")
+
+        time.sleep(RESOURCE_MONITOR_INTERVAL)
+
+if __name__ == "__main__":
     main()

@@ -2,14 +2,21 @@
 """
 resource_monitor.py
 
-Memantau resource sistem (CPU, RAM, Disk, dsb.) dan status streaming (ping IP RTSP/NVR).
+Memantau resource sistem (CPU, RAM, Disk, dsb.) dan status streaming (ping IP RTSP).
 Data digabung dan disimpan ke file JSON (MONITOR_STATE_FILE) dalam loop.
 
 Fitur:
 1) Merekam resource usage (psutil).
-2) Ping subnet (jika NVR_ENABLE=true) atau single IP RTSP.
+2) Ping single IP RTSP.
 3) Ping ke luar (google.com) untuk cek koneksi internet.
 4) Menyimpan data final ke JSON setiap RESOURCE_MONITOR_INTERVAL detik.
+
+Menambahkan pengaturan freeze:
+- CHECK_INTERVAL
+- FREEZE_SENSITIVITY
+- FREEZE_RECHECK_TIMES
+- FREEZE_RECHECK_DELAY
+- FREEZE_COOLDOWN
 
 Menggunakan 'utils.py' untuk logging (setup_category_logger).
 """
@@ -21,9 +28,7 @@ import json
 import psutil
 import subprocess
 import re
-import ipaddress
 from datetime import datetime
-import pytz
 
 # Pastikan folder scripts ada di PATH (agar 'utils.py' bisa diimport)
 sys.path.append("/app/scripts")
@@ -49,8 +54,12 @@ RESOURCE_MONITOR_INTERVAL = int(os.getenv("RESOURCE_MONITOR_INTERVAL", "5"))
 # Host luar untuk ping test (cek internet)
 PING_OUTSIDE_HOST = os.getenv("PING_OUTSIDE_HOST", "google.com")
 
-# Batas pemindaian subnet (mencegah scanning subnet besar)
-MAX_SUBNET_SIZE = int(os.getenv("MAX_SUBNET_SIZE", "256"))
+# Variabel Freeze
+CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", "60"))
+FREEZE_SENSITIVITY = float(os.getenv("FREEZE_SENSITIVITY", "6.0"))
+FREEZE_RECHECK_TIMES = int(os.getenv("FREEZE_RECHECK_TIMES", "5"))
+FREEZE_RECHECK_DELAY = float(os.getenv("FREEZE_RECHECK_DELAY", "3.0"))
+FREEZE_COOLDOWN = int(os.getenv("FREEZE_COOLDOWN", "15"))
 
 ###############################################################################
 # 2. Fungsi Mendapatkan Waktu Lokal
@@ -79,7 +88,6 @@ def ping_host_with_rtt(host: str, count=1, timeout=2) -> (bool, float):
           - reachable = True jika host merespon
           - rtt_ms = RTT (ms) dari satu ping, None jika tidak tersedia
     """
-    import subprocess
     try:
         cmd = ["ping", "-c", str(count), "-W", str(timeout), host]
         output = subprocess.check_output(cmd, stderr=subprocess.STDOUT, universal_newlines=True)
@@ -94,41 +102,6 @@ def ping_host_with_rtt(host: str, count=1, timeout=2) -> (bool, float):
         logger.exception(f"[Resource-Monitor] Ping error ke {host}")
         return False, None
 
-def collect_subnet_ips(subnet: str, ping_timeout=1):
-    """
-    Memindai subnet => Kembalikan list IP yang reachable.
-    Return list of {ip, reachable, ping_time_ms}.
-
-    - Jika subnet besar, dibatasi oleh MAX_SUBNET_SIZE
-    """
-    results = []
-    try:
-        net = ipaddress.ip_network(subnet, strict=False)
-
-        total_hosts = net.num_addresses - 2 if net.num_addresses >= 2 else net.num_addresses
-        if total_hosts > MAX_SUBNET_SIZE:
-            logger.warning(f"[Resource-Monitor] Subnet {subnet} terlalu besar ({total_hosts} hosts). "
-                           f"Hanya memindai {MAX_SUBNET_SIZE} host pertama.")
-
-        counter = 0
-        for ip_obj in net.hosts():
-            ip_str = str(ip_obj)
-            reachable, rtt_ms = ping_host_with_rtt(ip_str, count=1, timeout=ping_timeout)
-            if reachable:
-                results.append({
-                    "ip": ip_str,
-                    "reachable": True,
-                    "ping_time_ms": rtt_ms
-                })
-            counter += 1
-            if counter >= MAX_SUBNET_SIZE:
-                break
-
-        return results
-    except ValueError as ve:
-        logger.error(f"[Resource-Monitor] Subnet tidak valid: {subnet} => {ve}")
-        return []
-
 ###############################################################################
 # 4. Fungsi Pengumpulan Resource
 ###############################################################################
@@ -137,8 +110,6 @@ def collect_resource_data():
     Mengumpulkan data resource (CPU, RAM, Disk, Swap, LoadAvg, Network).
     Menyertakan timestamp_local di dalam dict.
     """
-    import psutil
-
     cpu_usage_percent = psutil.cpu_percent(interval=None)
     cpu_count_logical = psutil.cpu_count(logical=True)
 
@@ -198,37 +169,26 @@ def collect_resource_data():
 def collect_stream_info():
     """
     Mengumpulkan info streaming/IP dari environment:
-      - Jika NVR_ENABLE=true => subnet scan
-      - Jika NVR_ENABLE=false => ping single IP RTSP_IP
-      - Ping luar => cek internet
+      - Ping single IP RTSP_IP.
+      - Ping luar => cek internet.
 
-    Return dict:
-    {
-      "final_ips": [...],
-      "ping_outside_ok": bool,
-      ...
-    }
+    Return dict yang menyertakan info freeze parameters dan ping ke luar.
     """
     STREAM_TITLE  = os.getenv("STREAM_TITLE", "Unknown Title")
     RTSP_IP       = os.getenv("RTSP_IP", "127.0.0.1")
-    NVR_SUBNET    = os.getenv("NVR_SUBNET", "192.168.1.0/24")
     TEST_CHANNEL  = os.getenv("TEST_CHANNEL", "1,3,4")
     CHANNELS      = int(os.getenv("CHANNELS", "1"))
     RTSP_SUBTYPE  = os.getenv("RTSP_SUBTYPE", "1")
-    NVR_ENABLE    = (os.getenv("NVR_ENABLE", "false").lower() == "true")
     ENABLE_RTSP_VALIDATION = (os.getenv("ENABLE_RTSP_VALIDATION", "true").lower() == "true")
     SKIP_ABDULLAH_CHECK    = (os.getenv("SKIP_ABDULLAH_CHECK", "false").lower() == "true")
 
-    # NVR_ENABLE => subnet scan
-    if NVR_ENABLE:
-        final_ips = collect_subnet_ips(NVR_SUBNET, ping_timeout=1)
-    else:
-        reachable, rtt_ms = ping_host_with_rtt(RTSP_IP, count=1, timeout=2)
-        final_ips = [{
-            "ip": RTSP_IP,
-            "reachable": reachable,
-            "ping_time_ms": rtt_ms
-        }]
+    # Ping single IP RTSP_IP
+    reachable, rtt_ms = ping_host_with_rtt(RTSP_IP, count=1, timeout=2)
+    final_ips = [{
+        "ip": RTSP_IP,
+        "reachable": reachable,
+        "ping_time_ms": rtt_ms
+    }]
 
     # channel_list
     if TEST_CHANNEL.lower() == "off":
@@ -240,23 +200,30 @@ def collect_stream_info():
                 channel_list.append(int(c.strip()))
 
     # Ping keluar => cek internet
-    outside_ok, outside_rtt = ping_host_with_rtt(os.getenv("PING_OUTSIDE_HOST", "google.com"), count=1, timeout=2)
+    outside_ok, outside_rtt = ping_host_with_rtt(
+        os.getenv("PING_OUTSIDE_HOST", "google.com"), count=1, timeout=2
+    )
 
     data = {
         "stream_title": STREAM_TITLE,
         "rtsp_ip": RTSP_IP,
-        "nvr_subnet": NVR_SUBNET,
         "test_channel": TEST_CHANNEL,
         "channels": CHANNELS,
         "rtsp_subtype": RTSP_SUBTYPE,
-        "nvr_enable": NVR_ENABLE,
         "enable_rtsp_validation": ENABLE_RTSP_VALIDATION,
         "skip_abdullah_check": SKIP_ABDULLAH_CHECK,
         "final_ips": final_ips,
         "ping_outside_host": PING_OUTSIDE_HOST,
         "ping_outside_ok": outside_ok,
         "ping_outside_ms": outside_rtt,
-        "channel_list": channel_list
+        "channel_list": channel_list,
+        "freeze_settings": {
+            "check_interval": CHECK_INTERVAL,
+            "freeze_sensitivity": FREEZE_SENSITIVITY,
+            "freeze_recheck_times": FREEZE_RECHECK_TIMES,
+            "freeze_recheck_delay": FREEZE_RECHECK_DELAY,
+            "freeze_cooldown": FREEZE_COOLDOWN
+        }
     }
     return data
 

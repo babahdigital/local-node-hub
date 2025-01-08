@@ -36,43 +36,6 @@ services:
       babahdigital:
 
   # =========================================================
-  # Resource Monitor
-  # =========================================================
-  monitor:
-    build: 
-      context: .
-      dockerfile: ./resource/Dockerfile
-    image: monitor
-    container_name: monitor
-    environment:
-      - LOG_PATH=/mnt/Data/Syslog/resource/resource_monitor.log
-      - MONITOR_STATE_FILE=/mnt/Data/Syslog/resource/resource_monitor_state.json
-      - RESOURCE_MONITOR_INTERVAL=5
-    volumes:
-      # File Json Monitor
-      - /mnt/Data/Syslog:/mnt/Data/Syslog
-      # Folder scripts (Python, dsb.)
-      - ./scripts/utils.py:/app/scripts/utils.py
-      # Mount Bind Log Messages
-      - ./config/log_messages.json:/app/config/log_messages.json
-      # Sistem Timezone
-      - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
-    restart: unless-stopped
-    depends_on:
-      - syslog
-    networks:
-      babahdigital:
-    env_file:
-      - .env
-    healthcheck:
-      test: ["CMD-SHELL", "find /mnt/Data/Syslog/resource/resource_monitor_state.json -mmin -1 || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-
-  # =========================================================
   # Stream Server (Nginx-RTMP) 
   # =========================================================
   stream:
@@ -98,30 +61,41 @@ services:
       # Bind-mount Data Sistem
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
-    environment:
-      # Konfigurasi Umum
-      - STREAM_TITLE="KC. Ayani"
-      - RTSP_IP=172.16.10.252
-      - TEST_CHANNEL=1,3,4
-      - CHANNELS=1
-      - RTSP_SUBTYPE=0
-      - SKIP_ABDULLAH_CHECK=false
-      # Konfigurasi Validasi
-      - CHECK_INTERVAL=60
-      - FREEZE_SENSITIVITY=6.0
-      - FREEZE_RECHECK_TIMES=5
-      - FREEZE_RECHECK_DELAY=3.0
-      - FREEZE_COOLDOWN=15
-      - ENABLE_FREEZE_CHECK=true
-      - ENABLE_FREEZE_CHECK=true
-      - ENABLE_BLACKOUT=true
-      - LOOP_ENABLE=true
-      - ENABLE_RTSP_VALIDATION=true
-      # Konfigurasi Syslog
-      - ENABLE_SYSLOG=true
-      - ENABLE_FILE_LOG=false
-      - ENABLE_STREAM_LOG=true
-      - DEBUG=false
+    env_file:
+      - .env
+
+  # =========================================================
+  # Resource Monitor
+  # =========================================================
+  monitor:
+    build: 
+      context: .
+      dockerfile: ./resource/Dockerfile
+    image: monitor
+    container_name: monitor
+    volumes:
+      # File Json Monitor
+      - /mnt/Data/Syslog:/mnt/Data/Syslog
+      # Folder scripts (Python, dsb.)
+      - ./scripts/utils.py:/app/scripts/utils.py
+      # Mount Bind Log Messages
+      - ./config/log_messages.json:/app/config/log_messages.json
+      # Sistem Timezone
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    restart: unless-stopped
+    depends_on:
+      - syslog
+    networks:
+      babahdigital:
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD-SHELL", "find /mnt/Data/Syslog/resource/resource_monitor_state.json -mmin -1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
   # =========================================================
   # Simple Motion + Object Detection
@@ -132,8 +106,8 @@ services:
       dockerfile: ./backup/Dockerfile
     image: backup
     container_name: backup
-    depends_on:
-      - stream
+    #depends_on:
+    #  - stream
     volumes:
       # Data Monitoring
       - /mnt/Data/Syslog/resource:/mnt/Data/Syslog/resource
@@ -151,11 +125,8 @@ services:
       # RTSP credentials
       - RTSP_USER=babahdigital
       - RTSP_PASSWORD=Admin123@
-      # Syslog + Logging
-      - ENABLE_SYSLOG=true
-      - ENABLE_FILE_LOG=false
-      - ENABLE_STREAM_LOG=true
-      - DEBUG=false
+    env_file:
+      - .env
     networks:
       babahdigital:
 

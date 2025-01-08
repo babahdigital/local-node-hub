@@ -4,8 +4,11 @@ import numpy as np
 class MotionDetector:
     def __init__(self, history=500, varThreshold=16, detectShadows=True, area_threshold=3000):
         """
-        area_threshold=3000 => kurangi false alarm (kain terbang dsb.)
-        kernel (5,5) => lebih agresif
+        Gunakan MOG2. Setting:
+          - history=500
+          - varThreshold=16
+          - detectShadows=True
+          - area_threshold=3000 => minimum luas gerakan
         """
         self.back_sub = cv2.createBackgroundSubtractorMOG2(
             history=history,
@@ -27,5 +30,6 @@ class MotionDetector:
             if area < self.area_threshold:
                 continue
             x, y, w, h = cv2.boundingRect(c)
-            bboxes.append((x,y,w,h))
+            bboxes.append((x, y, w, h))
+
         return bboxes

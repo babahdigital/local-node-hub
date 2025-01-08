@@ -4,12 +4,11 @@ import subprocess
 
 class BackupSession:
     """
-    Satu sesi perekaman ffmpeg. 
-    start_recording() => panggil ffmpeg (tanpa -t)
-    still_ok(max_dur) => cek durasi
-    stop_recording() => terminate ffmpeg
+    Satu sesi perekaman ffmpeg:
+      - start_recording() => panggil ffmpeg (tanpa -t)
+      - still_ok(max_dur) => cek durasi
+      - stop_recording() => terminate ffmpeg
     """
-
     def __init__(self, rtsp_url, channel, stream_title="Untitled"):
         self.rtsp_url     = rtsp_url
         self.channel      = channel
@@ -47,7 +46,7 @@ class BackupSession:
 
     def still_ok(self, max_dur=300):
         """
-        True jika belum melewati max_dur detik.
+        True jika belum melewati max_dur detik perekaman.
         """
         if not self.proc:
             return False
@@ -57,5 +56,8 @@ class BackupSession:
     def stop_recording(self):
         if self.proc:
             self.proc.terminate()
-            self.proc.wait(timeout=5)
+            try:
+                self.proc.wait(timeout=5)
+            except:
+                pass
             self.proc = None

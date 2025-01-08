@@ -3,8 +3,10 @@ import numpy as np
 
 class ObjectDetector:
     """
-    MobileNet SSD 
-    person=0.6, car=0.4, motorbike=0.4
+    MobileNet SSD:
+    - person=0.6
+    - car=0.4
+    - motorbike=0.4
     """
     def __init__(self, prototxt_path, model_path, conf_person=0.6, conf_car=0.4, conf_motor=0.4):
         print("[INFO] loading MobileNet SSD model...")
@@ -22,37 +24,43 @@ class ObjectDetector:
 
     def detect(self, frame):
         (h, w) = frame.shape[:2]
-        blob= cv2.dnn.blobFromImage(
-            frame, 0.007843, (300,300), 127.5
+        blob = cv2.dnn.blobFromImage(
+            frame, 0.007843, (300, 300), 127.5
         )
         self.net.setInput(blob)
-        detections= self.net.forward()
+        detections = self.net.forward()
 
-        results= []
+        results = []
         for i in range(detections.shape[2]):
-            raw_conf= detections[0,0,i,2]
-            if raw_conf>100:
-                raw_conf/=100.0
-            class_id= int(detections[0,0,i,1])
-            if class_id<0 or class_id>= len(self.CLASSES):
+            raw_conf = detections[0, 0, i, 2]
+            if raw_conf > 100:
+                # Terkadang bug, normalisasikan
+                raw_conf /= 100.0
+
+            class_id = int(detections[0, 0, i, 1])
+            if class_id < 0 or class_id >= len(self.CLASSES):
                 continue
 
-            label= self.CLASSES[class_id]
-            pass_check= False
-            if label=="person" and raw_conf>= self.conf_person:
-                pass_check= True
-            elif label=="car" and raw_conf>= self.conf_car:
-                pass_check= True
-            elif label=="motorbike" and raw_conf>= self.conf_motor:
-                pass_check= True
+            label = self.CLASSES[class_id]
+            pass_check = False
+            if label == "person" and raw_conf >= self.conf_person:
+                pass_check = True
+            elif label == "car" and raw_conf >= self.conf_car:
+                pass_check = True
+            elif label == "motorbike" and raw_conf >= self.conf_motor:
+                pass_check = True
 
             if not pass_check:
                 continue
 
-            box= detections[0,0,i,3:7]*[w,h,w,h]
-            (startX,startY,endX,endY)= box.astype("int")
-            startX, startY= max(0,startX), max(0,startY)
-            endX, endY= min(w-1,endX), min(h-1,endY)
-            results.append((label, float(raw_conf), startX, startY, endX-startX, endY-startY))
+            box = detections[0, 0, i, 3:7] * [w, h, w, h]
+            (startX, startY, endX, endY) = box.astype("int")
+            startX, startY = max(0, startX), max(0, startY)
+            endX, endY = min(w - 1, endX), min(h - 1, endY)
+            bbox_w = endX - startX
+            bbox_h = endY - startY
 
-        return results
+            results.append((label, float(raw_conf), startX, startY, bbox_w, bbox_h))
+
+        # Kembalikan (results, ...) agar tetap kompatibel dgn main.py
+        return (results, None)

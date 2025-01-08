@@ -4,3 +4,4 @@ numpy
 pytz
 imutils
 ffmpeg-python
+psutil
