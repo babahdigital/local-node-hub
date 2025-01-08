@@ -1,16 +1,6 @@
-# General requirements
-python-dotenv          # Untuk membaca file .env
-requests               # Untuk HTTP requests (digunakan pada Report Manager dan Health Check)
-loguru                 # Untuk logging yang lebih fleksibel dan terstruktur
-pytz                   # Untuk pengelolaan timezone
-
-# RTSP Backup requirements
-psutil                 # Untuk monitoring resource seperti CPU dan Disk
-ffmpeg-python          # Untuk validasi metadata RTSP stream menggunakan FFprobe
-
-# Backend API requirements
-flask                  # Untuk membuat REST API sederhana (Health Check dan Livestream)
-gunicorn               # Untuk menjalankan Flask dalam production mode
-
-# Logging and monitoring
-PyYAML                 # Jika diperlukan untuk konfigurasi dinamis
+opencv-python
+python-dotenv
+numpy
+pytz
+imutils
+ffmpeg-python

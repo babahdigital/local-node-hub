@@ -134,8 +134,8 @@ def motion_pipeline(rtsp_url, ch):
     obj_detect= None
     if ENABLE_OBJECT_DETECTION:
         from object_detection import ObjectDetector
-        obj_detect= ObjectDetector("/app/detection/models/mobilenet_ssd/MobileNetSSD_deploy.prototxt",
-                                  "/app/detection/models/mobilenet_ssd/MobileNetSSD_deploy.caffemodel",
+        obj_detect= ObjectDetector("/app/detection/models1/mobilenet_ssd/MobileNetSSD_deploy.prototxt",
+                                  "/app/detection/models1/mobilenet_ssd/MobileNetSSD_deploy.caffemodel",
                                   conf_person=0.6, conf_car=0.4, conf_motor=0.4)
 
     backup_sess= None

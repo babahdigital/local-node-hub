@@ -1,63 +1,34 @@
+# Menggunakan base image python:3.9-slim yang minimal
 FROM python:3.9-slim
 
-# Set working directory
-WORKDIR /app
+# Supaya log Python langsung dicetak ke stdout (tanpa buffering)
+ENV PYTHONUNBUFFERED=1
 
-# Install system dependencies
+# 1. Install native libraries yang diperlukan OpenCV + FFmpeg
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    wget \
-    curl \
-    procps \
-    tzdata \
-    bash \
-    libssl-dev \
-    pkg-config \
-    gcc \
-    g++ \
-    && apt-get clean \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    ffmpeg \
+    jq \
     && rm -rf /var/lib/apt/lists/*
 
-# Install LIVE555 with C++11 flag
-RUN wget http://www.live555.com/liveMedia/public/live555-latest.tar.gz && \
-    tar -xzf live555-latest.tar.gz && \
-    cd live && \
-    ./genMakefiles linux && \
-    sed -i 's/CXXFLAGS =/CXXFLAGS = -std=c++11/' config.linux && \
-    sed -i 's/.test()/.test_and_set()/' BasicUsageEnvironment/BasicTaskScheduler.cpp && \
-    make && \
-    make install && \
-    cd .. && rm -rf live live555-latest.tar.gz
+# 2. Tetapkan direktori kerja
+WORKDIR /app/backup
 
-# Copy requirements file
-COPY requirements.txt /app/requirements.txt
+# 3. Copy dahulu file requirements.txt agar caching layer efektif
+COPY ./backup/requirements.txt /app/backup/requirements.txt
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r /app/requirements.txt
+# 4. Install dependencies Python (OpenCV, dsb.)
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy all scripts to the working directory
-COPY scripts/ /app/scripts/
+# 5. Copy sisa source code (main.py, motion_detection.py, dsb.)
+COPY ./backup /app/backup
 
-# Copy configuration files
-COPY config/log_messages.json /app/config/log_messages.json
-COPY tool/credentials.sh /app/config/credentials.sh
+# 6. (Opsional) Jika ada validate_model.py:
+# RUN python validate_model.py
 
-# Create directories for logs
-RUN mkdir -p /mnt/Data/Syslog/rtsp /app/logs && chown -R root:root /mnt/Data/Syslog/rtsp /app/logs
-
-# Copy entrypoint script
-COPY entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh
-
-# Set timezone for the container
-ENV TZ=Asia/Makassar
-RUN ln -fs /usr/share/zoneinfo/$TZ /etc/localtime && dpkg-reconfigure -f noninteractive tzdata
-
-# Change ownership of the working directory to a non-root user
-RUN chown -R root:root /app
-
-# Switch to non-root user
-USER root
-
-# Set entrypoint
-ENTRYPOINT ["/app/entrypoint.sh"]
+# 7. Jalankan main.py secara default
+CMD ["python", "main.py"]

@@ -16,7 +16,7 @@ services:
     volumes:
       # Folder
       - /mnt/Data/Syslog:/mnt/Data/Syslog
-      - syslog-data:/mnt/Data/Syslog
+      #- syslog-data:/mnt/Data/Syslog
       # Sistem Timezone
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
@@ -126,12 +126,12 @@ services:
   # =========================================================
   # Simple Motion + Object Detection
   # =========================================================
-  detection:
+  backup:
     build:
       context: .
-      dockerfile: ./detection/Dockerfile
-    image: detection
-    container_name: detection
+      dockerfile: ./backup/Dockerfile
+    image: backup
+    container_name: backup
     #depends_on:
     #  - stream
     volumes:
@@ -172,26 +172,6 @@ services:
       - ENABLE_FILE_LOG=false
       - ENABLE_STREAM_LOG=true
       - DEBUG=false
-    networks:
-      babahdigital:
-
-  # =========================================================
-  # HDD Monitor (misalnya memantau /mnt/Data/Backup dsb.)
-  # =========================================================
-  hdd:
-    build:
-      context: ./hdd
-      dockerfile: Dockerfile
-    image: hdd-monitor
-    container_name: hdd-monitor
-    restart: always
-    volumes:
-      - /mnt/Data/Syslog:/mnt/Data/Syslog
-      - /mnt/Data/Backup:/mnt/Data/Backup
-      - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
-    environment:
-      BACKUP_DIR: "/mnt/Data/Backup"
     networks:
       babahdigital:
 
