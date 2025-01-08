@@ -5,14 +5,13 @@ Modul utilitas yang menyediakan:
 1) Fungsi logger (opsional RotatingFileHandler, opsional SysLogHandler, opsional StreamHandler).
 2) Fungsi-fungsi umum: get_local_time, decode_credentials, dsb.
 3) Kemudahan penggunaan log kategori (LOG_CATEGORIES).
-
-Bisa digunakan di script lain seperti resource_monitor.py, validate_cctv.py, dsb.
 """
 
 import os
 import json
 import logging
 import base64
+import threading  # <-- Pastikan kita import threading
 from logging.handlers import SysLogHandler, RotatingFileHandler
 from datetime import datetime
 import pytz
@@ -224,8 +223,12 @@ def get_log_message(key: str) -> str:
         raise RuntimeError(f"Pesan log untuk kunci '{key}' tidak ditemukan.")
 
 ###############################################################################
-# 6. FUNGSI UTILITY UMUM
+# 6. FUNGSI UTILITY UMUM & LOCK
 ###############################################################################
+
+# Tambahkan global lock agar bisa diimport oleh main.py
+file_write_lock = threading.Lock()
+
 def get_local_time() -> str:
     """
     Mengembalikan waktu lokal dengan format 'dd-MM-yyyy HH:mm:ss TZZZ+Offset'.

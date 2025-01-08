@@ -3,84 +3,112 @@ import cv2
 import json
 import time
 import threading
+import sys
 from datetime import datetime
+
 from motion_detection import MotionDetector
 
-file_write_lock = threading.Lock()
+# Pastikan folder scripts ada di PATH (untuk utils.py).
+sys.path.append("/app/scripts")
 
+from utils import setup_category_logger, file_write_lock
+
+###############################################################################
+# 1. Setup Logger
+###############################################################################
+# Gunakan kategori "Resource-Monitor" atau "RTSP", atau "default"—sesuaikan dengan LOG_CATEGORIES di utils.py
+logger = setup_category_logger("Resource-Monitor")
+
+# File detection JSON
+DETECTION_JSON_PATH = "/mnt/Data/Syslog/resource/detection_events.json"
+# File resource state JSON
+RESOURCE_STATE_JSON = "/mnt/Data/Syslog/resource/resource_monitor_state.json"
+
+###############################################################################
+# 2. Fungsi Menyimpan Event Gerakan
+###############################################################################
 def save_motion_event(channel, bounding_boxes):
+    """
+    Append ke detection_events.json satu baris JSON tiap kali gerakan terdeteksi.
+    """
     event_data = {
         "timestamp": datetime.now().isoformat(),
         "channel": channel,
         "bounding_boxes": bounding_boxes
     }
     with file_write_lock:
-        with open("detection_events.json", "a") as f:
-            f.write(json.dumps(event_data) + "\n")
+        try:
+            with open(DETECTION_JSON_PATH, "a") as f:
+                f.write(json.dumps(event_data) + "\n")
+        except Exception as e:
+            logger.error(f"Gagal menulis event gerakan ke {DETECTION_JSON_PATH}: {e}")
 
+###############################################################################
+# 3. Fungsi Thread: detect_motion_in_channel
+###############################################################################
 def detect_motion_in_channel(channel, host_ip, motion_detector):
     stream_url = f"http://{host_ip}/ch{channel}/"
-    print(f"[THREAD-{channel}] Membuka stream: {stream_url}")
+    logger.info(f"[THREAD-{channel}] Membuka stream: {stream_url}")
 
     cap = cv2.VideoCapture(stream_url)
     if not cap.isOpened():
-        print(f"[THREAD-{channel}] ERROR: Gagal membuka stream.")
+        logger.error(f"[THREAD-{channel}] ERROR: Gagal membuka stream.")
         return
 
     try:
         while True:
             ret, frame = cap.read()
             if not ret:
-                print(f"[THREAD-{channel}] Stream terputus/frame kosong.")
+                logger.warning(f"[THREAD-{channel}] Stream terputus/frame kosong.")
                 break
 
-            bboxes = motion_detector.detect(frame)
+            # Deteksi gerakan
+            bboxes = motion_detector.detect(frame, area_threshold=500)
             if bboxes:
-                print(f"[THREAD-{channel}] Gerakan terdeteksi: {bboxes}")
+                logger.info(f"[THREAD-{channel}] Gerakan terdeteksi: {bboxes}")
                 save_motion_event(channel, bboxes)
 
-            # Tambahkan jeda kecil agar CPU tidak 100%, opsional
-            # time.sleep(0.01)
-
+            # time.sleep(0.01) # Optional: jeda kecil
     except KeyboardInterrupt:
-        print(f"[THREAD-{channel}] Dihentikan oleh user.")
+        logger.warning(f"[THREAD-{channel}] Dihentikan oleh user (Ctrl+C).")
     finally:
         cap.release()
-        print(f"[THREAD-{channel}] Selesai.")
+        logger.info(f"[THREAD-{channel}] Selesai.")
 
-def load_channels_from_json(json_path="/mnt/Data/Syslog/resource/resource_monitor_state.json"):
+###############################################################################
+# 4. Fungsi Memuat Channels Dari JSON
+###############################################################################
+def load_channels_from_json(json_path=RESOURCE_STATE_JSON):
     """
-    Contoh fungsi untuk memuat channel dari file JSON. 
-    Anda bisa menyesuaikan kunci JSON yang tepat, misalnya "channel_list".
+    Membaca 'resource_monitor_state.json', ambil 'stream_config.channel_list'.
     """
     try:
         with open(json_path, "r") as f:
             data = json.load(f)
-        # Misal kita asumsikan "channel_list" di dalam "stream_config"
         stream_config = data.get("stream_config", {})
-        channel_list = stream_config.get("channel_list", [])  
-        # channel_list di JSON bisa berupa array int => [1,3,4]
-        # Ubah jadi string => ["1", "3", "4"]
-        channels = [str(ch) for ch in channel_list]
-        return channels
-    except (FileNotFoundError, json.JSONDecodeError):
-        return []  # Jika file tidak ada atau rusak, kembalikan list kosong
+        channel_list = stream_config.get("channel_list", [])
+        return [str(ch) for ch in channel_list]
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        logger.warning(f"Gagal memuat channel dari {json_path}: {e}")
+        return []
 
+###############################################################################
+# 5. Main
+###############################################################################
 def main():
     host_ip = os.getenv("HOST_IP", "127.0.0.1")
-    motion_detector = MotionDetector()
+    motion_detector = MotionDetector(history=500, varThreshold=16, detectShadows=True)
 
-    # Agar looping terus: setiap X detik cek apakah ada channel di JSON
     while True:
         channels = load_channels_from_json()
         if not channels:
-            print("[MAIN] Tidak ada data channel. Tunggu 10 detik...")
+            logger.info("[MAIN] Tidak ada data channel. Tunggu 10 detik...")
             time.sleep(10)
-            continue  # Kembali ke awal loop
-        
-        print(f"[MAIN] Ditemukan channel: {channels}")
+            continue
 
-        # Buat thread untuk setiap channel
+        logger.info(f"[MAIN] Ditemukan channel: {channels}")
+
+        # Buat threads untuk masing-masing channel
         threads = []
         for ch in channels:
             t = threading.Thread(
@@ -91,16 +119,14 @@ def main():
             t.start()
             threads.append(t)
 
-        # Tunggu sampai user menekan Ctrl+C, 
-        # atau jika diinginkan, hentikan setelah sekian waktu
         try:
             while True:
                 time.sleep(1)
         except KeyboardInterrupt:
-            print("\n[MAIN] Dihentikan oleh user.")
-            break  # Keluar loop while True => program selesai
+            logger.warning("[MAIN] Dihentikan oleh user (Ctrl+C).")
+            break
 
-    print("[MAIN] Program selesai.")
+    logger.info("[MAIN] Program selesai.")
 
 if __name__ == "__main__":
     main()
