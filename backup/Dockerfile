@@ -16,7 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     iputils-ping \
     && rm -rf /var/lib/apt/lists/*
 
-RUN mkdir -p /mnt/Data/Syslog/rtsp
+RUN mkdir -p /mnt/Data/Syslog/rtsp/cctv
 
 # 2. Tetapkan direktori kerja
 WORKDIR /app/backup

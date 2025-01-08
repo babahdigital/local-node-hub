@@ -121,10 +121,12 @@ services:
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
     environment:
-      - STREAM_TITLE=KC. Ayani
+      # Konfigurasi dari json
       - RTSP_SUBTYPE=0
-      - TEST_CHANNEL=1,3,4
-      - CHANNEL_COUNT=1
+      - TEST_CHANNEL=off
+      - CHANNEL_COUNT=16
+      - ENABLE_JSON_LOOK=false
+      # Konfigurasi Independent
       - MAX_RECORD=600
       - MOTION_TIMEOUT=10
       - ENABLE_FREEZE_CHECK=true
