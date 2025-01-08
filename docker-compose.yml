@@ -131,18 +131,12 @@ services:
       dockerfile: ./detection/Dockerfile
     image: detection
     container_name: detection
-    # Jika ingin mengakses webcam/RTSP local, 
-    # pastikan pengaturan environment dan device mapping sudah sesuai (opsional).
+    #depends_on:
+    #  - stream
+    volumes:
+    - /mnt/Data/Syslog/resource/resource_monitor_state.json:/mnt/Data/Syslog/resource/resource_monitor_state.json
     environment:
-      - PYTHONUNBUFFERED=1
-    # Expose port jika di 'main.py' Anda membuat server web streaming atau sejenisnya
-    ports:
-      - "8088:8088"
-    # Volume opsional jika ingin model di luar container
-    # volumes:
-    #   - ./detection/models:/app/models
-    # Perintah default -> jalankan main.py 
-    # (sudah di-define di Dockerfile lewat CMD)
+      - HOST_IP=172.16.30.3
     networks:
       babahdigital:
 
