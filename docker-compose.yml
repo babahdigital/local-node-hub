@@ -39,30 +39,41 @@ services:
   # Stream Server (Nginx-RTMP) 
   # =========================================================
   stream:
-    build:
+    build: 
       context: .
-      dockerfile: ./streamserver/Dockerfile
+      dockerfile: ./streamserve/Dockerfile
     image: stream
     container_name: stream
-    networks:
-      babahdigital:
-    ports:
-      # HLS Services
-      - "80:8080"
+    restart: unless-stopped
     volumes:
+      - /mnt/Data/Syslog:/mnt/Data/Syslog
+      # Buat folder local untuk menampung HLS output jika ingin persisten
+      # - ./hls_output:/app/streamserver/hls
       # File Json
       - /mnt/Data/Syslog/resource:/mnt/Data/Syslog/resource
       # Folder scripts (Python, dsb.)
       - ./scripts/utils.py:/app/scripts/utils.py
       # File konfigurasi log messages
       - ./config/log_messages.json:/app/config/log_messages.json
-      # Bind Syslog Truenas
-      - /mnt/Data/Syslog:/mnt/Data/Syslog
       # Bind-mount Data Sistem
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
-    env_file:
-      - .env
+    networks:
+      babahdigital:
+    ports:
+      # HLS Services
+      - "80:8080"
+    environment:
+      # Variabel environment untuk parameter HLS
+      - HLS_TIME=2
+      - HLS_LIST_SIZE=5
+      # Misal channel
+      - TEST_CHANNEL=off
+      - CHANNELS=8
+      # Opsi logging
+      - ENABLE_SYSLOG=false
+      - ENABLE_FILE_LOG=false
+      - ENABLE_STREAM_LOG=true
 
   # =========================================================
   # Resource Monitor
