@@ -5,10 +5,14 @@ import os
 import json
 import subprocess
 import shlex
+import sys
 from flask import Flask, send_from_directory, abort
 
+# Pastikan folder scripts ada di PATH
+sys.path.append("/app/scripts")
+
 # >>> Tambahkan import utils <<<
-from utils import decode_credentials  # <-- mengambil user & password RTSP
+from utils import decode_credentials
 # Jika Anda ingin log dari utils, misalnya:
 # from utils import setup_category_logger
 # logger = setup_category_logger("STREAMING-HLS")

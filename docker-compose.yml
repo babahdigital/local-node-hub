@@ -41,14 +41,14 @@ services:
   stream:
     build: 
       context: .
-      dockerfile: ./streamserve/Dockerfile
+      dockerfile: ./streamserver/Dockerfile
     image: stream
     container_name: stream
     restart: unless-stopped
     volumes:
       - /mnt/Data/Syslog:/mnt/Data/Syslog
       # Buat folder local untuk menampung HLS output jika ingin persisten
-      # - ./hls_output:/app/streamserver/hls
+      - ./hls_output:/opt/app/hls_output
       # File Json
       - /mnt/Data/Syslog/resource:/mnt/Data/Syslog/resource
       # Folder scripts (Python, dsb.)
@@ -62,13 +62,13 @@ services:
       babahdigital:
     ports:
       # HLS Services
-      - "80:8080"
+      - "80:5000"
     environment:
       # Variabel environment untuk parameter HLS
       - HLS_TIME=2
       - HLS_LIST_SIZE=5
       # Misal channel
-      - TEST_CHANNEL=off
+      - TEST_CHANNEL=1,3,4
       - CHANNELS=8
       # Opsi logging
       - ENABLE_SYSLOG=false

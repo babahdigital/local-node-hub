@@ -7,22 +7,22 @@ RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
 # Buat folder /app/streamserver di dalam container
 WORKDIR /app/streamserver
 
-# (Opsional) Salin file requirements jika ingin install library tambahan
-# COPY requirements.txt /app/streamserver/
-# RUN pip install --no-cache-dir -r requirements.txt
+# Salin file requirements dan install dependencies
+COPY ./streamserver/requirements.txt /app/streamserver
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Salin semua file dari folder host "streamserver" ke container "/app/streamserver"
 COPY ./streamserver /app/streamserver
+
+# Salin credentials.sh ke /app/config
 COPY ./config/credentials.sh /app/config/credentials.sh
-COPY ./streamserver/requirements.txt /app/streamserver
-
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Pastikan file credentials.sh bersifat executable (jika ingin di-run di container)
 RUN chmod +x /app/config/credentials.sh || true
 
-# Expose port 5000 (untuk Flask)
+# Expose port 5000 (untuk Gunicorn)
 EXPOSE 5000
 
-# Jalankan server
-CMD ["/bin/bash", "-c", "source /app/config/credentials.sh && exec python main.py"]
+# Jalankan Gunicorn
+# - Di sini kita source credentials.sh agar RTSP_USER_BASE64 dsb. di-export ke environment
+# - Kemudian jalankan gunicorn dengan bind 0.0.0.0:5000
+# - Asumsikan main.py punya "app = Flask(__name__)"
+CMD ["/bin/bash", "-c", "source /app/config/credentials.sh && exec gunicorn --bind 0.0.0.0:5000 --workers 4 main:app"]
