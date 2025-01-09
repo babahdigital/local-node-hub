@@ -9,6 +9,10 @@ def load_global_net(prototxt_path, model_path):
     """
     Meload MobileNet SSD sekali saja di GLOBAL_NET.
     Jika sudah pernah load, langsung pakai GLOBAL_NET.
+    
+    :param prototxt_path: path file .prototxt
+    :param model_path   : path file .caffemodel
+    :return: net (cv2.dnn_Net) yang sudah diload
     """
     global GLOBAL_NET
     if GLOBAL_NET is None:
@@ -21,12 +25,15 @@ def load_global_net(prototxt_path, model_path):
 class ObjectDetector:
     """
     MobileNet SSD:
-    - person, car, motorbike dengan confidence default:
-      person=0.6, car=0.4, motorbike=0.4
-
-    - Bisa dioverride via constructor, atau
-      jika parameter = None, maka baca ENV:
-        CONF_PERSON, CONF_CAR, CONF_MOTOR
+    - Default confidence threshold:
+        person=0.6, car=0.4, motorbike=0.4
+    
+    - Dapat dioverride via constructor param, atau
+      jika None => baca ENV (CONF_PERSON, CONF_CAR, CONF_MOTOR).
+    
+    Fitur:
+    1) Opsional "global" loading (use_global=True) agar model tidak diinit berulang.
+    2) Clamping bounding box agar tidak memicu overflow (invalid cast).
     """
 
     def __init__(self,
@@ -37,7 +44,12 @@ class ObjectDetector:
                  conf_motor=None,
                  use_global=True):
         """
-        use_global=True => gunakan GLOBAL_NET agar model tidak diload berulang.
+        :param prototxt_path : Path .prototxt
+        :param model_path    : Path .caffemodel
+        :param conf_person   : Confidence threshold for "person"
+        :param conf_car      : Confidence threshold for "car"
+        :param conf_motor    : Confidence threshold for "motorbike"
+        :param use_global    : True => gunakan GLOBAL_NET agar model hanya diload sekali
         """
         # (B) Pilih pakai global net atau local
         if use_global:
@@ -68,8 +80,11 @@ class ObjectDetector:
 
     def detect(self, frame):
         """
-        Mengembalikan (results, None) agar kompatibel dgn main.py:
-          results = list of (label, conf, x, y, w, h)
+        Deteksi object "person", "car", "motorbike" di frame.
+        
+        :param frame: gambar (numpy array) BGR
+        :return: (results, None)
+                 results = list of (label, conf, x, y, w, h)
         """
         (h, w) = frame.shape[:2]
 
@@ -110,15 +125,28 @@ class ObjectDetector:
 
             # (G) Bikin bounding box
             box = detections[0, 0, i, 3:7] * [w, h, w, h]
+            
+            # (H) Tambahkan clamping untuk mencegah overflow / invalid
+            #     Pastikan 0 <= box <= max(w, h)
+            #     Supaya tidak "invalid value encountered in cast"
+            max_dim = float(max(w, h))
+            box = np.clip(box, 0, max_dim)
+
             (startX, startY, endX, endY) = box.astype("int")
 
-            # Clamp agar tidak out of range
+            # Pastikan bounding box tidak melebihi dimensi frame
+            # (bisa saja endX > w-1, dsb.)
+            endX = min(endX, w - 1)
+            endY = min(endY, h - 1)
             startX = max(0, startX)
             startY = max(0, startY)
-            endX   = min(w - 1, endX)
-            endY   = min(h - 1, endY)
+
             bbox_w = endX - startX
             bbox_h = endY - startY
+
+            if bbox_w < 1 or bbox_h < 1:
+                # skip jika box invalid setelah clamping
+                continue
 
             results.append((
                 label, 
