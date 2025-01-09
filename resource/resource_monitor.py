@@ -149,16 +149,34 @@ def collect_stream_info() -> dict:
     """
     Kumpulkan info streaming/IP dari environment & ping.
     Disimpan di "stream_config" agar terbaca di main.py.
+    
+    Format field yang dibutuhkan main.py (jika ENABLE_JSON_LOOK=true):
+      - stream_title
+      - rtsp_ip
+      - test_channel
+      - channel_count
+      - enable_freeze / enable_blackout (opsional, tapi kita skip di sini)
+      - rtsp_subtype (di main.py read di 'rtsp_config')
+
+    Sedangkan 'rtsp_subtype' kita simpan di 'rtsp_config' 
+    agar script main.py bisa memungut di rcfg.get("rtsp_subtype", "0").
     """
+    # Info dasar
     STREAM_TITLE  = os.getenv("STREAM_TITLE", "Unknown Title")
     RTSP_IP       = os.getenv("RTSP_IP", "127.0.0.1")
-    TEST_CHANNEL  = os.getenv("TEST_CHANNEL", "1,3,4")
-    CHANNELS      = int(os.getenv("CHANNELS", "1"))
-    RTSP_SUBTYPE  = os.getenv("RTSP_SUBTYPE", "1")
+
+    # Channel config
+    TEST_CHANNEL  = os.getenv("TEST_CHANNEL", "off")
+    CHANNELS      = int(os.getenv("CHANNELS", "1"))  # jika needed
+
+    # Subtype, user, pass => kita taruh di "rtsp_config"
+    RTSP_SUBTYPE  = os.getenv("RTSP_SUBTYPE", "0")
+
+    # Lain-lain
     ENABLE_RTSP_VALIDATION = (os.getenv("ENABLE_RTSP_VALIDATION", "true").lower() == "true")
     SKIP_ABDULLAH_CHECK    = (os.getenv("SKIP_ABDULLAH_CHECK", "false").lower() == "true")
 
-    # Ping RTSP_IP
+    # 1) Ping RTSP_IP
     reachable, rtt_ms = ping_host_with_rtt(RTSP_IP, count=1, timeout=2)
     final_ips = [{
         "ip": RTSP_IP,
@@ -166,7 +184,7 @@ def collect_stream_info() -> dict:
         "ping_time_ms": rtt_ms
     }]
 
-    # Channel list
+    # 2) Channel list => if "off", range(1..CHANNELS)
     if TEST_CHANNEL.lower() == "off":
         channel_list = list(range(1, CHANNELS + 1))
     else:
@@ -176,15 +194,21 @@ def collect_stream_info() -> dict:
             if c.isdigit():
                 channel_list.append(int(c))
 
-    # Ping keluar => cek internet
+    # 3) Ping keluar => cek internet
     outside_ok, outside_rtt = ping_host_with_rtt(PING_OUTSIDE_HOST, count=1, timeout=2)
 
-    data = {
+    stream_data = {
+        # Bagian "stream_config" => script main.py memakainya
         "stream_title": STREAM_TITLE,
         "rtsp_ip": RTSP_IP,
         "test_channel": TEST_CHANNEL,
-        "channel_count": CHANNELS,
-        "rtsp_subtype": RTSP_SUBTYPE,
+        "channel_count": CHANNELS,  
+        # Optional: Freed/Black not set here => main.py fallback
+        # "enable_freeze": ...
+        # "enable_blackout": ...
+        # "rtsp_subtype": ... => taruh di rtsp_config agar main.py pick up
+
+        # Info lain
         "enable_rtsp_validation": ENABLE_RTSP_VALIDATION,
         "skip_abdullah_check": SKIP_ABDULLAH_CHECK,
         "final_ips": final_ips,
@@ -200,7 +224,14 @@ def collect_stream_info() -> dict:
             "freeze_cooldown": FREEZE_COOLDOWN
         }
     }
-    return data
+
+    # Taruh RTSP_SUBTYPE di "rtsp_config"
+    # (user, pass biasanya di base64 => main.py decode => tak perlu kita tulis di JSON plaintext)
+    rtsp_config = {
+        "rtsp_subtype": RTSP_SUBTYPE
+    }
+
+    return (stream_data, rtsp_config)
 
 ###############################################################################
 # 6. Main Loop Pemantauan
@@ -212,19 +243,23 @@ def main():
 
     while True:
         try:
+            # 1) Kumpulkan resource => dict
             resource_data = collect_resource_data()
-            stream_data   = collect_stream_info()
+            # 2) Kumpulkan stream_data & rtsp_config
+            stream_data, rtsp_cfg = collect_stream_info()
 
+            # 3) Gabungkan
             combined_data = {
                 "resource_usage": resource_data,
-                "stream_config":  stream_data
+                "stream_config":  stream_data,
+                "rtsp_config":    rtsp_cfg
             }
 
-            # Tulis ke JSON
+            # 4) Tulis ke JSON
             with open(MONITOR_STATE_FILE, "w") as f:
                 json.dump(combined_data, f, indent=2)
 
-            # Log ringkas CPU & RAM
+            # 5) Log ringkas CPU & RAM
             cpu_short = resource_data["cpu"]["usage_percent"]
             ram_short = resource_data["ram"]["usage_percent"]
             ts_local  = resource_data["timestamp_local"]

@@ -92,6 +92,7 @@ clean_logs() {
     "streaming"
     "network"
     "resource"
+    "rtsp/cctv"
   )
 
   local files=(
@@ -106,6 +107,7 @@ clean_logs() {
     "network/network.log"
     "resource/resource_monitor.log"
     "resource/resource_monitor_error.log"
+    "rtsp/channel_validation.json"
   )
 
   for dir in "${directories[@]}"; do
