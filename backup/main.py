@@ -2,12 +2,13 @@
 """
 main.py
 
-Memisahkan tiga mode perekaman:
+Memisahkan empat mode perekaman (yang baru, "motion_obj_dual" untuk dual-stream):
 1) FULL => merekam terus (rolling potongan CHUNK_DURATION).
 2) MOTION => merekam hanya saat motion, rolling tiap MAX_RECORD.
 3) MOTION_OBJ => merekam hanya saat motion + (object detection, mis. "person").
+4) MOTION_OBJ_DUAL => analisis sub-stream, rekam main-stream.
 
-Pemilihan mode via ENV BACKUP_MODE={full|motion|motion_obj}.
+Pemilihan mode via ENV BACKUP_MODE={full|motion|motion_obj|motion_obj_dual}.
 Tidak ada perpindahan otomatis di runtime; user menentukan mode sekali.
 
 Freeze/Black check tetap sebelum pipeline. 
@@ -32,9 +33,9 @@ from utils import setup_logger, decode_credentials
 from motion_detection import MotionDetector
 from backup_manager import BackupSession
 
-# (A) Otomatis load object_detection jika BACKUP_MODE=motion_obj
+# (A) Otomatis load object_detection jika BACKUP_MODE=motion_obj / motion_obj_dual
 BACKUP_MODE = os.getenv("BACKUP_MODE","full").lower()
-NEED_OBJECT_DET = (BACKUP_MODE=="motion_obj")
+NEED_OBJECT_DET = (BACKUP_MODE in ["motion_obj", "motion_obj_dual"])
 
 # Freeze/Black flags
 ENABLE_FREEZE_CHECK = os.getenv("ENABLE_FREEZE_CHECK","true").lower()=="true"
@@ -69,7 +70,7 @@ MOTION_EVENTS_JSON  = "/mnt/Data/Syslog/rtsp/motion_events.json"
 FREEZE_BLACK_INTERVAL = int(os.getenv("FREEZE_BLACK_INTERVAL","0"))  # 0 => cek setiap loop
 LAST_CHECK_TIMES = {}  # { channel_number : last_check_timestamp }
 
-# Jika butuh object detection (mode=motion_obj), load modul
+# Jika butuh object detection (mode=motion_obj/_dual), load modul
 ObjectDetector = None
 if NEED_OBJECT_DET:
     from object_detection import ObjectDetector
@@ -291,7 +292,7 @@ class MotionSession:
         ]
         self.proc=subprocess.Popen(cmd)
         self.active=True
-        # Gunakan log_prefix untuk membedakan motion vs object detection
+        # Gunakan log_prefix untuk bedakan motion vs object detection
         logger.info(f"{log_prefix} ch={self.channel} => start => {out_file}")
 
     def _make_filename(self):
@@ -323,11 +324,6 @@ class MotionSession:
 # 7. Pipeline per Channel
 ###############################################################################
 def thread_for_channel(ch, config):
-    """
-    Mengerjakan satu channel:
-      - Jadwal freeze/black check (jika FREEZE_BLACK_INTERVAL>0)
-      - Lolos freeze/black => panggil pipeline sesuai BACKUP_MODE
-    """
     cpu_usage = config["cpu_usage"]
     do_black  = ENABLE_BLACKOUT
     do_freeze = ENABLE_FREEZE_CHECK
@@ -347,15 +343,12 @@ def thread_for_channel(ch, config):
 
     # Jika FREEZE_BLACK_INTERVAL=0 => cek setiap saat (default).
     if FREEZE_BLACK_INTERVAL>0 and interval < FREEZE_BLACK_INTERVAL:
-        # skip freeze/black check
         ok_black   = True
         ok_freeze  = True
         logger.info(f"[Main] ch={ch} => skip freeze/black check (recently checked)")
     else:
-        # catat waktu check
         LAST_CHECK_TIMES[ch] = now
-
-        # black
+        # black-check
         if cpu_usage>90:
             do_black=False
             logger.info(f"[Main] ch={ch} => CPU>90 => skip blackdetect")
@@ -371,7 +364,7 @@ def thread_for_channel(ch, config):
             })
             return
 
-        # freeze
+        # freeze-check
         if do_freeze:
             ok_freeze=check_freeze_frames(rtsp_url,True,cpu_usage,
                                           freeze_sens=FREEZE_SENSITIVITY,
@@ -406,6 +399,8 @@ def thread_for_channel(ch, config):
         pipeline_motion(ch, config, rtsp_url, object_detection=False)
     elif from_main_mode=="motion_obj":
         pipeline_motion(ch, config, rtsp_url, object_detection=True)
+    elif from_main_mode=="motion_obj_dual":
+        pipeline_motion_dual(ch, config, rtsp_url)
     else:
         logger.warning(f"[Main] BACKUP_MODE={from_main_mode} unknown => fallback full")
         pipeline_full(ch, config, rtsp_url)
@@ -427,7 +422,7 @@ def pipeline_full(ch, config, rtsp_url):
         time.sleep(1)
 
 ###############################################################################
-# 9. Pipeline Motion (Optimized)
+# 9. Pipeline Motion (Original)
 ###############################################################################
 def pipeline_motion(ch, config, rtsp_url, object_detection=False):
     """
@@ -561,6 +556,116 @@ def pipeline_motion(ch, config, rtsp_url, object_detection=False):
                     is_recording=False
 
         time.sleep(SLEEP_INTERVAL)
+
+###############################################################################
+# 9B. Pipeline Motion Dual (Tambahan Hard-coded Sub-stream)
+###############################################################################
+def pipeline_motion_dual(ch, config, rtsp_url):
+    """
+    Memakai sub-stream (subtype=1) untuk analisis motion/object,
+    tapi merekam main-stream (subtype=0).
+    Hard-coded approach agar tidak mengganggu variabel existing.
+    """
+    user = config["rtsp_user"]
+    pwd  = config["rtsp_password"]
+    ip   = config["rtsp_ip"]
+
+    # main-stream => perekaman (sesuai rtsp_url existing => subtype=0)
+    # Anda bisa langsung pakai rtsp_url, karena pipeline_flow sudah set subtype=0
+    # atau buat 'url_main=rtsp_url' agar jelas
+    url_main = rtsp_url
+
+    # sub-stream => hard-coded => subtype=1
+    url_sub = f"rtsp://{user}:{pwd}@{ip}:554/cam/realmonitor?channel={ch}&subtype=1"
+    logger.info(f"[DualStream] ch={ch} => sub-stream => {url_sub}")
+
+    # 1) Buka sub-stream (analisis)
+    cap_sub = cv2.VideoCapture(url_sub)
+    if not cap_sub.isOpened():
+        err=f"ch={ch} => fail open sub-stream => {url_sub}"
+        logger.error(f"[DualStream] {err}")
+        return
+
+    # 2) MotionDetector
+    from motion_detection import MotionDetector
+    motion_det=MotionDetector(area_threshold=3000)
+
+    # 3) ObjectDetector? (karena kita motion_obj_dual => tentu butuh)
+    from object_detection import ObjectDetector
+    obj_det = ObjectDetector(
+        "/app/backup/models/mobilenet_ssd/MobileNetSSD_deploy.prototxt",
+        "/app/backup/models/mobilenet_ssd/MobileNetSSD_deploy.caffemodel",
+        conf_person=0.6, conf_car=0.4, conf_motor=0.4
+    )
+
+    # 4) session => merekam main-stream
+    m_sess = MotionSession(url_main, ch, config["stream_title"])
+    last_motion=0
+    is_recording=False
+
+    # Ambil env
+    FRAME_SKIP      = int(os.getenv("FRAME_SKIP", "5"))
+    DOWNSCALE_RATIO = float(os.getenv("DOWNSCALE_RATIO", "0.5"))
+    SLEEP_INTERVAL  = float(os.getenv("MOTION_SLEEP", "0.2"))
+
+    global MOTION_TIMEOUT, POST_MOTION_DELAY, MAX_RECORD
+
+    frame_count=0
+
+    while True:
+        ret, frame=cap_sub.read()
+        if not ret or frame is None:
+            time.sleep(1)
+            continue
+
+        # skip frames
+        frame_count +=1
+        if frame_count % FRAME_SKIP != 0:
+            time.sleep(SLEEP_INTERVAL)
+            continue
+
+        # downscale
+        if DOWNSCALE_RATIO<1.0:
+            try:
+                new_w = int(frame.shape[1]*DOWNSCALE_RATIO)
+                new_h = int(frame.shape[0]*DOWNSCALE_RATIO)
+                frame_small = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
+            except:
+                frame_small=frame
+        else:
+            frame_small=frame
+
+        # motion detect
+        bboxes = motion_det.detect(frame_small)
+        if bboxes:
+            # object detect => cari "person"
+            results,_= obj_det.detect(frame_small)
+            person_found= any(r[0]=="person" for r in results)
+            if not person_found:
+                time.sleep(SLEEP_INTERVAL)
+                continue
+
+            # => real motion + person => record main-stream
+            last_motion=time.time()
+            if not is_recording:
+                prefix="[ObjectDetection-Dual]"
+                m_sess.start_record(log_prefix=prefix)
+                is_recording=True
+            else:
+                # rolling
+                if not m_sess.still_ok(MAX_RECORD):
+                    m_sess.stop_record()
+                    m_sess.start_record(log_prefix="[ObjectDetection-Dual]")
+        else:
+            # no bounding => cek idle
+            if is_recording:
+                idle_sec=time.time()-last_motion
+                if idle_sec> (MOTION_TIMEOUT + POST_MOTION_DELAY):
+                    m_sess.stop_record()
+                    is_recording=False
+
+        time.sleep(SLEEP_INTERVAL)
+
 
 ###############################################################################
 # 10. Loop Utama
