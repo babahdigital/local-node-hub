@@ -44,7 +44,12 @@ LOOP_ENABLE         = os.getenv("LOOP_ENABLE","true").lower()=="true"
 # Rolling config
 CHUNK_DURATION = int(os.getenv("CHUNK_DURATION","300"))  # potongan full-backup
 MAX_RECORD     = int(os.getenv("MAX_RECORD","300"))      # potongan motion-backup
-MOTION_TIMEOUT = int(os.getenv("MOTION_TIMEOUT","5"))    # idle motion => stop
+
+# MOTION_TIMEOUT => jeda (detik) tanpa motion sebelum stop perekaman
+MOTION_TIMEOUT = int(os.getenv("MOTION_TIMEOUT","5"))
+# POST_MOTION_DELAY => tambahan jeda setelah motion hilang (detik)
+POST_MOTION_DELAY = int(os.getenv("POST_MOTION_DELAY","10"))
+
 CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL","300"))
 
 BLACK_DETECT_THRESHOLD = float(os.getenv("BLACK_DETECT_THRESHOLD","0.98"))
@@ -272,7 +277,7 @@ class MotionSession:
         self.file_path    = None
         self.active       = False
 
-    def start_record(self):
+    def start_record(self, log_prefix="[MotionSession]"):
         import time,os
         self.start_time=time.time()
         out_file=self._make_filename()
@@ -286,7 +291,8 @@ class MotionSession:
         ]
         self.proc=subprocess.Popen(cmd)
         self.active=True
-        logger.info(f"[MotionSession] ch={self.channel} => start => {out_file}")
+        # Gunakan log_prefix untuk membedakan motion vs object detection
+        logger.info(f"{log_prefix} ch={self.channel} => start => {out_file}")
 
     def _make_filename(self):
         import time,os
@@ -430,8 +436,14 @@ def pipeline_motion(ch, config, rtsp_url, object_detection=False):
     
     Optimasi CPU:
       - Skipping frame (FRAME_SKIP)
-      - Resize frame sebelum motion detection
+      - Resize frame sebelum motion/object detection
       - Perbesar interval sleep
+      - Tambahkan post-motion delay agar rekaman tidak langsung berhenti
+        saat motion hilang. (MOTION_TIMEOUT + POST_MOTION_DELAY)
+
+    + Perbedaan Log:
+      - [MotionSession] => purely motion
+      - [ObjectDetection] => motion + person
     """
     cap=cv2.VideoCapture(rtsp_url)
     if not cap.isOpened():
@@ -442,7 +454,7 @@ def pipeline_motion(ch, config, rtsp_url, object_detection=False):
         })
         return
 
-    # area_threshold bisa diperbesar agar mengurangi false alarm
+    # area_threshold lebih besar => lebih sedikit gerakan kecil
     from motion_detection import MotionDetector
     motion_det=MotionDetector(area_threshold=3000)
 
@@ -460,10 +472,12 @@ def pipeline_motion(ch, config, rtsp_url, object_detection=False):
     is_recording=False
 
     # --- PARAM OPTIMASI CPU ---
-    FRAME_SKIP     = int(os.getenv("FRAME_SKIP", "5"))  # default skip 5 => analisis 1/5 frame
-    DOWNSCALE_RATIO= float(os.getenv("DOWNSCALE_RATIO", "0.5")) # resize setengah
-    SLEEP_INTERVAL = float(os.getenv("MOTION_SLEEP", "0.2"))    # jeda per loop, default 0.2 (5 fps)
+    FRAME_SKIP      = int(os.getenv("FRAME_SKIP", "5"))  # default skip 5 => analisis 1/5 frame
+    DOWNSCALE_RATIO = float(os.getenv("DOWNSCALE_RATIO", "0.5")) # resize setengah
+    SLEEP_INTERVAL  = float(os.getenv("MOTION_SLEEP", "0.2"))    # jeda per loop
     # --------------------------
+
+    global MOTION_TIMEOUT, POST_MOTION_DELAY
 
     frame_count=0
 
@@ -473,13 +487,13 @@ def pipeline_motion(ch, config, rtsp_url, object_detection=False):
             time.sleep(1)
             continue
 
-        # Skip frames => ex: hanya proses tiap FRAME_SKIP
+        # Skip frames => misal hanya proses 1 dari 5 frame (FRAME_SKIP=5)
         frame_count +=1
         if frame_count % FRAME_SKIP != 0:
             time.sleep(SLEEP_INTERVAL)
             continue
 
-        # Resize frame => turunkan resolusi sebelum motion/object detection
+        # Resize frame => turunkan resolusi untuk deteksi agar lebih cepat
         if DOWNSCALE_RATIO<1.0:
             try:
                 new_w = int(frame.shape[1] * DOWNSCALE_RATIO)
@@ -506,31 +520,43 @@ def pipeline_motion(ch, config, rtsp_url, object_detection=False):
             except Exception as e:
                 logger.error(f"[MotionPipeline] Gagal tulis {MOTION_EVENTS_JSON} => {e}")
 
-            # Jika object_detection=True, filter object misal "person"
+            # Apakah pakai object detection (mode motion_obj)?
+            is_obj_trigger=False
             if obj_det:
                 results,_= obj_det.detect(frame_small)
-                # misal cek "person"
                 person_found= any(r[0]=="person" for r in results)
                 if not person_found:
-                    # tidak ada person => skip
+                    # object tak ditemukan => skip perekaman
                     time.sleep(SLEEP_INTERVAL)
                     continue
+                else:
+                    is_obj_trigger=True
 
             # => real motion => record
             last_motion=time.time()
             if not is_recording:
-                m_sess.start_record()
+                # Bedakan log prefix
+                if is_obj_trigger:
+                    prefix="[ObjectDetection]"
+                else:
+                    prefix="[MotionSession]"
+                m_sess.start_record(log_prefix=prefix)
                 is_recording=True
             else:
                 # rolling motion
                 if not m_sess.still_ok(MAX_RECORD):
                     m_sess.stop_record()
-                    m_sess.start_record()
+                    if is_obj_trigger:
+                        prefix="[ObjectDetection]"
+                    else:
+                        prefix="[MotionSession]"
+                    m_sess.start_record(log_prefix=prefix)
         else:
-            # no bounding => check idle
+            # no bounding => check idle => stop perekaman kalau idle lama
             if is_recording:
                 idle_sec=time.time()-last_motion
-                if idle_sec> MOTION_TIMEOUT:
+                # post-buffer => total = MOTION_TIMEOUT + POST_MOTION_DELAY
+                if idle_sec > (MOTION_TIMEOUT + POST_MOTION_DELAY):
                     m_sess.stop_record()
                     is_recording=False
 
