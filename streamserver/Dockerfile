@@ -14,6 +14,9 @@ WORKDIR /app/streamserver
 # Salin semua file dari folder host "streamserver" ke container "/app/streamserver"
 COPY ./streamserver /app/streamserver
 COPY ./config/credentials.sh /app/config/credentials.sh
+COPY ./streamserver/requirements.txt /app/streamserver
+
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Pastikan file credentials.sh bersifat executable (jika ingin di-run di container)
 RUN chmod +x /app/config/credentials.sh || true
