@@ -106,11 +106,12 @@ services:
       dockerfile: ./backup/Dockerfile
     image: backup
     container_name: backup
+    restart: always
     depends_on:
       - monitor
     volumes:
       # Data Monitoring
-      - /mnt/Data/Syslog/resource:/mnt/Data/Syslog/resource
+      - /mnt/Data/Syslog:/mnt/Data/Syslog
       # Folder scripts (Python, dsb.)
       - ./scripts/utils.py:/app/scripts/utils.py
       # File konfigurasi log messages
@@ -120,20 +121,8 @@ services:
       # Sistem Timezone
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
-    environment:
-      # Konfigurasi dari json
-      - RTSP_SUBTYPE=0
-      - TEST_CHANNEL=off
-      - CHANNEL_COUNT=16
-      - ENABLE_JSON_LOOK=false
-      # Konfigurasi Independent
-      - MAX_RECORD=600
-      - MOTION_TIMEOUT=10
-      - ENABLE_FREEZE_CHECK=true
-      - ENABLE_BLACKOUT=true
-      - ENABLE_RTSP_VALIDATION=true
-      - ENABLE_OBJECT_DETECTION=true
-      - LOOP_ENABLE=true
+    env_file:
+      - ./backup/.env
     networks:
       babahdigital:
 
