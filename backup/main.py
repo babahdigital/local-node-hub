@@ -36,6 +36,23 @@ from motion_detection import MotionDetector
 from backup_manager import BackupSession
 
 ############################################################
+# Fungsi masking user/password
+############################################################
+def mask_user_env(user_env: str) -> str:
+    """Mask user_env jadi '****' jika ada."""
+    if user_env:
+        return "****"
+    return user_env
+
+def mask_rtsp_credentials(rtsp_url: str) -> str:
+    """
+    Mengganti 'rtsp://user:pass@' menjadi 'rtsp://****:****@'.
+    Regex mencari (//)([^:]+):([^@]+)(@) lalu mengganti user & pass dengan '****'.
+    """
+    return re.sub(r"(//)([^:]+):([^@]+)(@)", r"\1****:****\4", rtsp_url)
+
+
+############################################################
 # Tambahkan Filter untuk (1) Validation, (2) Error, (3) Event
 ############################################################
 class FilterValidation(logging.Filter):
@@ -75,6 +92,7 @@ class FilterEvent(logging.Filter):
         if ("[FREEZE]" in msg) or ("[BLACK]" in msg) or ("[VALIDATION]" in msg) or ("RTSP user/pass =>" in msg):
             return False
         return True
+
 
 ####################
 # 0. Logger Global #
@@ -236,9 +254,11 @@ def load_resource_config():
     # decode credentials
     try:
         user_env, pass_env = decode_credentials()
+        # Mask user_env di log
+        masked_user = mask_user_env(user_env)
+        logger.info("[VALIDATION] RTSP user/pass => %s" % masked_user)
         config["rtsp_user"]     = user_env
         config["rtsp_password"] = pass_env
-        logger.info("[VALIDATION] RTSP user/pass => %s" % user_env)
     except:
         config["rtsp_user"]     = user_json
         config["rtsp_password"] = pass_json
@@ -429,8 +449,12 @@ def thread_for_channel(ch, config):
     pwd     = config["rtsp_password"]
     ip      = config["rtsp_ip"]
     subtype = config["rtsp_subtype"]
-    rtsp_url= f"rtsp://{user}:{pwd}@{ip}:554/cam/realmonitor?channel={ch}&subtype={subtype}"
-    logger.info("[EVENT] [Main] ch=%s => %s" % (ch, rtsp_url))
+
+    # Mask user:pass di URL
+    raw_url = f"rtsp://{user}:{pwd}@{ip}:554/cam/realmonitor?channel={ch}&subtype={subtype}"
+    masked_url = mask_rtsp_credentials(raw_url)
+
+    logger.info("[EVENT] [Main] ch=%s => %s" % (ch, masked_url))
 
     # (A) Freeze/Black check
     global LAST_CHECK_TIMES
@@ -447,20 +471,20 @@ def thread_for_channel(ch, config):
         if cpu_usage>90:
             do_black = False
             logger.info("[VALIDATION] ch=%s => CPU>90 => skip blackdetect" % ch)
-        ok_black = check_black_frames(rtsp_url, do_black, threshold=BLACK_DETECT_THRESHOLD)
+        ok_black = check_black_frames(raw_url, do_black, threshold=BLACK_DETECT_THRESHOLD)
         if not ok_black:
             err = "ch=%s => black => skip pipeline" % ch
             logger.warning("[VALIDATION] %s" % err)
             update_validation_status(ch,{
                 "freeze_ok":None,
                 "black_ok":False,
-                "livestream_link":rtsp_url,
+                "livestream_link":raw_url,
                 "error_msg":err
             })
             return
 
         if do_freeze:
-            ok_freeze = check_freeze_frames(rtsp_url, True, cpu_usage,
+            ok_freeze = check_freeze_frames(raw_url, True, cpu_usage,
                                             freeze_sens=FREEZE_SENSITIVITY,
                                             times=FREEZE_RECHECK_TIMES,
                                             delay=FREEZE_RECHECK_DELAY)
@@ -470,7 +494,7 @@ def thread_for_channel(ch, config):
                 update_validation_status(ch,{
                     "freeze_ok":False,
                     "black_ok":ok_black,
-                    "livestream_link":rtsp_url,
+                    "livestream_link":raw_url,
                     "error_msg":err
                 })
                 return
@@ -480,23 +504,23 @@ def thread_for_channel(ch, config):
     update_validation_status(ch,{
         "freeze_ok":ok_freeze,
         "black_ok":ok_black,
-        "livestream_link":rtsp_url,
+        "livestream_link":raw_url,
         "error_msg":None
     })
 
     # (B) Pilih pipeline
     from_main_mode = BACKUP_MODE
     if from_main_mode == "full":
-        pipeline_full(ch, config, rtsp_url)
+        pipeline_full(ch, config, raw_url)
     elif from_main_mode == "motion":
-        pipeline_motion(ch, config, rtsp_url, object_detection=False)
+        pipeline_motion(ch, config, raw_url, object_detection=False)
     elif from_main_mode == "motion_obj":
-        pipeline_motion(ch, config, rtsp_url, object_detection=True)
+        pipeline_motion(ch, config, raw_url, object_detection=True)
     elif from_main_mode == "motion_obj_dual":
-        pipeline_motion_dual(ch, config, rtsp_url)
+        pipeline_motion_dual(ch, config, raw_url)
     else:
         logger.warning("[VALIDATION] BACKUP_MODE=%s unknown => fallback full" % from_main_mode)
-        pipeline_full(ch, config, rtsp_url)
+        pipeline_full(ch, config, raw_url)
 
 
 ######################################################
@@ -627,7 +651,8 @@ def pipeline_motion_dual(ch, config, rtsp_url):
 
     url_main = rtsp_url
     url_sub  = f"rtsp://{user}:{pwd}@{ip}:554/cam/realmonitor?channel={ch}&subtype=1"
-    logger.info("[EVENT] [DualStream] ch=%s => sub-stream => %s" % (ch, url_sub))
+    masked_sub = mask_rtsp_credentials(url_sub)
+    logger.info("[EVENT] [DualStream] ch=%s => sub-stream => %s" % (ch, masked_sub))
 
     cap_sub = cv2.VideoCapture(url_sub)
     if not cap_sub.isOpened():
