@@ -107,9 +107,6 @@ clean_logs() {
     "network/network.log"
     "resource/resource_monitor.log"
     "resource/resource_monitor_error.log"
-    "rtsp/channel_validation.json"
-    "rtsp/motion_events.json"
-    "rtsp/channel_validation.json"
   )
 
   for dir in "${directories[@]}"; do

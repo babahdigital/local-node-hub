@@ -1,26 +1,27 @@
 import cv2
 import numpy as np
 import os
+import logging
 
-# (A) Global Net agar model hanya sekali diload per runtime
-GLOBAL_NET = None  
+logger = logging.getLogger("Main-Combined")  # logger terpusat
+
+GLOBAL_NET = None
 
 def load_global_net(prototxt_path, model_path):
     """
     Meload MobileNet SSD sekali saja di GLOBAL_NET.
     Jika sudah pernah load, langsung pakai GLOBAL_NET.
-    
-    :param prototxt_path: path file .prototxt
-    :param model_path   : path file .caffemodel
-    :return: net (cv2.dnn_Net) yang sudah diload
     """
     global GLOBAL_NET
     if GLOBAL_NET is None:
-        print("[INFO] loading MobileNet SSD model (GLOBAL) ...")
-        net = cv2.dnn.readNetFromCaffe(prototxt_path, model_path)
-        GLOBAL_NET = net
+        try:
+            logger.info("[INFO] loading MobileNet SSD model (GLOBAL) ...")
+            net = cv2.dnn.readNetFromCaffe(prototxt_path, model_path)
+            GLOBAL_NET = net
+        except Exception as e:
+            logger.error(f"[ObjectDetector] load_global_net error => {e}")
+            GLOBAL_NET = None
     return GLOBAL_NET
-
 
 class ObjectDetector:
     """
@@ -30,10 +31,8 @@ class ObjectDetector:
     
     - Dapat dioverride via constructor param, atau
       jika None => baca ENV (CONF_PERSON, CONF_CAR, CONF_MOTOR).
-    
-    Fitur:
-    1) Opsional "global" loading (use_global=True) agar model tidak diinit berulang.
-    2) Clamping bounding box agar tidak memicu overflow (invalid cast).
+
+    - Clamping bounding box agar tidak invalid.
     """
 
     def __init__(self,
@@ -43,20 +42,15 @@ class ObjectDetector:
                  conf_car=None,
                  conf_motor=None,
                  use_global=True):
-        """
-        :param prototxt_path : Path .prototxt
-        :param model_path    : Path .caffemodel
-        :param conf_person   : Confidence threshold for "person"
-        :param conf_car      : Confidence threshold for "car"
-        :param conf_motor    : Confidence threshold for "motorbike"
-        :param use_global    : True => gunakan GLOBAL_NET agar model hanya diload sekali
-        """
-        # (B) Pilih pakai global net atau local
         if use_global:
             self.net = load_global_net(prototxt_path, model_path)
         else:
-            print("[INFO] loading MobileNet SSD model (LOCAL) ...")
-            self.net = cv2.dnn.readNetFromCaffe(prototxt_path, model_path)
+            logger.info("[INFO] loading MobileNet SSD model (LOCAL) ...")
+            try:
+                self.net = cv2.dnn.readNetFromCaffe(prototxt_path, model_path)
+            except Exception as e:
+                logger.error(f"[ObjectDetector] local load error => {e}")
+                self.net = None
 
         # (C) Baca ENV jika parameter None
         if conf_person is None:
@@ -70,7 +64,7 @@ class ObjectDetector:
         self.conf_car    = conf_car
         self.conf_motor  = conf_motor
 
-        # (D) Daftar label MobileNet SSD
+        # Daftar label MobileNet SSD
         self.CLASSES = [
             "background", "aeroplane", "bicycle", "bird", "boat",
             "bottle", "bus", "car", "cat", "chair", "cow", "diningtable",
@@ -80,38 +74,35 @@ class ObjectDetector:
 
     def detect(self, frame):
         """
-        Deteksi object "person", "car", "motorbike" di frame.
-        
-        :param frame: gambar (numpy array) BGR
-        :return: (results, None)
-                 results = list of (label, conf, x, y, w, h)
+        Return (results, None)
+        results => list of (label, conf, x, y, w, h)
         """
+        if self.net is None:
+            logger.error("[ObjectDetector] net is None => cannot detect")
+            return ([], None)
+
         (h, w) = frame.shape[:2]
 
-        # (E) Buat blob 300x300 untuk MobileNet SSD
-        blob = cv2.dnn.blobFromImage(
-            frame, 
-            scalefactor=0.007843,    # skala normalisasi
-            size=(300, 300),         # input size model
-            mean=127.5
-        )
-        self.net.setInput(blob)
-        detections = self.net.forward()
+        try:
+            blob = cv2.dnn.blobFromImage(frame, 0.007843, (300, 300), 127.5)
+            self.net.setInput(blob)
+            detections = self.net.forward()
+        except Exception as e:
+            logger.error(f"[ObjectDetector] detect forward error => {e}")
+            return ([], None)
 
         results = []
         for i in range(detections.shape[2]):
             raw_conf = detections[0, 0, i, 2]
-            # kadang ada bug conf > 1xx => normalisasi
             if raw_conf > 100:
                 raw_conf /= 100.0
 
             class_id = int(detections[0, 0, i, 1])
-            # validasi class_id
             if not (0 <= class_id < len(self.CLASSES)):
                 continue
 
             label = self.CLASSES[class_id]
-            # (F) Check confidence threshold per label
+
             pass_check = False
             if label == "person" and raw_conf >= self.conf_person:
                 pass_check = True
@@ -123,38 +114,22 @@ class ObjectDetector:
             if not pass_check:
                 continue
 
-            # (G) Bikin bounding box
+            # bounding box => clamp
             box = detections[0, 0, i, 3:7] * [w, h, w, h]
-            
-            # (H) Tambahkan clamping untuk mencegah overflow / invalid
-            #     Pastikan 0 <= box <= max(w, h)
-            #     Supaya tidak "invalid value encountered in cast"
             max_dim = float(max(w, h))
             box = np.clip(box, 0, max_dim)
 
             (startX, startY, endX, endY) = box.astype("int")
-
-            # Pastikan bounding box tidak melebihi dimensi frame
-            # (bisa saja endX > w-1, dsb.)
-            endX = min(endX, w - 1)
-            endY = min(endY, h - 1)
+            endX   = min(endX, w - 1)
+            endY   = min(endY, h - 1)
             startX = max(0, startX)
             startY = max(0, startY)
-
             bbox_w = endX - startX
             bbox_h = endY - startY
 
             if bbox_w < 1 or bbox_h < 1:
-                # skip jika box invalid setelah clamping
                 continue
 
-            results.append((
-                label, 
-                float(raw_conf), 
-                startX, 
-                startY, 
-                bbox_w, 
-                bbox_h
-            ))
+            results.append((label, float(raw_conf), startX, startY, bbox_w, bbox_h))
 
         return (results, None)
