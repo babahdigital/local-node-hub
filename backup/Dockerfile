@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxrender-dev \
     ffmpeg \
     jq \
+    sudo \
     iputils-ping \
     && rm -rf /var/lib/apt/lists/*
 
@@ -31,6 +32,8 @@ COPY ./backup /app/backup
 
 # 6. Credentials:
 RUN chmod +x /app/config/credentials.sh
+RUN chmod +x /app/backup/entrypoint.sh
 
 # 7. Jalankan main.py secara default
+#ENTRYPOINT ["/app/backup/entrypoint.sh"]
 CMD ["/bin/bash", "-c", "source /app/config/credentials.sh && exec python main.py"]
