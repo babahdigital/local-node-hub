@@ -93,6 +93,7 @@ clean_logs() {
     "network"
     "resource"
     "rtsp/cctv"
+    "rtsp/backup"
   )
 
   local files=(

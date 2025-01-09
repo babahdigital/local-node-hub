@@ -34,32 +34,85 @@ from utils import setup_logger, decode_credentials
 from motion_detection import MotionDetector
 from backup_manager import BackupSession
 
+############################################################
+# Tambahkan Filter untuk (1) Validation, (2) Error, (3) Event
+############################################################
+class FilterValidation(logging.Filter):
+    """
+    Menampung log 'validasi', freeze, black, user/pass dsb.
+    Contoh substring:
+      [FREEZE], [BLACK], [VALIDATION], "RTSP user/pass =>"
+    """
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        if ("[FREEZE]" in msg) or ("[BLACK]" in msg) or ("[VALIDATION]" in msg) or ("RTSP user/pass =>" in msg):
+            return True
+        return False
+
+
+class FilterError(logging.Filter):
+    """
+    Hanya mengambil level ERROR ke atas.
+    """
+    def filter(self, record: logging.LogRecord) -> bool:
+        return (record.levelno >= logging.ERROR)
+
+
+class FilterEvent(logging.Filter):
+    """
+    Menampung event lain (start/stop recording, motion/no motion, dsb.).
+    Syarat:
+     - Bukan ERROR
+     - Bukan mengandung [FREEZE], [BLACK], [VALIDATION], "RTSP user/pass =>"
+    """
+    def filter(self, record: logging.LogRecord) -> bool:
+        # 1) Bukan ERROR
+        if record.levelno >= logging.ERROR:
+            return False
+        # 2) Bukan validasi
+        msg = record.getMessage()
+        if ("[FREEZE]" in msg) or ("[BLACK]" in msg) or ("[VALIDATION]" in msg) or ("RTSP user/pass =>" in msg):
+            return False
+        return True
+
 ####################
 # 0. Logger Global #
 ####################
-logger = logging.getLogger("Main-Combined")
+logger = logging.getLogger("Backup-Manager")
 logger.setLevel(logging.DEBUG)
 
-# Handler INFO => validation.log
-VALIDATION_LOG_PATH = "/mnt/Data/Syslog/rtsp/cctv/validation.log"
-info_handler = logging.FileHandler(VALIDATION_LOG_PATH)
-info_handler.setLevel(logging.INFO)
-fmt_info = logging.Formatter("%(asctime)s [%(levelname)s] [%(name)s] %(message)s", "%d-%m-%Y %H:%M:%S")
-info_handler.setFormatter(fmt_info)
-logger.addHandler(info_handler)
+# 1) Handler Validation => validation.log
+VALIDATION_LOG_PATH = "/mnt/Data/Syslog/rtsp/backup/validation.log"
+handler_validation = logging.FileHandler(VALIDATION_LOG_PATH)
+handler_validation.setLevel(logging.DEBUG)
+handler_validation.addFilter(FilterValidation())
+fmt_val = logging.Formatter("%(asctime)s [%(levelname)s] [%(name)s] %(message)s","%d-%m-%Y %H:%M:%S")
+handler_validation.setFormatter(fmt_val)
+logger.addHandler(handler_validation)
 
-# Handler ERROR => error_only.log
-ERROR_LOG_PATH = "/mnt/Data/Syslog/rtsp/cctv/error_only.log"
-error_handler = logging.FileHandler(ERROR_LOG_PATH)
-error_handler.setLevel(logging.ERROR)
-fmt_error = logging.Formatter("%(asctime)s [%(levelname)s] [%(name)s] %(message)s", "%d-%m-%Y %H:%M:%S")
-error_handler.setFormatter(fmt_error)
-logger.addHandler(error_handler)
+# 2) Handler Error => error_only.log
+ERROR_LOG_PATH = "/mnt/Data/Syslog/rtsp/backup/error_only.log"
+handler_error = logging.FileHandler(ERROR_LOG_PATH)
+handler_error.setLevel(logging.DEBUG)
+handler_error.addFilter(FilterError())
+fmt_err = logging.Formatter("%(asctime)s [%(levelname)s] [%(name)s] %(message)s","%d-%m-%Y %H:%M:%S")
+handler_error.setFormatter(fmt_err)
+logger.addHandler(handler_error)
 
-# (Opsional) Console:
+# 3) Handler Event => event.log
+EVENT_LOG_PATH = "/mnt/Data/Syslog/rtsp/backup/event.log"
+handler_event = logging.FileHandler(EVENT_LOG_PATH)
+handler_event.setLevel(logging.DEBUG)
+handler_event.addFilter(FilterEvent())
+fmt_evt = logging.Formatter("%(asctime)s [%(levelname)s] [%(name)s] %(message)s","%d-%m-%Y %H:%M:%S")
+handler_event.setFormatter(fmt_evt)
+logger.addHandler(handler_event)
+
+# (Opsional) console debug
 # ch_console = logging.StreamHandler(sys.stdout)
 # ch_console.setLevel(logging.DEBUG)
 # logger.addHandler(ch_console)
+
 
 ######################################################
 # (A) BACA ENV / KONFIG (BACKUP_MODE, ETC.) SEPERTI BIASA
@@ -84,8 +137,8 @@ FREEZE_SENSITIVITY     = float(os.getenv("FREEZE_SENSITIVITY","6.0"))
 FREEZE_RECHECK_TIMES   = int(os.getenv("FREEZE_RECHECK_TIMES","5"))
 FREEZE_RECHECK_DELAY   = float(os.getenv("FREEZE_RECHECK_DELAY","3.0"))
 
-LOG_PATH = "/mnt/Data/Syslog/rtsp/cctv/validation.log"  # (Tidak lagi dipakai, karena kita manual define handler)
-# logger   = setup_logger("Main-Combined", LOG_PATH)  # <== kita ganti dengan dual handler di atas
+LOG_PATH = "/mnt/Data/Syslog/rtsp/cctv/validation.log"  # (Tidak lagi dipakai)
+# (Kita sudah pakai 3 handler di atas)
 
 MONITOR_STATE_FILE  = "/mnt/Data/Syslog/resource/resource_monitor_state.json"
 VALIDATION_JSON     = "/mnt/Data/Syslog/rtsp/channel_validation.json"
@@ -131,7 +184,7 @@ def update_validation_status(channel, info:dict):
 ######################################################
 def ensure_json_initialized():
     if not os.path.exists(MONITOR_STATE_FILE):
-        logger.info(f"[Init] File {MONITOR_STATE_FILE} belum ada, buat minimal.")
+        logger.info("[VALIDATION] File %s belum ada, buat minimal." % MONITOR_STATE_FILE)
         scfg = {
             "stream_title": os.getenv("STREAM_TITLE","Untitled"),
             "rtsp_ip": os.getenv("RTSP_IP","127.0.0.1")
@@ -147,7 +200,7 @@ def ensure_json_initialized():
         with open(MONITOR_STATE_FILE,"w") as f:
             json.dump(init_data,f,indent=2)
     else:
-        logger.info(f"[Init] File {MONITOR_STATE_FILE} sudah ada, skip init.")
+        logger.info("[VALIDATION] File %s sudah ada, skip init." % MONITOR_STATE_FILE)
 
 ######################################################
 # 3. Load Resource+Config
@@ -184,7 +237,7 @@ def load_resource_config():
         user_env, pass_env = decode_credentials()
         config["rtsp_user"]     = user_env
         config["rtsp_password"] = pass_env
-        logger.info(f"[Main] RTSP user/pass => {user_env}")
+        logger.info("[VALIDATION] RTSP user/pass => %s" % user_env)
     except:
         config["rtsp_user"]     = user_json
         config["rtsp_password"] = pass_json
@@ -206,16 +259,18 @@ def check_black_frames(rtsp_url, do_blackout, duration=0.1, threshold=0.98):
     ]
     try:
         r = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)
+        if b"black_start" in r.stderr:
+            logger.info("[BLACK] blackdetect => black_start triggered")
         return (b"black_start" not in r.stderr)
     except Exception as e:
-        logger.error(f"[Freeze/Black] blackdetect error => {e}")
+        logger.error("[FREEZE/BLACK] blackdetect error => %s" % e)
         return False
 
 def check_freeze_frames(rtsp_url, do_freeze, cpu_usage, freeze_sens=6.0, times=5, delay=3.0):
     if not do_freeze:
         return True
     if cpu_usage > 85:
-        logger.info("[Freeze] CPU>85 => skip freeze-check.")
+        logger.info("[FREEZE] CPU>85 => skip freeze-check.")
         return True
     fail = 0
     for i in range(times):
@@ -234,9 +289,11 @@ def _freeze_once(rtsp_url, freeze_sens):
     ]
     try:
         r = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)
+        if b"freeze_start" in r.stderr:
+            logger.info("[FREEZE] freeze_start triggered")
         return (b"freeze_start" not in r.stderr)
     except Exception as e:
-        logger.error(f"[Freeze/Black] freezedetect error => {e}")
+        logger.error("[FREEZE] freezedetect error => %s" % e)
         return False
 
 ######################################################
@@ -267,9 +324,9 @@ class FullBackupSession:
         try:
             self.proc = subprocess.Popen(cmd)
             self.active = True
-            logger.info(f"[FullBackup] ch={self.channel} => start => {out_file}")
+            logger.info("[EVENT] [FullBackup] ch=%s => start => %s" % (self.channel, out_file))
         except Exception as e:
-            logger.error(f"[FullBackup] start_chunk error => {e}")
+            logger.error("[FullBackup] start_chunk error => %s" % e)
 
     def _make_filename(self):
         import time, os
@@ -294,8 +351,8 @@ class FullBackupSession:
             try:
                 self.proc.wait(timeout=5)
             except Exception as e:
-                logger.error(f"[FullBackup] stop_chunk wait error => {e}")
-            logger.info(f"[FullBackup] ch={self.channel} => stop => {self.file_path}")
+                logger.error("[FullBackup] stop_chunk wait error => %s" % e)
+            logger.info("[EVENT] [FullBackup] ch=%s => stop => %s" % (self.channel, self.file_path))
             self.proc = None
             self.active = False
 
@@ -321,15 +378,15 @@ class MotionSession:
             "ffmpeg","-hide_banner","-loglevel","error","-y","-err_detect","ignore_err",
             "-rtsp_transport","tcp","-i",self.rtsp_url,
             "-c","copy",
-            "-metadata",f"title={self.stream_title}",
+            "-metadata",f"title={self.stream_title}-Channel-{self.channel}",
             out_file
         ]
         try:
             self.proc = subprocess.Popen(cmd)
             self.active = True
-            logger.info(f"{log_prefix} ch={self.channel} => start => {out_file}")
+            logger.info("[EVENT] %s ch=%s => start => %s" % (log_prefix, self.channel, out_file))
         except Exception as e:
-            logger.error(f"{log_prefix} ch={self.channel} => start_record error => {e}")
+            logger.error("%s ch=%s => start_record error => %s" % (log_prefix, self.channel, e))
 
     def _make_filename(self):
         import time, os
@@ -354,8 +411,8 @@ class MotionSession:
             try:
                 self.proc.wait(timeout=5)
             except Exception as e:
-                logger.error(f"[MotionSession] ch={self.channel} => stop_record error => {e}")
-            logger.info(f"[MotionSession] ch={self.channel} => stop => {self.file_path}")
+                logger.error("[MotionSession] ch=%s => stop_record error => %s" % (self.channel, e))
+            logger.info("[EVENT] [MotionSession] ch=%s => stop => %s" % (self.channel, self.file_path))
             self.proc = None
             self.active = False
 
@@ -372,7 +429,7 @@ def thread_for_channel(ch, config):
     ip      = config["rtsp_ip"]
     subtype = config["rtsp_subtype"]
     rtsp_url= f"rtsp://{user}:{pwd}@{ip}:554/cam/realmonitor?channel={ch}&subtype={subtype}"
-    logger.info(f"[Main] ch={ch} => {rtsp_url}")
+    logger.info("[EVENT] [Main] ch=%s => %s" % (ch, rtsp_url))
 
     # (A) Freeze/Black check
     global LAST_CHECK_TIMES
@@ -383,16 +440,16 @@ def thread_for_channel(ch, config):
     if FREEZE_BLACK_INTERVAL>0 and interval < FREEZE_BLACK_INTERVAL:
         ok_black   = True
         ok_freeze  = True
-        logger.info(f"[Main] ch={ch} => skip freeze/black check (recently checked)")
+        logger.info("[VALIDATION] ch=%s => skip freeze/black check (recently checked)" % ch)
     else:
         LAST_CHECK_TIMES[ch] = now
         if cpu_usage>90:
             do_black = False
-            logger.info(f"[Main] ch={ch} => CPU>90 => skip blackdetect")
+            logger.info("[VALIDATION] ch=%s => CPU>90 => skip blackdetect" % ch)
         ok_black = check_black_frames(rtsp_url, do_black, threshold=BLACK_DETECT_THRESHOLD)
         if not ok_black:
-            err = f"ch={ch} => black => skip pipeline"
-            logger.warning(f"[Main] {err}")
+            err = "ch=%s => black => skip pipeline" % ch
+            logger.warning("[VALIDATION] %s" % err)
             update_validation_status(ch,{
                 "freeze_ok":None,
                 "black_ok":False,
@@ -407,8 +464,8 @@ def thread_for_channel(ch, config):
                                             times=FREEZE_RECHECK_TIMES,
                                             delay=FREEZE_RECHECK_DELAY)
             if not ok_freeze:
-                err = f"ch={ch} => freeze => skip pipeline"
-                logger.warning(f"[Main] {err}")
+                err = "ch=%s => freeze => skip pipeline" % ch
+                logger.warning("[VALIDATION] %s" % err)
                 update_validation_status(ch,{
                     "freeze_ok":False,
                     "black_ok":ok_black,
@@ -437,7 +494,7 @@ def thread_for_channel(ch, config):
     elif from_main_mode == "motion_obj_dual":
         pipeline_motion_dual(ch, config, rtsp_url)
     else:
-        logger.warning(f"[Main] BACKUP_MODE={from_main_mode} unknown => fallback full")
+        logger.warning("[VALIDATION] BACKUP_MODE=%s unknown => fallback full" % from_main_mode)
         pipeline_full(ch, config, rtsp_url)
 
 
@@ -462,7 +519,7 @@ def pipeline_motion(ch, config, rtsp_url, object_detection=False):
     cap = cv2.VideoCapture(rtsp_url)
     if not cap.isOpened():
         err = f"ch={ch} => fail open => {rtsp_url}"
-        logger.error(f"[Main] {err}")
+        logger.error("[Main] %s" % err)
         update_validation_status(ch,{"error_msg":err})
         return
 
@@ -508,13 +565,14 @@ def pipeline_motion(ch, config, rtsp_url, object_detection=False):
                 new_h = int(frame.shape[0] * DOWNSCALE_RATIO)
                 frame_small = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
             except Exception as e:
-                logger.warning(f"[MotionPipeline] resize error => {e}")
+                logger.warning("[MotionPipeline] resize error => %s" % e)
                 frame_small = frame
         else:
             frame_small = frame
 
         bboxes = motion_det.detect(frame_small)
         if bboxes:
+            logger.info("[EVENT] [MotionPipeline] Detected %d motion(s)." % len(bboxes))
             ev = {
                 "timestamp": datetime.now().isoformat(),
                 "channel": ch,
@@ -524,7 +582,7 @@ def pipeline_motion(ch, config, rtsp_url, object_detection=False):
                 with open(MOTION_EVENTS_JSON,"a") as f:
                     f.write(json.dumps(ev)+"\n")
             except Exception as e:
-                logger.error(f"[MotionPipeline] Gagal tulis {MOTION_EVENTS_JSON} => {e}")
+                logger.error("[MotionPipeline] Gagal tulis %s => %s" % (MOTION_EVENTS_JSON, e))
 
             is_obj_trigger = False
             if obj_det:
@@ -548,6 +606,7 @@ def pipeline_motion(ch, config, rtsp_url, object_detection=False):
                     prefix = "[ObjectDetection]" if is_obj_trigger else "[MotionSession]"
                     m_sess.start_record(log_prefix=prefix)
         else:
+            logger.info("[EVENT] [MotionPipeline] No motion detected.")
             if is_recording:
                 idle_sec = time.time() - last_motion
                 if idle_sec > (MOTION_TIMEOUT + POST_MOTION_DELAY):
@@ -567,12 +626,12 @@ def pipeline_motion_dual(ch, config, rtsp_url):
 
     url_main = rtsp_url
     url_sub  = f"rtsp://{user}:{pwd}@{ip}:554/cam/realmonitor?channel={ch}&subtype=1"
-    logger.info(f"[DualStream] ch={ch} => sub-stream => {url_sub}")
+    logger.info("[EVENT] [DualStream] ch=%s => sub-stream => %s" % (ch, url_sub))
 
     cap_sub = cv2.VideoCapture(url_sub)
     if not cap_sub.isOpened():
-        err = f"ch={ch} => fail open sub-stream => {url_sub}"
-        logger.error(f"[DualStream] {err}")
+        err = "ch=%s => fail open sub-stream => %s" % (ch, url_sub)
+        logger.error("[DualStream] %s" % err)
         return
 
     from motion_detection import MotionDetector
@@ -659,16 +718,16 @@ def run_pipeline_loop():
         else:
             channels = [x.strip() for x in test_ch.split(",") if x.strip()]
 
-        logger.info(f"[Main] Start pipeline => mode={BACKUP_MODE} => channels={channels}")
+        logger.info("[EVENT] [Main] Start pipeline => mode=%s => channels=%s" % (BACKUP_MODE, channels))
         for c in channels:
             t = threading.Thread(target=thread_for_channel, args=(c,cfg), daemon=True)
             t.start()
 
         if not LOOP_ENABLE:
-            logger.info("[Main] LOOP_ENABLE=false => run 1x => break.")
+            logger.info("[EVENT] [Main] LOOP_ENABLE=false => run 1x => break.")
             break
 
-        logger.info(f"[Main] Selesai 1 putaran => tunggu {CHECK_INTERVAL} detik.")
+        logger.info("[EVENT] [Main] Selesai 1 putaran => tunggu %d detik." % CHECK_INTERVAL)
         time.sleep(CHECK_INTERVAL)
 
 ######################################################
@@ -677,7 +736,7 @@ def run_pipeline_loop():
 def main():
     ensure_json_initialized()
     run_pipeline_loop()
-    logger.info("[Main] Keluar.")
+    logger.info("[EVENT] [Main] Keluar.")
 
 if __name__ == "__main__":
     main()
