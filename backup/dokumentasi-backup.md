@@ -169,14 +169,6 @@
 - **Dokumentasi & ENV**:
     - Memudahkan penyesuaian parameter tanpa perlu mengubah kode sumber.
 
-### Rangkuman Percakapan:
-
-- Kita mulai dari mode perekaman “motion” dan “object detection” yang memakan CPU tinggi.
-- Dikembangkanlah “dual-stream” untuk analisis sub-stream, sehingga CPU usage turun drastis.
-- Freeze/black check tetap di main-stream agar rekaman pasti valid.
-- Tuning threshold (CONF_PERSON), MOTION_TIMEOUT, dsb. untuk menyeimbangkan false alarm vs. coverage.
-- Akhirnya, sistem benar-benar “adem” (CPU > 95% idle) dan tetap memenuhi kebutuhan CCTV AI.
-
 ## 9. Penutup
 
 Dokumentasi ini menjabarkan keseluruhan konsep, arsitektur, dan cara kerja script perekaman CCTV berbasis AI. Dengan pengaturan dual-stream, freeze/black check, motion/object detection, serta parameter ENV yang luwes, sistem ini mampu menghemat storage, mencegah false alarm, memastikan rekaman tidak rusak, dan menjaga CPU usage tetap rendah.
