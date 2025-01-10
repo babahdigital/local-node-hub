@@ -13,17 +13,16 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Salin semua file dari folder host "streamserver" ke container "/app/streamserver"
 COPY ./streamserver /app/streamserver
+RUN mkdir -p /app/streamserver/hls
 
 # Salin credentials.sh ke /app/config
 COPY ./config/credentials.sh /app/config/credentials.sh
 RUN chmod +x /app/config/credentials.sh || true
 
-# Expose port 5000 (untuk Gunicorn)
-EXPOSE 5000
-
 # Jalankan Gunicorn
 # - Di sini kita source credentials.sh agar RTSP_USER_BASE64 dsb. di-export ke environment
 # - Kemudian jalankan gunicorn dengan bind 0.0.0.0:5000
 # - Asumsikan main.py punya "app = Flask(__name__)"
-CMD ["/bin/bash", "-c", "source /app/config/credentials.sh && exec gunicorn --bind 0.0.0.0:5000 --workers 4 --timeout ${GUNICORN_WORKER_TIMEOUT:-60} main:app"]
-#CMD ["/bin/bash", "-c", "source /app/config/credentials.sh && exec gunicorn --bind 0.0.0.0:5000 main:app"]
+#CMD ["/bin/bash", "-c", "source /app/config/credentials.sh && exec gunicorn --bind 0.0.0.0:5000 --workers 4 --timeout ${GUNICORN_WORKER_TIMEOUT:-60} main:app"]
+CMD ["/bin/bash", "-c", "source /app/config/credentials.sh && exec gunicorn --bind 0.0.0.0:8080 main:app"]
+#CMD ["/bin/bash", "-c", "source /app/config/credentials.sh && exec python main.py"]

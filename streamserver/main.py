@@ -18,12 +18,29 @@ from utils import decode_credentials  # decode user/pass RTSP base64
 
 app = Flask(__name__)
 
+# ----------------------------------------
+# Panggil pipeline di top-level
+# ----------------------------------------
+print("[INFO] Inisialisasi pipeline di top-level.")
+try:
+    # decode_credentials() di sini
+    # initial_ffmpeg_setup() di sini
+    # monitor_loop (opsional) bisa di-thread
+    pass
+except Exception as e:
+    print(f"[ERROR] Pipeline top-level: {e}")
+
+# Routes Flask ...
+@app.route("/")
+def index():
+    return "Hello from Gunicorn!"
+
 # ----------------------------------------------------------------------------
 # 1. KONFIGURASI
 # ----------------------------------------------------------------------------
 RESOURCE_MONITOR_PATH = "/mnt/Data/Syslog/resource/resource_monitor_state.json"
 CHANNEL_VALIDATION_PATH = "/mnt/Data/Syslog/rtsp/channel_validation.json"
-HLS_OUTPUT_DIR = "/opt/app/hls_output"
+HLS_OUTPUT_DIR = "/app/streamserver/hls"
 
 # Ambil environment variable (mis. di .env atau docker-compose)
 HLS_TIME = os.environ.get("HLS_TIME", "2")
@@ -385,8 +402,4 @@ def main():
 
     print("[INFO] Flask server starting on port 5001...")
     # 4) Jalankan Flask dev server (untuk Production, gunakan Gunicorn!)
-    app.run(host="0.0.0.0", port=5000, debug=False)
-
-
-if __name__ == "__main__":
-    main()
+    app.run(host="0.0.0.0", port=8080, debug=False)

@@ -47,12 +47,10 @@ services:
     restart: unless-stopped
     volumes:
       - /mnt/Data/Syslog:/mnt/Data/Syslog
-      # Buat folder local untuk menampung HLS output jika ingin persisten
-      - ./hls_output:/opt/app/hls_output
       # Folder scripts (Python, dsb.)
       - ./scripts/utils.py:/app/scripts/utils.py
       # File konfigurasi log messages
-      - ./config/log_messages.json:/app/config/log_messages.json
+      - ./config:/app/config
       # Bind-mount Data Sistem
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
@@ -60,7 +58,7 @@ services:
       babahdigital:
     ports:
       # HLS Services
-      - "80:5000"
+      - "80:8080"
     environment:
       - GUNICORN_WORKER_TIMEOUT=300
       # Variabel environment untuk parameter HLS
