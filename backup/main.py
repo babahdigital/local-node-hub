@@ -25,6 +25,7 @@ import cv2
 import re
 from datetime import datetime
 import logging
+from threading import Lock  # <--- Tambahkan Lock
 
 # Pastikan folder scripts ada di PATH
 sys.path.append("/app/scripts")
@@ -47,7 +48,6 @@ def mask_rtsp_credentials(rtsp_url: str) -> str:
     Contoh: 'rtsp://user:pass@host...' => 'rtsp://****:****@host...'
     """
     return re.sub(r"(//)([^:]+):([^@]+)(@)", r"\1****:****\4", rtsp_url)
-
 
 ############################
 # Buat logger global
@@ -107,7 +107,6 @@ fmt_evt = logging.Formatter("%(asctime)s [%(levelname)s] [%(name)s] %(message)s"
 handler_event.setFormatter(fmt_evt)
 logger.addHandler(handler_event)
 
-
 ############################
 # Baca ENV / Konfig
 ############################
@@ -119,7 +118,7 @@ LOOP_ENABLE         = os.getenv("LOOP_ENABLE","true").lower()=="true"
 
 CHUNK_DURATION = int(os.getenv("CHUNK_DURATION","300"))  # potongan full
 MAX_RECORD     = int(os.getenv("MAX_RECORD","300"))      # potongan motion
-MOTION_TIMEOUT = int(os.getenv("MOTION_TIMEOUT","5"))    
+MOTION_TIMEOUT = int(os.getenv("MOTION_TIMEOUT","5"))
 POST_MOTION_DELAY = int(os.getenv("POST_MOTION_DELAY","0"))  # after last motion
 CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL","300"))
 
@@ -132,39 +131,49 @@ FREEZE_BLACK_INTERVAL  = int(os.getenv("FREEZE_BLACK_INTERVAL","0"))  # skip int
 
 MONITOR_STATE_FILE  = "/mnt/Data/Syslog/resource/resource_monitor_state.json"
 VALIDATION_JSON     = "/mnt/Data/Syslog/rtsp/channel_validation.json"
+
+# Tambahkan lock global:
+validation_lock = Lock()
+
 MOTION_EVENTS_JSON  = "/mnt/Data/Syslog/rtsp/motion_events.json"
 
 LAST_CHECK_TIMES = {}
 
 logger.info("[VALIDATION] BACKUP_MODE=%s" % BACKUP_MODE)
 
-
 ############################
 # 1) Validasi JSON
 ############################
 def load_validation_status():
+    if not os.path.isfile(VALIDATION_JSON):
+        return {}
     try:
-        with open(VALIDATION_JSON,"r") as f:
+        with open(VALIDATION_JSON, "r") as f:
             return json.load(f)
-    except:
+    except Exception as e:
+        logger.warning(f"Gagal baca {VALIDATION_JSON} => {e}")
         return {}
 
-def save_validation_status(data:dict):
+def save_validation_status(data: dict):
+    # Safe write => file .tmp, lalu os.replace => hindari JSON corrupt
+    tmp_path = VALIDATION_JSON + ".tmp"
     try:
-        with open(VALIDATION_JSON,"w") as f:
-            json.dump(data,f,indent=2)
+        with open(tmp_path, "w") as f:
+            json.dump(data, f, indent=2)
+        os.replace(tmp_path, VALIDATION_JSON)
     except Exception as e:
-        logger.warning("[Main] Gagal menulis %s => %s" % (VALIDATION_JSON, e))
+        logger.warning(f"Gagal menulis {VALIDATION_JSON} => {e}")
 
-def update_validation_status(channel, info:dict):
-    data = load_validation_status()
-    ch_str = str(channel)
-    if ch_str not in data:
-        data[ch_str] = {}
-    data[ch_str].update(info)
-    data[ch_str]["last_update"] = datetime.now().isoformat()
-    save_validation_status(data)
-
+def update_validation_status(channel, info: dict):
+    # Pastikan concurrency => lock
+    with validation_lock:
+        data = load_validation_status()
+        ch_str = str(channel)
+        if ch_str not in data:
+            data[ch_str] = {}
+        data[ch_str].update(info)
+        data[ch_str]["last_update"] = datetime.now().isoformat()
+        save_validation_status(data)
 
 ############################
 # 2) Inisialisasi JSON
@@ -188,7 +197,6 @@ def ensure_json_initialized():
             json.dump(init_data,f,indent=2)
     else:
         logger.info("[VALIDATION] File %s sudah ada, skip init." % MONITOR_STATE_FILE)
-
 
 ############################
 # 3) Load Resource+Config
@@ -231,7 +239,6 @@ def load_resource_config():
         config["rtsp_password"] = pass_json
 
     return config
-
 
 ############################
 # 4) Freeze & Black
@@ -283,7 +290,6 @@ def _freeze_once(rtsp_url, freeze_sens):
     except Exception as e:
         logger.error("[FREEZE] freezedetect error => %s" % e)
         return False
-
 
 ############################
 # 5) FULL Backup
@@ -345,7 +351,6 @@ class FullBackupSession:
             self.proc=None
             self.active=False
 
-
 ############################
 # 6) Motion Session
 ############################
@@ -406,7 +411,6 @@ class MotionSession:
             self.proc=None
             self.active=False
 
-
 ############################
 # 7) thread_for_channel
 ############################
@@ -423,7 +427,6 @@ def thread_for_channel(ch, config):
     masked_url = mask_rtsp_credentials(raw_url)
     logger.info("[EVENT] [Main] ch=%s => %s" % (ch, masked_url))
 
-    # (A) freeze/black check => skip if interval is set
     global LAST_CHECK_TIMES, FREEZE_BLACK_INTERVAL
     now = time.time()
     last_chk = LAST_CHECK_TIMES.get(ch,0)
@@ -475,7 +478,6 @@ def thread_for_channel(ch, config):
         "error_msg":None
     })
 
-    # (B) Pilih pipeline berdasarkan BACKUP_MODE
     mode = BACKUP_MODE
     if mode=="full":
         pipeline_full(ch, config, raw_url)
@@ -490,7 +492,6 @@ def thread_for_channel(ch, config):
     else:
         logger.warning("[VALIDATION] BACKUP_MODE=%s unknown => fallback full" % mode)
         pipeline_full(ch, config, raw_url)
-
 
 ############################
 # 8) pipeline_full
@@ -541,15 +542,7 @@ def pipeline_motion(ch, config, rtsp_url, object_detection=False):
             time.sleep(1)
             continue
 
-        # skip
-        # dsb
-        # ...
-        # (Sama persis logika di contoh sebelumnya)
-
-        # (Disingkat, agar tidak terlalu panjang)
-        # Perhatikan: Gunakan code pipeline motion single-stream
-        # seperti script sebelumnya (MOTION-SINGLE).
-        # end
+        # Skipped detail for brevity
 
         time.sleep(0.2)
 
@@ -557,16 +550,10 @@ def pipeline_motion(ch, config, rtsp_url, object_detection=False):
 # 10) pipeline_motion_dual
 ############################
 def pipeline_motion_dual(ch, config, main_url, with_object=False):
-    """
-    Menganalisis sub-stream => record main-stream
-    - If with_object=True => plus cek object (person).
-    - If with_object=False => motion only.
-    """
     user = config["rtsp_user"]
     pwd  = config["rtsp_password"]
     ip   = config["rtsp_ip"]
 
-    # sub-stream => subtype=1 (hardcode) => or env
     sub_url = f"rtsp://{user}:{pwd}@{ip}:554/cam/realmonitor?channel={ch}&subtype=1"
     logger.info("[EVENT] [DualStream] ch=%s => sub-stream => %s" % (ch, mask_rtsp_credentials(sub_url)))
 
@@ -577,7 +564,6 @@ def pipeline_motion_dual(ch, config, main_url, with_object=False):
         update_validation_status(ch,{"error_msg":err})
         return
 
-    # motion
     motion_det = MotionDetector(area_threshold=3000)
     obj_det = None
     if with_object:
@@ -588,7 +574,6 @@ def pipeline_motion_dual(ch, config, main_url, with_object=False):
             conf_person=0.6, conf_car=0.4, conf_motor=0.4
         )
 
-    # merekam di main_url
     m_sess = MotionSession(main_url, ch, config["stream_title"])
     last_motion=0
     is_recording=False
@@ -623,7 +608,6 @@ def pipeline_motion_dual(ch, config, main_url, with_object=False):
 
         bboxes = motion_det.detect(frame_small)
         if bboxes:
-            # if with_object => cek object
             if with_object and obj_det:
                 results,_=obj_det.detect(frame_small)
                 person_found=any(r[0]=="person" for r in results)
@@ -631,7 +615,6 @@ def pipeline_motion_dual(ch, config, main_url, with_object=False):
                     time.sleep(SLEEP_INTERVAL)
                     continue
 
-            # => motion
             last_motion=time.time()
             if not is_recording:
                 prefix="[MotionDual]" if not with_object else "[MotionObjDual]"
@@ -650,7 +633,6 @@ def pipeline_motion_dual(ch, config, main_url, with_object=False):
                     is_recording=False
 
         time.sleep(SLEEP_INTERVAL)
-
 
 ############################
 # 11) run_pipeline_loop

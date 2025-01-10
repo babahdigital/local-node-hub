@@ -111,6 +111,7 @@ clean_logs() {
     "rtsp/channel_validation.json"
     "rtsp/motion_events.json"
     "rtsp/channel_validation.json"
+    "rtsp/cctv/cctv.log"
   )
 
   for dir in "${directories[@]}"; do

@@ -173,7 +173,7 @@ def get_channel_list_from_resource():
 def initial_ffmpeg_setup():
     """
     Baca resource_monitor_state.json => daftar channel
-    Baca channel_validation.json => cek black_ok / link custom
+    Baca channel_validation.json => cek black_ok / error_msg / link custom
     Jalankan pipeline channel
     """
     title, channels, rtsp_ip = get_channel_list_from_resource()
@@ -191,17 +191,28 @@ def initial_ffmpeg_setup():
     with data_lock:
         for ch in channels:
             tracked_channels.add(ch)
-            black_ok = True
+            black_ok  = True
+            error_msg = None
             rtsp_link = f"rtsp://{user}:{pwd}@{rtsp_ip}:554/cam/realmonitor?channel={ch}&subtype=0"
 
-            # Jika channel tercantum di validation => cek black_ok, link custom
+            # Jika channel tercantum di validation => cek black_ok, error_msg, link custom
             if str(ch) in validation_data:
-                if validation_data[str(ch)].get("black_ok", False) is False:
+                ch_info = validation_data[str(ch)]
+                if ch_info.get("black_ok", False) is False:
                     black_ok = False
-                custom_link = validation_data[str(ch)].get("livestream_link", "")
+                # cek error_msg
+                error_msg = ch_info.get("error_msg", None)
+                custom_link = ch_info.get("livestream_link", "")
                 if custom_link:
                     rtsp_link = override_userpass(custom_link, user, pwd)
 
+            # Jika error_msg ada, skip pipeline
+            if error_msg:
+                logger.info(f"Channel {ch} => error_msg={error_msg} => skip pipeline.")
+                channel_black_status[ch] = False
+                continue
+
+            # Jika black_ok=false => skip
             channel_black_status[ch] = black_ok
             if black_ok:
                 start_ffmpeg_pipeline(ch, title, rtsp_link)
@@ -224,7 +235,7 @@ def monitor_loop(interval=60):
                 if new_v_hash != channel_validation_hash:
                     channel_validation_hash = new_v_hash
                     val_data = load_json_file(CHANNEL_VALIDATION_PATH) or {}
-                    update_black_ok(val_data)
+                    update_black_ok_and_error(val_data)
 
                 if new_r_hash != resource_monitor_state_hash:
                     resource_monitor_state_hash = new_r_hash
@@ -236,9 +247,11 @@ def monitor_loop(interval=60):
 
         time.sleep(interval)
 
-def update_black_ok(val_data):
+def update_black_ok_and_error(val_data):
     """
-    Cek channel2 di tracked_channels => jika black_ok berubah, stop/start pipeline
+    Mirip update_black_ok, tapi juga cek 'error_msg'.
+    - Jika 'error_msg' != None => skip pipeline
+    - black_ok=false => skip pipeline
     """
     try:
         user, pwd = decode_credentials()
@@ -247,27 +260,41 @@ def update_black_ok(val_data):
         return
 
     for ch in list(tracked_channels):
-        prev_black = channel_black_status.get(ch, True)
-        new_black  = True
+        prev_status = channel_black_status.get(ch, True)  # True => pipeline jalan
+        new_black   = True
+        new_error   = None  # simpan error_msg
 
         if str(ch) in val_data:
-            if val_data[str(ch)].get("black_ok", False) is False:
+            ch_info = val_data[str(ch)]
+            if ch_info.get("black_ok", False) is False:
                 new_black = False
+            new_error = ch_info.get("error_msg", None)
 
-        if new_black != prev_black:
-            if not new_black:
-                logger.info(f"Channel {ch} => black_ok => false => stop pipeline.")
+        # Cek kalau 'error_msg' ada => kita anggap pipeline harus di-skip
+        if new_error:
+            # pipeline harus stop
+            if prev_status is True:  # artinya pipeline saat ini jalan
+                logger.info(f"Channel {ch} => error_msg={new_error} => stop pipeline.")
                 stop_ffmpeg_pipeline(ch)
                 channel_black_status[ch] = False
             else:
-                logger.info(f"Channel {ch} => black_ok => true => start pipeline.")
-                custom_link = val_data[str(ch)].get("livestream_link", "") if str(ch) in val_data else ""
-                try:
-                    user, pwd = decode_credentials()  # decode ulang
-                except Exception as e:
-                    logger.error(f"decode_credentials => {e}")
-                    continue
+                # Sudah stop => do nothing
+                pass
+            continue
 
+        # Kalau tidak ada error_msg => kita cek black_ok
+        if not new_black:
+            # black_ok => false => stop pipeline jika sedang jalan
+            if prev_status is True:
+                logger.info(f"Channel {ch} => black_ok => false => stop pipeline.")
+                stop_ffmpeg_pipeline(ch)
+                channel_black_status[ch] = False
+        else:
+            # black_ok => true => start pipeline kalau belum jalan
+            if not prev_status:
+                logger.info(f"Channel {ch} => black_ok => true => start pipeline.")
+                # build link
+                custom_link = val_data[str(ch)].get("livestream_link", "") if str(ch) in val_data else ""
                 if custom_link:
                     rtsp_link = override_userpass(custom_link, user, pwd)
                 else:
@@ -291,29 +318,38 @@ def update_channels(title, new_channels, rtsp_ip):
     val_data = load_json_file(CHANNEL_VALIDATION_PATH) or {}
     new_set  = set(new_channels)
 
-    # Tambahan channel
+    # channel baru
     added = new_set - tracked_channels
     if added:
         logger.info(f"channel baru => {added}")
         for ch in added:
             tracked_channels.add(ch)
             black_ok = True
+            error_msg = None
             if str(ch) in val_data:
-                if val_data[str(ch)].get("black_ok", False) is False:
+                ch_info = val_data[str(ch)]
+                if ch_info.get("black_ok", False) is False:
                     black_ok = False
-            channel_black_status[ch] = black_ok
+                error_msg = ch_info.get("error_msg", None)
+            # default pipeline skip if error_msg
+            if error_msg:
+                logger.info(f"Channel {ch} => error_msg={error_msg} => skip pipeline.")
+                channel_black_status[ch] = False
+                continue
 
-            custom_link = val_data[str(ch)].get("livestream_link", "") if str(ch) in val_data else ""
+            channel_black_status[ch] = black_ok
             if black_ok:
+                custom_link = val_data[str(ch)].get("livestream_link", "") if str(ch) in val_data else ""
                 if custom_link:
                     rtsp_link = override_userpass(custom_link, user, pwd)
                 else:
                     rtsp_link = f"rtsp://{user}:{pwd}@{rtsp_ip}:554/cam/realmonitor?channel={ch}&subtype=0"
+
                 start_ffmpeg_pipeline(ch, title, rtsp_link)
             else:
                 logger.info(f"Channel {ch} => black_ok=false => skip pipeline.")
 
-    # Penghapusan channel
+    # channel dihapus
     removed = tracked_channels - new_set
     if removed:
         logger.info(f"channel dihapus => {removed}")
@@ -340,6 +376,9 @@ def serve_channel_files(channel, filename):
     with data_lock:
         val_data = load_json_file(CHANNEL_VALIDATION_PATH)
         if val_data and str(channel) in val_data:
+            # if black_ok=false or error_msg => 404
+            if val_data[str(channel)].get("error_msg"):
+                return f"<h1>Channel {channel} error => {val_data[str(channel)]['error_msg']}</h1>", 404
             if val_data[str(channel)].get("black_ok", True) is False:
                 return f"<h1>Channel {channel} black_ok=false</h1>", 404
 
@@ -351,6 +390,9 @@ def serve_hls_compat(channel, filename):
     with data_lock:
         val_data = load_json_file(CHANNEL_VALIDATION_PATH)
         if val_data and str(channel) in val_data:
+            # if black_ok=false or error_msg => 404
+            if val_data[str(channel)].get("error_msg"):
+                return f"<h1>Channel {channel} error => {val_data[str(channel)]['error_msg']}</h1>", 404
             if val_data[str(channel)].get("black_ok", True) is False:
                 return f"<h1>Channel {channel} black_ok=false</h1>", 404
 
