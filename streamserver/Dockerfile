@@ -1,28 +1,70 @@
-# Gunakan base image python slim (bisa diganti versi lain)
+# Gunakan base image python:3.12-slim atau Debian-based minimal
 FROM python:3.12-slim
 
-# Pastikan kita bisa install ffmpeg
-RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
+# Pastikan apt-get update & install dependencies untuk build
+RUN apt-get update && apt-get install -y \
+    wget \
+    ca-certificates \
+    gnupg \
+    build-essential \
+    pkg-config \
+    cmake \
+    libssl-dev \
+    libffi-dev \
+    yasm \
+    nasm \
+    libx264-dev \
+    libx265-dev \
+    libnuma-dev \
+    # ... library lain jika butuh
+    && rm -rf /var/lib/apt/lists/*
 
-# Buat folder /app/streamserver di dalam container
+# Versi FFmpeg yang diinginkan
+ENV FFmpeg_VERSION="n6.0"
+
+# Download & compile FFmpeg source
+RUN mkdir -p /tmp/ffmpeg-build && \
+    cd /tmp/ffmpeg-build && \
+    wget https://github.com/FFmpeg/FFmpeg/archive/refs/tags/${FFmpeg_VERSION}.tar.gz -O ffmpeg.tar.gz && \
+    tar xzf ffmpeg.tar.gz && \
+    cd FFmpeg-${FFmpeg_VERSION} && \
+    ./configure \
+        --prefix=/usr \
+        --disable-debug \
+        --disable-doc \
+        --disable-static \
+        --enable-shared \
+        --enable-gpl \
+        --enable-libx264 \
+        --enable-libx265 \
+        --enable-nonfree \
+        # tambahkan opsi lain jika butuh
+    && make -j$(nproc) && make install && \
+    ldconfig && \
+    cd / && rm -rf /tmp/ffmpeg-build
+
+# Sekarang ffmpeg & ffprobe versi terbaru terpasang di /usr/bin
+
+# Buat folder /app/streamserver
 WORKDIR /app/streamserver
 
-# Salin file requirements dan install dependencies
+# Salin file requirements & install dependencies python
 COPY ./streamserver/requirements.txt /app/streamserver
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Salin semua file dari folder host "streamserver" ke container "/app/streamserver"
+# Salin semua file project
 COPY ./streamserver /app/streamserver
+
+# Folder HLS
 RUN mkdir -p /app/streamserver/hls
 
-# Salin credentials.sh ke /app/config
+# Salin credentials.sh
 COPY ./config/credentials.sh /app/config/credentials.sh
 RUN chmod +x /app/config/credentials.sh || true
 
-# Jalankan Gunicorn
-# - Di sini kita source credentials.sh agar RTSP_USER_BASE64 dsb. di-export ke environment
-# - Kemudian jalankan gunicorn dengan bind 0.0.0.0:5000
-# - Asumsikan main.py punya "app = Flask(__name__)"
-#CMD ["/bin/bash", "-c", "source /app/config/credentials.sh && exec gunicorn --bind 0.0.0.0:5000 --workers 4 --timeout ${GUNICORN_WORKER_TIMEOUT:-60} main:app"]
-CMD ["/bin/bash", "-c", "source /app/config/credentials.sh && exec gunicorn --bind 0.0.0.0:8080 main:app"]
-#CMD ["/bin/bash", "-c", "source /app/config/credentials.sh && exec python main.py"]
+# Expose port 8080
+EXPOSE 8080
+
+# CMD: source credentials & jalankan Gunicorn 1 worker
+CMD ["/bin/bash", "-c", "source /app/config/credentials.sh && \
+     exec gunicorn --bind 0.0.0.0:8080 main:app --workers 1"]
