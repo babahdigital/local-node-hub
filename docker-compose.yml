@@ -49,8 +49,6 @@ services:
       - /mnt/Data/Syslog:/mnt/Data/Syslog
       # Buat folder local untuk menampung HLS output jika ingin persisten
       - ./hls_output:/opt/app/hls_output
-      # File Json
-      - /mnt/Data/Syslog/resource:/mnt/Data/Syslog/resource
       # Folder scripts (Python, dsb.)
       - ./scripts/utils.py:/app/scripts/utils.py
       # File konfigurasi log messages
@@ -64,6 +62,7 @@ services:
       # HLS Services
       - "80:5000"
     environment:
+      - GUNICORN_WORKER_TIMEOUT=300
       # Variabel environment untuk parameter HLS
       - HLS_TIME=2
       - HLS_LIST_SIZE=5

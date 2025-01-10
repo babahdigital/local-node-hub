@@ -25,4 +25,5 @@ EXPOSE 5000
 # - Di sini kita source credentials.sh agar RTSP_USER_BASE64 dsb. di-export ke environment
 # - Kemudian jalankan gunicorn dengan bind 0.0.0.0:5000
 # - Asumsikan main.py punya "app = Flask(__name__)"
-CMD ["/bin/bash", "-c", "source /app/config/credentials.sh && exec gunicorn --bind 0.0.0.0:5000 --workers 4 main:app"]
+CMD ["/bin/bash", "-c", "source /app/config/credentials.sh && exec gunicorn --bind 0.0.0.0:5000 --workers 4 --timeout ${GUNICORN_WORKER_TIMEOUT:-60} main:app"]
+#CMD ["/bin/bash", "-c", "source /app/config/credentials.sh && exec gunicorn --bind 0.0.0.0:5000 main:app"]
