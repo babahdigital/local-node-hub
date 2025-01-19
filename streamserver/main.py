@@ -57,11 +57,12 @@ def override_userpass(original_link, user, pwd):
     parsed = urlparse(original_link)
 
     # URL-encode user & pass
+    from urllib.parse import quote
     user_esc = quote(user, safe='')
     pwd_esc  = quote(pwd,  safe='')
 
-    host = parsed.hostname or ""  # ex: "172.16.10.252"
-    port = f":{parsed.port}" if parsed.port else ""  # ex: ":554" or ""
+    host = parsed.hostname or ""
+    port = f":{parsed.port}" if parsed.port else ""
 
     new_netloc = f"{user_esc}:{pwd_esc}@{host}{port}"
     new_scheme = parsed.scheme or "rtsp"
@@ -70,8 +71,51 @@ def override_userpass(original_link, user, pwd):
     new_query  = parsed.query or ""
     new_frag   = parsed.fragment or ""
 
-    # Re-assemble
     return urlunparse((new_scheme, new_netloc, new_path, new_params, new_query, new_frag))
+
+# --------------------------------------------------------
+# 1a. Fungsi bantu: mask_url_for_log
+#     Menyembunyikan user:pass di log
+# --------------------------------------------------------
+def mask_url_for_log(rtsp_url: str) -> str:
+    """
+    Memparse rtsp_url, lalu menutupi username & password dengan ****.
+    Contoh: 
+      aslinya => rtsp://babahdigital:Admin123@172.16.10.252:554/cam/...
+      di log  => rtsp://****:****@172.16.10.252:554/cam/...
+    """
+    parsed = urlparse(rtsp_url)
+    if parsed.hostname:
+        # Buat netloc pakai ****
+        host = parsed.hostname or ""
+        port = f":{parsed.port}" if parsed.port else ""
+        new_netloc = f"****:****@{host}{port}"
+        return urlunparse((parsed.scheme, new_netloc, parsed.path, parsed.params, parsed.query, parsed.fragment))
+    else:
+        # Kalau parse gagal, ya kembalikan apa adanya
+        return rtsp_url
+
+def mask_any_rtsp_in_string(text: str) -> str:
+    """
+    Jika di 'text' ada substring 'rtsp://...' => parse => mask => ganti.
+    Agar password tidak tampak di log error_msg.
+    """
+    if not text:
+        return text
+    if "rtsp://" not in text:
+        return text
+
+    # Sederhana: kita ambil potongan setelah "rtsp://" lalu mask
+    # (Kalau banyak link, kita handle satu saja, minimal)
+    idx = text.find("rtsp://")
+    prefix = text[:idx]
+    url_part = text[idx:].split(" ", 1)[0]  # ambil sampai spasi (kasus minimal)
+    suffix = ""
+    if " " in text[idx:]:
+        suffix = text[idx:].split(" ", 1)[1]
+
+    masked_url = mask_url_for_log(url_part)
+    return prefix + masked_url + " " + suffix
 
 # --------------------------------------------------------
 # 2. HELPER FUNCTIONS
@@ -108,6 +152,8 @@ def start_ffmpeg_pipeline(channel, title, rtsp_link):
     out_dir = os.path.join(HLS_OUTPUT_DIR, f"ch_{channel}")
     os.makedirs(out_dir, exist_ok=True)
 
+    # Masked link untuk log
+    masked_link = mask_url_for_log(rtsp_link)
     cmd = (
         f"ffmpeg -y "
         f"-loglevel error "
@@ -122,7 +168,10 @@ def start_ffmpeg_pipeline(channel, title, rtsp_link):
         f"{os.path.join(out_dir, 'index.m3u8')}"
     )
 
-    logger.info(f"Menjalankan FFmpeg => channel={channel}, cmd={cmd}")
+    # Agar di log tidak menampilkan password
+    masked_cmd = cmd.replace(rtsp_link, masked_link)
+
+    logger.info(f"Menjalankan FFmpeg => channel={channel}, cmd={masked_cmd}")
     try:
         proc = subprocess.Popen(shlex.split(cmd))
         ffmpeg_processes[channel] = proc
@@ -188,8 +237,6 @@ def initial_ffmpeg_setup():
             black_ok  = True
             error_msg = None
 
-            # Bentuk link minimal => "rtsp://{host}:554/cam/...?channel=ch"
-            # Tanpa user:pass => agar override_userpass yang handle
             raw_link = f"rtsp://{rtsp_ip}:554/cam/realmonitor?channel={ch}&subtype=0"
             rtsp_link = override_userpass(raw_link, user, pwd)
 
@@ -204,7 +251,9 @@ def initial_ffmpeg_setup():
                     rtsp_link = override_userpass(custom_link, user, pwd)
 
             if error_msg:
-                logger.info(f"Channel {ch} => error_msg={error_msg} => skip pipeline.")
+                # Mask
+                masked_err = mask_any_rtsp_in_string(error_msg)
+                logger.info(f"Channel {ch} => error_msg={masked_err} => skip pipeline.")
                 channel_black_status[ch] = False
                 continue
 
@@ -261,8 +310,10 @@ def update_black_ok_and_error(val_data):
             new_error = ch_info.get("error_msg", None)
 
         if new_error:
+            # Mask di log
+            masked_err = mask_any_rtsp_in_string(new_error)
             if prev_status is True:
-                logger.info(f"Channel {ch} => error_msg={new_error} => stop pipeline.")
+                logger.info(f"Channel {ch} => error_msg={masked_err} => stop pipeline.")
                 stop_ffmpeg_pipeline(ch)
                 channel_black_status[ch] = False
             continue
@@ -312,7 +363,8 @@ def update_channels(title, new_channels, rtsp_ip):
                 error_msg = ch_info.get("error_msg", None)
 
             if error_msg:
-                logger.info(f"Channel {ch} => error_msg={error_msg} => skip pipeline.")
+                masked_err = mask_any_rtsp_in_string(error_msg)
+                logger.info(f"Channel {ch} => error_msg={masked_err} => skip pipeline.")
                 channel_black_status[ch] = False
                 continue
 
@@ -356,7 +408,9 @@ def serve_channel_files(channel, filename):
         val_data = load_json_file(CHANNEL_VALIDATION_PATH)
         if val_data and str(channel) in val_data:
             if val_data[str(channel)].get("error_msg"):
-                return f"<h1>Channel {channel} error => {val_data[str(channel)]['error_msg']}</h1>", 404
+                # Mask
+                masked_err = mask_any_rtsp_in_string(val_data[str(channel)]["error_msg"])
+                return f"<h1>Channel {channel} error => {masked_err}</h1>", 404
             if val_data[str(channel)].get("black_ok", True) is False:
                 return f"<h1>Channel {channel} black_ok=false</h1>", 404
 
@@ -369,7 +423,8 @@ def serve_hls_compat(channel, filename):
         val_data = load_json_file(CHANNEL_VALIDATION_PATH)
         if val_data and str(channel) in val_data:
             if val_data[str(channel)].get("error_msg"):
-                return f"<h1>Channel {channel} error => {val_data[str(channel)]['error_msg']}</h1>", 404
+                masked_err = mask_any_rtsp_in_string(val_data[str(channel)]["error_msg"])
+                return f"<h1>Channel {channel} error => {masked_err}</h1>", 404
             if val_data[str(channel)].get("black_ok", True) is False:
                 return f"<h1>Channel {channel} black_ok=false</h1>", 404
 
