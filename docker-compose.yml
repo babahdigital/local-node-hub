@@ -59,16 +59,11 @@ services:
     ports:
       # HLS Services
       - "80:8080"
-    env_file:
-      - ./streamserver/.env
     environment:
       - GUNICORN_WORKER_TIMEOUT=300
       # Variabel environment untuk parameter HLS
       - HLS_TIME=2
       - HLS_LIST_SIZE=5
-      # Misal channel
-      - TEST_CHANNEL=off
-      - CHANNELS=16
       - ENABLE_FREEZE_CHECK=true
       # Opsi logging
       - ENABLE_SYSLOG=false
