@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-# stream_server.py
-
 import os
 import json
 import subprocess
@@ -12,114 +10,75 @@ import hashlib
 from urllib.parse import quote, urlparse, urlunparse
 from flask import Flask, send_from_directory, abort
 
-# 1) Import decode_credentials() dari utils.py
-#    dan juga setup_category_logger utk logging
 sys.path.append("/app/scripts")
 from utils import decode_credentials, setup_category_logger
 
 app = Flask(__name__)
-
-# Buat logger kategori "CCTV"
 logger = setup_category_logger("CCTV")
 
-# --------------------------------------------------------
-# 0. KONFIGURASI & GLOBAL VAR
-# --------------------------------------------------------
 RESOURCE_MONITOR_PATH = "/mnt/Data/Syslog/resource/resource_monitor_state.json"
 CHANNEL_VALIDATION_PATH = "/mnt/Data/Syslog/rtsp/channel_validation.json"
 
-HLS_OUTPUT_DIR = "/app/streamserver/hls"
-HTML_BASE_DIR  = "/app/streamserver/html"
+HLS_OUTPUT_DIR = "/app/streamserver/hls"  # folder HLS
+HTML_BASE_DIR  = "/app/streamserver/html" # folder HTML
 
-# Variabel environment HLS
 HLS_TIME      = os.environ.get("HLS_TIME", "2")
 HLS_LIST_SIZE = os.environ.get("HLS_LIST_SIZE", "5")
 
-# Data global
-ffmpeg_processes      = {}   # {channel: subprocess.Popen}
-channel_black_status  = {}   # {channel: bool}
+ffmpeg_processes      = {}  # {channel: Popen-object}
+channel_black_status  = {}  # {channel: bool}
 tracked_channels      = set()
 data_lock             = threading.Lock()
 
 resource_monitor_state_hash = None
 channel_validation_hash     = None
 
-# --------------------------------------------------------
-# 1. override_userpass pakai urlparse
-# --------------------------------------------------------
 def override_userpass(original_link, user, pwd):
     """
-    Override user:pass di link RTSP.
-    1) Parse URL dengan urlparse => abaikan user:pass lama
-    2) Rebuild netloc => {user_esc}:{pwd_esc}@host:port
-    3) Urlunparse => kembalikan link final
+    Mem-parse URL rtsp, lalu mengganti user:pass.
+    URL-encode agar '@' di password tidak menimbulkan dobel '@'.
     """
     parsed = urlparse(original_link)
-
-    # URL-encode user & pass
-    from urllib.parse import quote
     user_esc = quote(user, safe='')
     pwd_esc  = quote(pwd,  safe='')
 
     host = parsed.hostname or ""
     port = f":{parsed.port}" if parsed.port else ""
-
     new_netloc = f"{user_esc}:{pwd_esc}@{host}{port}"
+
     new_scheme = parsed.scheme or "rtsp"
     new_path   = parsed.path or ""
     new_params = parsed.params or ""
     new_query  = parsed.query or ""
     new_frag   = parsed.fragment or ""
-
     return urlunparse((new_scheme, new_netloc, new_path, new_params, new_query, new_frag))
 
-# --------------------------------------------------------
-# 1a. Fungsi bantu: mask_url_for_log
-#     Menyembunyikan user:pass di log
-# --------------------------------------------------------
 def mask_url_for_log(rtsp_url: str) -> str:
     """
-    Memparse rtsp_url, lalu menutupi username & password dengan ****.
-    Contoh: 
-      aslinya => rtsp://babahdigital:Admin123@172.16.10.252:554/cam/...
-      di log  => rtsp://****:****@172.16.10.252:554/cam/...
+    Mem-parse rtsp_url, menyembunyikan user:pass di log => ****:****@host:port
     """
     parsed = urlparse(rtsp_url)
     if parsed.hostname:
-        # Buat netloc pakai ****
         host = parsed.hostname or ""
         port = f":{parsed.port}" if parsed.port else ""
         new_netloc = f"****:****@{host}{port}"
         return urlunparse((parsed.scheme, new_netloc, parsed.path, parsed.params, parsed.query, parsed.fragment))
     else:
-        # Kalau parse gagal, ya kembalikan apa adanya
         return rtsp_url
 
 def mask_any_rtsp_in_string(text: str) -> str:
-    """
-    Jika di 'text' ada substring 'rtsp://...' => parse => mask => ganti.
-    Agar password tidak tampak di log error_msg.
-    """
-    if not text:
+    """Jika text mengandung 'rtsp://', kita mask agar tidak bocor password."""
+    if not text or "rtsp://" not in text:
         return text
-    if "rtsp://" not in text:
-        return text
-
-    # Sederhana: kita ambil potongan setelah "rtsp://" lalu mask
-    # (Kalau banyak link, kita handle satu saja, minimal)
     idx = text.find("rtsp://")
     prefix = text[:idx]
-    url_part = text[idx:].split(" ", 1)[0]  # ambil sampai spasi (kasus minimal)
+    url_part = text[idx:].split(" ", 1)[0]
     suffix = ""
     if " " in text[idx:]:
         suffix = text[idx:].split(" ", 1)[1]
-
     masked_url = mask_url_for_log(url_part)
     return prefix + masked_url + " " + suffix
 
-# --------------------------------------------------------
-# 2. HELPER FUNCTIONS
-# --------------------------------------------------------
 def load_json_file(filepath):
     if not os.path.isfile(filepath):
         logger.warning(f"File {filepath} tidak ditemukan.")
@@ -149,10 +108,13 @@ def get_file_hash(filepath):
         return None
 
 def start_ffmpeg_pipeline(channel, title, rtsp_link):
+    """
+    Menjalankan FFmpeg => output HLS di HLS_OUTPUT_DIR/ch_{channel}/index.m3u8
+    Pastikan folder sudah ada agar 'failed to rename file ...' tidak muncul.
+    """
     out_dir = os.path.join(HLS_OUTPUT_DIR, f"ch_{channel}")
-    os.makedirs(out_dir, exist_ok=True)
+    os.makedirs(out_dir, exist_ok=True)  # penting!
 
-    # Masked link untuk log
     masked_link = mask_url_for_log(rtsp_link)
     cmd = (
         f"ffmpeg -y "
@@ -167,11 +129,9 @@ def start_ffmpeg_pipeline(channel, title, rtsp_link):
         f"-f hls "
         f"{os.path.join(out_dir, 'index.m3u8')}"
     )
-
-    # Agar di log tidak menampilkan password
     masked_cmd = cmd.replace(rtsp_link, masked_link)
-
     logger.info(f"Menjalankan FFmpeg => channel={channel}, cmd={masked_cmd}")
+
     try:
         proc = subprocess.Popen(shlex.split(cmd))
         ffmpeg_processes[channel] = proc
@@ -189,16 +149,13 @@ def stop_ffmpeg_pipeline(channel):
             proc.kill()
     ffmpeg_processes.pop(channel, None)
 
-# --------------------------------------------------------
-# 3. Ambil Daftar Channel
-# --------------------------------------------------------
 def get_channel_list_from_resource():
     cfg = load_json_file(RESOURCE_MONITOR_PATH)
     if not cfg:
         return ("default_title", [], "127.0.0.1")
 
     stream_config = cfg.get("stream_config", {})
-    title = stream_config.get("stream_title", "default_title")
+    title   = stream_config.get("stream_title", "default_title")
     rtsp_ip = stream_config.get("rtsp_ip", "127.0.0.1")
 
     test_channel = stream_config.get("test_channel", "off")
@@ -215,9 +172,6 @@ def get_channel_list_from_resource():
         else:
             return (title, [], rtsp_ip)
 
-# --------------------------------------------------------
-# 4. Setup Awal => jalankan pipeline
-# --------------------------------------------------------
 def initial_ffmpeg_setup():
     title, channels, rtsp_ip = get_channel_list_from_resource()
     logger.info(f"initial_ffmpeg_setup => channels={channels}, title={title}, rtsp_ip={rtsp_ip}")
@@ -242,30 +196,30 @@ def initial_ffmpeg_setup():
 
             if str(ch) in validation_data:
                 ch_info = validation_data[str(ch)]
+                # black_ok
                 if ch_info.get("black_ok", False) is False:
                     black_ok = False
-                custom_link = ch_info.get("livestream_link", "")
+                # error_msg
                 error_msg   = ch_info.get("error_msg", None)
-
+                # link custom
+                custom_link = ch_info.get("livestream_link", "")
                 if custom_link:
                     rtsp_link = override_userpass(custom_link, user, pwd)
 
+            # Jika error_msg => skip pipeline
             if error_msg:
-                # Mask
                 masked_err = mask_any_rtsp_in_string(error_msg)
                 logger.info(f"Channel {ch} => error_msg={masked_err} => skip pipeline.")
                 channel_black_status[ch] = False
                 continue
 
+            # Jika black_ok=false => skip
             channel_black_status[ch] = black_ok
             if black_ok:
                 start_ffmpeg_pipeline(ch, title, rtsp_link)
             else:
                 logger.info(f"Channel {ch} => black_ok=false => skip pipeline.")
 
-# --------------------------------------------------------
-# 5. Monitor Loop => pantau perubahan file
-# --------------------------------------------------------
 def monitor_loop(interval=60):
     global resource_monitor_state_hash
     global channel_validation_hash
@@ -276,11 +230,13 @@ def monitor_loop(interval=60):
             new_v_hash = get_file_hash(CHANNEL_VALIDATION_PATH)
 
             with data_lock:
+                # Jika channel_validation.json berubah
                 if new_v_hash != channel_validation_hash:
                     channel_validation_hash = new_v_hash
                     val_data = load_json_file(CHANNEL_VALIDATION_PATH) or {}
                     update_black_ok_and_error(val_data)
 
+                # Jika resource_monitor_state.json berubah
                 if new_r_hash != resource_monitor_state_hash:
                     resource_monitor_state_hash = new_r_hash
                     title, new_channels, rtsp_ip = get_channel_list_from_resource()
@@ -310,22 +266,22 @@ def update_black_ok_and_error(val_data):
             new_error = ch_info.get("error_msg", None)
 
         if new_error:
-            # Mask di log
             masked_err = mask_any_rtsp_in_string(new_error)
-            if prev_status is True:
+            if prev_status:
                 logger.info(f"Channel {ch} => error_msg={masked_err} => stop pipeline.")
                 stop_ffmpeg_pipeline(ch)
                 channel_black_status[ch] = False
             continue
 
         if not new_black:
-            if prev_status is True:
-                logger.info(f"Channel {ch} => black_ok => false => stop pipeline.")
+            if prev_status:
+                logger.info(f"Channel {ch} => black_ok=false => stop pipeline.")
                 stop_ffmpeg_pipeline(ch)
                 channel_black_status[ch] = False
         else:
+            # black_ok => true => start pipeline kalau sebelumnya stop
             if not prev_status:
-                logger.info(f"Channel {ch} => black_ok => true => start pipeline.")
+                logger.info(f"Channel {ch} => black_ok=true => start pipeline.")
                 ch_info = val_data.get(str(ch), {})
                 custom_link = ch_info.get("livestream_link", "")
                 if custom_link:
@@ -348,6 +304,7 @@ def update_channels(title, new_channels, rtsp_ip):
     val_data = load_json_file(CHANNEL_VALIDATION_PATH) or {}
     new_set  = set(new_channels)
 
+    # Channel baru
     added = new_set - tracked_channels
     if added:
         logger.info(f"channel baru => {added}")
@@ -374,14 +331,15 @@ def update_channels(title, new_channels, rtsp_ip):
                 rtsp_link = override_userpass(raw_link, user, pwd)
 
                 if str(ch) in val_data:
-                    custom = val_data[str(ch)].get("livestream_link","")
-                    if custom:
-                        rtsp_link = override_userpass(custom, user, pwd)
+                    custom_link = val_data[str(ch)].get("livestream_link", "")
+                    if custom_link:
+                        rtsp_link = override_userpass(custom_link, user, pwd)
 
                 start_ffmpeg_pipeline(ch, title, rtsp_link)
             else:
                 logger.info(f"Channel {ch} => black_ok=false => skip pipeline.")
 
+    # Channel dihapus
     removed = tracked_channels - new_set
     if removed:
         logger.info(f"channel dihapus => {removed}")
@@ -390,9 +348,9 @@ def update_channels(title, new_channels, rtsp_ip):
             tracked_channels.remove(ch)
             channel_black_status.pop(ch, None)
 
-# --------------------------------------------------------
-# 6. FLASK ROUTES
-# --------------------------------------------------------
+# -----------
+# FLASK ROUTES
+# -----------
 @app.route("/")
 def index():
     index_file = os.path.join(HTML_BASE_DIR, "index.html")
@@ -401,31 +359,36 @@ def index():
     else:
         return "<h1>Welcome. No index.html found.</h1>"
 
-@app.route("/ch<int:channel>/", defaults={"filename": "index.m3u8"}, strict_slashes=False)
+@app.route("/ch<int:channel>", defaults={"filename": "index.m3u8"}, strict_slashes=False)
 @app.route("/ch<int:channel>/<path:filename>")
 def serve_channel_files(channel, filename):
+    """
+    Endpoint => http://host/ch1 => menampilkan file HLS (index.m3u8),
+    atau segmen .ts (http://host/ch1/seg0.ts), dsb.
+    """
     with data_lock:
         val_data = load_json_file(CHANNEL_VALIDATION_PATH)
         if val_data and str(channel) in val_data:
-            if val_data[str(channel)].get("error_msg"):
-                # Mask
-                masked_err = mask_any_rtsp_in_string(val_data[str(channel)]["error_msg"])
-                return f"<h1>Channel {channel} error => {masked_err}</h1>", 404
-            if val_data[str(channel)].get("black_ok", True) is False:
-                return f"<h1>Channel {channel} black_ok=false</h1>", 404
+            err_msg = val_data[str(channel)].get("error_msg")
+            blackok = val_data[str(channel)].get("black_ok", True)
 
-    folder_path = os.path.join(HLS_OUTPUT_DIR, f"ch_{channel}")
-    return send_from_directory(folder_path, filename)
+            if err_msg:
+                masked_err = mask_any_rtsp_in_string(err_msg)
+                # Coba load error.stream.html
+                error_html = os.path.join(HTML_BASE_DIR, "error", "error.stream.html")
+                if os.path.isfile(error_html):
+                    with open(error_html, "r") as f:
+                        tmpl = f.read()
+                    out_page = tmpl.replace("{{ channel }}", str(channel))
+                    out_page = out_page.replace("{{ error_msg }}", masked_err)
+                    return out_page, 200
+                else:
+                    # fallback => 404
+                    return f"<h1>Channel {channel} error => {masked_err}</h1>", 404
 
-@app.route("/hls/<int:channel>/<path:filename>")
-def serve_hls_compat(channel, filename):
-    with data_lock:
-        val_data = load_json_file(CHANNEL_VALIDATION_PATH)
-        if val_data and str(channel) in val_data:
-            if val_data[str(channel)].get("error_msg"):
-                masked_err = mask_any_rtsp_in_string(val_data[str(channel)]["error_msg"])
-                return f"<h1>Channel {channel} error => {masked_err}</h1>", 404
-            if val_data[str(channel)].get("black_ok", True) is False:
+            if not blackok:
+                # Juga load misal error.stream.html jika mau
+                # Atau kembalikan 404
                 return f"<h1>Channel {channel} black_ok=false</h1>", 404
 
     folder_path = os.path.join(HLS_OUTPUT_DIR, f"ch_{channel}")
@@ -433,26 +396,26 @@ def serve_hls_compat(channel, filename):
 
 @app.errorhandler(404)
 def custom_404(e):
-    return "<h1>404 Not Found</h1>", 404
+    # Pakai file 404.html jika ada
+    err_404_file = os.path.join(HTML_BASE_DIR, "error", "404.html")
+    if os.path.isfile(err_404_file):
+        return send_from_directory(os.path.join(HTML_BASE_DIR, "error"), "404.html"), 404
+    else:
+        return "<h1>404 Not Found</h1>", 404
 
 @app.errorhandler(500)
 def custom_500(e):
     return "<h1>500 Internal Server Error</h1>", 500
 
-# --------------------------------------------------------
-# 7. MAIN: Pipeline & Monitor
-# --------------------------------------------------------
+# -----------
+# MAIN
+# -----------
 logger.info("Memulai pipeline & monitor loop (Gunicorn top-level)")
 
-# 1) Jalankan pipeline awal
 initial_ffmpeg_setup()
 
-# 2) Jalankan monitor loop di background
 def run_monitor():
     monitor_loop(interval=60)
 
 t = threading.Thread(target=run_monitor, daemon=True)
 t.start()
-
-# 3) Gunicorn akan mencari 'app' ini.
-# Gunakan 1 worker => pipeline tidak berulang.
