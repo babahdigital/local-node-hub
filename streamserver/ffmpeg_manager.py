@@ -2,15 +2,16 @@
 """
 ffmpeg_manager.py
 
-Script Manager yang bertugas menjalankan pipeline FFmpeg HLS. 
+Script Manager yang bertugas menjalankan pipeline FFmpeg HLS:
 - Mengambil daftar channel dari resource_monitor_state.json
 - Mengecek validasi (black_ok, error_msg) di channel_validation.json
 - (Opsional) Melakukan freeze-check sebelum start pipeline
 - Menjalankan pipeline FFmpeg (start_ffmpeg_pipeline) atau menghentikannya
-- Loop monitor tiap 60 detik untuk update channel
+- Memantau perubahan file resource_monitor_state.json & channel_validation.json
+  setiap 60 detik => update pipeline
 
-Dijalankan di bawah Supervisor / Systemd / service lain agar 
-tetap berjalan di background tanpa tergantung Gunicorn worker.
+Dijalankan di bawah Supervisor / Systemd agar tetap 
+berjalan di background tanpa tergantung worker Gunicorn.
 """
 
 import os
@@ -23,18 +24,17 @@ import threading
 import hashlib
 from urllib.parse import quote, urlparse, urlunparse
 
-# -----------------------------
+###########################################################
 # 0) SETUP PATH UNTUK utils.py
-# -----------------------------
+###########################################################
 # Misal utils.py berada di /app/scripts
-# Jika utils.py ada di /app/streamserver, ubah path.
+# Jika utils.py berada di /app/streamserver, ganti path berikut.
 sys.path.append("/app/scripts")
 
-# Import dari utils
 from utils import decode_credentials, setup_category_logger
 
 ###########################################################
-#  Logging
+# Logging
 ###########################################################
 logger = setup_category_logger("CCTV-Manager")
 
@@ -48,7 +48,7 @@ def log_error(msg):
     logger.error(msg)
 
 ###########################################################
-#  Konfigurasi & PATH
+# KONFIGURASI & PATH
 ###########################################################
 RESOURCE_MONITOR_PATH   = "/mnt/Data/Syslog/resource/resource_monitor_state.json"
 CHANNEL_VALIDATION_PATH = "/mnt/Data/Syslog/rtsp/channel_validation.json"
@@ -68,6 +68,7 @@ ffmpeg_processes     = {}   # {channel: subprocess.Popen}
 channel_black_status = {}   # {channel: bool}
 tracked_channels     = set()
 
+# Lock & ephemeral freeze error
 data_lock            = threading.Lock()
 freeze_errors        = {}   # {channel: "Pesan freeze error"}
 
@@ -102,12 +103,12 @@ def mask_url_for_log(rtsp_url: str) -> str:
     """
     Masking user:pass di RTSP link agar tidak tampil di log.
     """
-    parsed = urlparse(rtsp_url)
-    if parsed.hostname:
-        host = parsed.hostname or ""
-        port = f":{parsed.port}" if parsed.port else ""
+    p = urlparse(rtsp_url)
+    if p.hostname:
+        host = p.hostname or ""
+        port = f":{p.port}" if p.port else ""
         new_netloc = f"****:****@{host}{port}"
-        return urlunparse((parsed.scheme, new_netloc, parsed.path, parsed.params, parsed.query, parsed.fragment))
+        return urlunparse((p.scheme, new_netloc, p.path, p.params, p.query, p.fragment))
     else:
         return rtsp_url
 
@@ -117,7 +118,7 @@ def mask_any_rtsp_in_string(text: str) -> str:
         return text
     idx = text.find("rtsp://")
     prefix = text[:idx]
-    url_part = text[idx:].split(" ", 1)[0]
+    url_part = text[idx:].split(" ", 1)[0]  # ambil sampai spasi (minimal)
     suffix = ""
     if " " in text[idx:]:
         suffix = text[idx:].split(" ", 1)[1]
@@ -125,7 +126,7 @@ def mask_any_rtsp_in_string(text: str) -> str:
     return prefix + masked_url + " " + suffix
 
 ###########################################################
-# 2) Load JSON, hash 
+# 2) Load JSON & get file hash
 ###########################################################
 def load_json_file(filepath):
     if not os.path.isfile(filepath):
@@ -160,7 +161,7 @@ def get_file_hash(filepath):
 ###########################################################
 def start_ffmpeg_pipeline(channel, title, rtsp_link):
     """
-    Menjalankan FFmpeg => output HLS ch_{channel}/index.m3u8
+    Menjalankan FFmpeg => output HLS di ch_{channel}/index.m3u8
     """
     out_dir = os.path.join(HLS_OUTPUT_DIR, f"ch_{channel}")
     os.makedirs(out_dir, exist_ok=True)
@@ -206,9 +207,9 @@ def stop_ffmpeg_pipeline(channel):
 ###########################################################
 def check_freeze_frames(rtsp_url, freeze_sens, times, delay):
     """
-    Lakukan freeze-check berulang (times kali).
-    Return True jika TIDAK freeze (alias freeze fails < times).
-    Return False jika freeze terdeteksi di semua attempt.
+    Lakukan freeze-check beberapa kali. 
+    Return True jika TIDAK freeze di setidaknya 1 attempt.
+    Return False jika freeze di SEMUA attempt.
     """
     fails = 0
     for i in range(times):
@@ -220,7 +221,7 @@ def check_freeze_frames(rtsp_url, freeze_sens, times, delay):
 
 def _freeze_once(rtsp_url, freeze_sens):
     """
-    Sekali freeze-check 5 detik (freezedetect).
+    Satu kali check freeze => ~5 detik.
     """
     cmd = [
         "ffmpeg","-hide_banner","-loglevel","error","-y","-err_detect","ignore_err",
@@ -297,7 +298,7 @@ def initial_ffmpeg_setup():
             raw_link = f"rtsp://{rtsp_ip}:554/cam/realmonitor?channel={ch}&subtype=0"
             rtsp_link = override_userpass(raw_link, user, pwd)
 
-            # Cek validation => black_ok / error_msg / custom link
+            # Cek validation => black_ok / error_msg / link custom
             if str(ch) in validation_data:
                 info = validation_data[str(ch)]
                 if info.get("black_ok", False) is False:
@@ -328,9 +329,13 @@ def initial_ffmpeg_setup():
                 log_info(f"Channel {ch} => black_ok=false => skip pipeline.")
 
 ###########################################################
-# 7) monitor_loop => update black_ok / freeze / add/remove
+# 7) monitor_loop => update
 ###########################################################
 def monitor_loop(interval=60):
+    """
+    Loop tiap 60 detik => pantau resource_monitor_state.json 
+    dan channel_validation.json => update pipeline
+    """
     global resource_monitor_state_hash, channel_validation_hash
 
     while True:
@@ -424,7 +429,7 @@ def update_black_ok_and_error(val_data):
 
 def update_channels(title, new_channels, rtsp_ip):
     """
-    Penambahan/penghapusan channel => jalankan/hentikan pipeline
+    Penambahan/penghapusan channel => jalankan/hentikan pipeline.
     """
     try:
         user, pwd = decode_credentials()
@@ -492,21 +497,20 @@ def update_channels(title, new_channels, rtsp_ip):
                 freeze_errors.pop(ch)
 
 ###########################################################
-# 9) Fungsi main_service => dipanggil supervisord
+# 9) main_service
 ###########################################################
 def main_service():
     """
-    Fungsi utama => jalankan initial_ffmpeg_setup + monitor_loop.
-    Dijalankan oleh supervisor (atau systemd). 
+    Fungsi utama => jalankan pipeline + monitor.
+    Dipanggil supervisord (atau systemd).
     """
-    # Jalankan pipeline awal
     initial_ffmpeg_setup()
 
-    # Jalankan monitor loop di thread
+    # loop monitor di background
     t = threading.Thread(target=monitor_loop, kwargs={"interval":60}, daemon=True)
     t.start()
 
-    # Idle loop agar script tidak exit
+    # Idle loop
     while True:
         time.sleep(1)
 
