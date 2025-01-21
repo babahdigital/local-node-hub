@@ -155,22 +155,21 @@ def collect_stream_info() -> dict:
       - rtsp_ip
       - test_channel
       - channel_count
-      - enable_freeze / enable_blackout (opsional, tapi kita skip di sini)
-      - rtsp_subtype (di main.py read di 'rtsp_config')
+      - dll.
 
-    Sedangkan 'rtsp_subtype' kita simpan di 'rtsp_config' 
-    agar script main.py bisa memungut di rcfg.get("rtsp_subtype", "0").
+    'rtsp_subtype' kita simpan di "rtsp_config" 
+    agar script main.py bisa memungut di rcfg["rtsp_subtype"].
     """
     # Info dasar
-    STREAM_TITLE  = os.getenv("STREAM_TITLE", "Unknown Title")
-    RTSP_IP       = os.getenv("RTSP_IP", "127.0.0.1")
+    STREAM_TITLE   = os.getenv("STREAM_TITLE", "Unknown Title")
+    RTSP_IP        = os.getenv("RTSP_IP", "127.0.0.1")
 
-    # Channel config
-    TEST_CHANNEL  = os.getenv("TEST_CHANNEL", "off")
-    CHANNELS      = int(os.getenv("CHANNELS", "1"))  # jika needed
+    # Channel config (ganti CHANNELS => CHANNEL_COUNT)
+    TEST_CHANNEL   = os.getenv("TEST_CHANNEL", "off")
+    CHANNEL_COUNT  = int(os.getenv("CHANNEL_COUNT", "1"))
 
     # Subtype, user, pass => kita taruh di "rtsp_config"
-    RTSP_SUBTYPE  = os.getenv("RTSP_SUBTYPE", "0")
+    RTSP_SUBTYPE   = os.getenv("RTSP_SUBTYPE", "0")
 
     # Lain-lain
     ENABLE_RTSP_VALIDATION = (os.getenv("ENABLE_RTSP_VALIDATION", "true").lower() == "true")
@@ -184,9 +183,9 @@ def collect_stream_info() -> dict:
         "ping_time_ms": rtt_ms
     }]
 
-    # 2) Channel list => if "off", range(1..CHANNELS)
+    # 2) Channel list => if "off", range(1..CHANNEL_COUNT)
     if TEST_CHANNEL.lower() == "off":
-        channel_list = list(range(1, CHANNELS + 1))
+        channel_list = list(range(1, CHANNEL_COUNT + 1))
     else:
         channel_list = []
         for c in TEST_CHANNEL.split(","):
@@ -202,31 +201,17 @@ def collect_stream_info() -> dict:
         "stream_title": STREAM_TITLE,
         "rtsp_ip": RTSP_IP,
         "test_channel": TEST_CHANNEL,
-        "channel_count": CHANNELS,  
-        # Optional: Freed/Black not set here => main.py fallback
-        # "enable_freeze": ...
-        # "enable_blackout": ...
-        # "rtsp_subtype": ... => taruh di rtsp_config agar main.py pick up
-
-        # Info lain
+        "channel_count": CHANNEL_COUNT,
         "enable_rtsp_validation": ENABLE_RTSP_VALIDATION,
         "skip_abdullah_check": SKIP_ABDULLAH_CHECK,
+
         "final_ips": final_ips,
         "ping_outside_host": PING_OUTSIDE_HOST,
         "ping_outside_ok": outside_ok,
         "ping_outside_ms": outside_rtt,
         "channel_list": channel_list,
-        "freeze_settings": {
-            "check_interval": CHECK_INTERVAL,
-            "freeze_sensitivity": FREEZE_SENSITIVITY,
-            "freeze_recheck_times": FREEZE_RECHECK_TIMES,
-            "freeze_recheck_delay": FREEZE_RECHECK_DELAY,
-            "freeze_cooldown": FREEZE_COOLDOWN
-        }
     }
 
-    # Taruh RTSP_SUBTYPE di "rtsp_config"
-    # (user, pass biasanya di base64 => main.py decode => tak perlu kita tulis di JSON plaintext)
     rtsp_config = {
         "rtsp_subtype": RTSP_SUBTYPE
     }
