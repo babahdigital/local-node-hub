@@ -1,33 +1,39 @@
-# Gunakan base image python:3.12-slim atau Debian-based minimal
-FROM python:3.12-slim
+# Stage 1: ffmpeg-builder
+FROM debian:bookworm-slim AS ffmpeg-builder
 
-# Pastikan apt-get update & install dependencies untuk build
-RUN apt-get update && apt-get install -y \
-    wget \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
-    gnupg \
+    autoconf \
+    automake \
     build-essential \
-    pkg-config \
     cmake \
+    libass-dev \
+    libfreetype-dev \
+    libgnutls28-dev \
+    libmp3lame-dev \
+    libnuma-dev \
+    libopus-dev \
     libssl-dev \
-    libffi-dev \
-    yasm \
-    nasm \
+    libtheora-dev \
+    libtool \
+    libvorbis-dev \
+    libvpx-dev \
     libx264-dev \
     libx265-dev \
-    libnuma-dev \
-    # ... library lain jika butuh
-    && rm -rf /var/lib/apt/lists/*
+    pkg-config \
+    wget \
+    yasm \
+    nasm \
+ && rm -rf /var/lib/apt/lists/*
 
-# Versi FFmpeg yang diinginkan
-ENV FFmpeg_VERSION="n6.0"
+RUN update-ca-certificates
 
-# Download & compile FFmpeg source
-RUN mkdir -p /tmp/ffmpeg-build && \
-    cd /tmp/ffmpeg-build && \
-    wget https://github.com/FFmpeg/FFmpeg/archive/refs/tags/${FFmpeg_VERSION}.tar.gz -O ffmpeg.tar.gz && \
+ARG FFMPEG_VERSION=n6.0
+RUN mkdir /ffmpeg && \
+    cd /ffmpeg && \
+    wget https://github.com/FFmpeg/FFmpeg/archive/refs/tags/${FFMPEG_VERSION}.tar.gz -O ffmpeg.tar.gz && \
     tar xzf ffmpeg.tar.gz && \
-    cd FFmpeg-${FFmpeg_VERSION} && \
+    cd FFmpeg-${FFMPEG_VERSION} && \
     ./configure \
         --prefix=/usr \
         --disable-debug \
@@ -38,33 +44,41 @@ RUN mkdir -p /tmp/ffmpeg-build && \
         --enable-libx264 \
         --enable-libx265 \
         --enable-nonfree \
-        # tambahkan opsi lain jika butuh
-    && make -j$(nproc) && make install && \
-    ldconfig && \
-    cd / && rm -rf /tmp/ffmpeg-build
+    && make -j"$(nproc)" \
+    && make install \
+    && ldconfig
 
-# Sekarang ffmpeg & ffprobe versi terbaru terpasang di /usr/bin
+# Stage 2: final
+FROM python:3.12-slim AS final
 
-# Buat folder /app/streamserver
+# (Install supervisor & library minimal)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    supervisor \
+    # plus library2 runtime basic (e.g. libass, libfreetype, dsb.)
+ && rm -rf /var/lib/apt/lists/*
+
+# Copy ffmpeg & ffprobe
+COPY --from=ffmpeg-builder /usr/bin/ffmpeg  /usr/bin/
+COPY --from=ffmpeg-builder /usr/bin/ffprobe /usr/bin/
+
+# Copy all .so from /usr/lib (like libavcodec.so.60, libavdevice.so.60, etc.)
+COPY --from=ffmpeg-builder /usr/lib /usr/lib
+
+# (Jika 'make install' menaruh library di /usr/local/lib, maka salin /usr/local/lib)
+# COPY --from=ffmpeg-builder /usr/local/lib /usr/local/lib
+
+# Lanjutkan instal requirements, salin project, dsb.
 WORKDIR /app/streamserver
-
-# Salin file requirements & install dependencies python
-COPY ./streamserver/requirements.txt /app/streamserver
+COPY ./streamserver/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Salin semua file project
 COPY ./streamserver /app/streamserver
-
-# Folder HLS
 RUN mkdir -p /app/streamserver/hls
 
-# Salin credentials.sh
-COPY ./config/credentials.sh /app/config/credentials.sh
-RUN chmod +x /app/config/credentials.sh || true
+# Salin supervisord.conf, entrypoint, dsb.
+COPY ./streamserver/config/supervisord.conf /etc/supervisor/supervisord.conf
+COPY ./streamserver/entrypoint.sh /app/streamserver/entrypoint.sh
+RUN chmod +x /app/streamserver/entrypoint.sh
 
-# Expose port 8080
 EXPOSE 8080
-
-# CMD: source credentials & jalankan Gunicorn 1 worker
-CMD ["/bin/bash", "-c", "source /app/config/credentials.sh && \
-     exec gunicorn --bind 0.0.0.0:8080 main:app --workers 1"]
+CMD ["/app/streamserver/entrypoint.sh"]
