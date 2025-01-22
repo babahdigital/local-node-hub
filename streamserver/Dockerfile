@@ -74,9 +74,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY ./streamserver /app/streamserver
 RUN mkdir -p /app/streamserver/hls
+RUN mkdir -p /app/streamserver/html/snapshots
 
 # Salin supervisord.conf, entrypoint, dsb.
 COPY ./streamserver/config/supervisord.conf /etc/supervisor/supervisord.conf
+COPY ./config/credentials.sh /app/config/credentials.sh
 COPY ./streamserver/entrypoint.sh /app/streamserver/entrypoint.sh
 RUN chmod +x /app/streamserver/entrypoint.sh
 

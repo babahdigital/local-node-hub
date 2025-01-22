@@ -192,6 +192,7 @@
 </footer>
 
 <script>
+// Referensi ke elemen-elemen DOM
 const cctvListDiv = document.getElementById('cctvList');
 const popupOverlay = document.getElementById('popupOverlay');
 const popupTitle   = document.getElementById('popupTitle');
@@ -203,7 +204,7 @@ let allChannels = []; // array of { chStr, cctvName, isActive, errMsg, hlsUrl, t
 let currentIndex = 0; // posisi channel terakhir yg ditampilkan
 const PAGE_SIZE = 4;  // Tampilkan 4 item per batch
 
-// Load data CCTV via /status
+// 1) Load data CCTV via /status
 fetch('/status')
   .then(res => res.json())
   .then(data => {
@@ -211,14 +212,16 @@ fetch('/status')
     // Ubah ke array agar memudahkan pagination
     for (let chStr in data) {
       const info = data[chStr];
-      const cctvName  = "CCTV " + chStr;  // atau isi nama lain
+      const cctvName  = "CCTV " + chStr;   // Anda bisa ubah jadi nama spesifik
       const isActive  = info.is_active;
       const errMsg    = info.error_msg;
-      const hlsUrl    = info.hls_url || ("/ch"+ chStr +"/index.m3u8");
-      // Anda butuh thumbnail? misal `info.thumbnail_url` atau default
+      const hlsUrl    = info.hls_url || ("/ch" + chStr + "/index.m3u8");
+      
+      // Thumbnails => jika endpoint /status mengembalikan "thumbnail_url", pakai itu.
+      // Bila tidak ada, fallback ke "img/default-thumb.jpg"
       const thumbnail = info.thumbnail_url || "img/default-thumb.jpg";
 
-      // Simpan ke array
+      // Buat item channel
       allChannels.push({
         chStr,
         cctvName,
@@ -229,7 +232,7 @@ fetch('/status')
       });
     }
 
-    // Filter => hanya channel isActive & no error
+    // Filter => hanya channel isActive & tidak ada error
     allChannels = allChannels.filter(item => item.isActive && !item.errMsg);
 
     // Tampilkan batch pertama
@@ -244,7 +247,7 @@ fetch('/status')
     console.error("Gagal memuat /status =>", err);
   });
 
-// Handler “Load More”
+// 2) Handler “Load More”
 loadMoreBtn.addEventListener('click', renderNextBatch);
 
 function renderNextBatch() {
@@ -262,7 +265,7 @@ function renderNextBatch() {
       <button>Play</button>
     `;
 
-    // Event: click => open popup
+    // Klik => open popup
     const btn = itemDiv.querySelector('button');
     btn.addEventListener('click', () => {
       openPopup(item.cctvName, item.hlsUrl);
@@ -278,14 +281,14 @@ function renderNextBatch() {
   }
 }
 
-// Meng-handle popup video HLS
+// 3) Meng-handle popup video HLS
 let hls = null;
 
 function openPopup(cctvName, streamUrl) {
   popupTitle.textContent = cctvName;
   popupOverlay.style.display = 'flex';
 
-  // Clear video
+  // Hentikan & reset video sebelumnya
   videoPlayer.pause();
   videoPlayer.removeAttribute('src');
   videoPlayer.load();

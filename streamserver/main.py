@@ -4,11 +4,22 @@ main.py
 
 Aplikasi Flask untuk men-serve:
 - File HLS (index.m3u8, segmen .ts) yang dihasilkan oleh ffmpeg_manager.py
-- File statis, seperti img/*, css/*, js/*
-- Endpoints error & status
+- File statis (gambar, css, js, dsb.)
+- Endpoint error & status
 
-Mengambil data channel dari channel_validation.json untuk menampilkan 
-info is_active, error_msg, dsb.
+Membaca data channel dari channel_validation.json:
+- is_active, error_msg, last_update, dsb.
+- Menyajikan status channel di /status + men-serve HLS di /ch<int>/.
+
+Juga men-serve snapshot (jika ada) di /snapshots/<filename>.
+
+Penggunaan:
+-----------
+- Pastikan folder /app/streamserver/html/snapshots berisi file 'ch_<channel>.jpg'
+  hasil snapshot_cctv.py.
+- Tambahkan 'default-thumb.jpg' di /app/streamserver/html/img sebagai fallback thumbnail.
+
+Author: (Anda)
 """
 
 import os
@@ -23,13 +34,16 @@ from utils import setup_category_logger, load_json_file
 app = Flask(__name__)
 logger = setup_category_logger("CCTV")
 
-# Environment variable atau default path
+# Environment variable atau default
 CHANNEL_VALIDATION_PATH = os.getenv("CHANNEL_VALIDATION_PATH", "/mnt/Data/Syslog/rtsp/channel_validation.json")
 HLS_OUTPUT_DIR          = os.getenv("HLS_OUTPUT_DIR", "/app/streamserver/hls")
 HTML_BASE_DIR           = os.getenv("HTML_BASE_DIR", "/app/streamserver/html")
 
 def mask_any_rtsp_in_string(text: str) -> str:
-    """Mask substring 'rtsp://...' dengan 'rtsp://****:****@' agar password tidak bocor."""
+    """
+    Mask substring 'rtsp://...' => 'rtsp://****:****@'
+    agar password tidak bocor di log / error.
+    """
     if not text or "rtsp://" not in text:
         return text
     idx = text.find("rtsp://")
@@ -49,49 +63,48 @@ def index():
         return "<h1>Welcome. No index.html found.</h1>"
 
 # --------------------------------------------------------------------
-# Serve Gambar, CSS, JS dari subfolder di HTML_BASE_DIR
+# 1. Serve file statis: img, css, js, snapshots
 # --------------------------------------------------------------------
 @app.route("/img/<path:filename>")
 def serve_images(filename):
     """
-    Men-serve file gambar dari folder HTML_BASE_DIR/img
-    Contoh akses: http://host:port/img/logo.png
+    Men-serve file gambar dari HTML_BASE_DIR/img
+    Contoh akses: /img/logo.png
     """
     img_dir = os.path.join(HTML_BASE_DIR, "img")
     return send_from_directory(img_dir, filename)
 
 @app.route("/css/<path:filename>")
 def serve_css(filename):
-    """
-    Men-serve file CSS dari folder HTML_BASE_DIR/css
-    Contoh akses: http://host:port/css/style.css
-    """
     css_dir = os.path.join(HTML_BASE_DIR, "css")
     return send_from_directory(css_dir, filename)
 
 @app.route("/js/<path:filename>")
 def serve_js(filename):
-    """
-    Men-serve file JavaScript dari folder HTML_BASE_DIR/js
-    Contoh akses: http://host:port/js/main.js
-    """
     js_dir = os.path.join(HTML_BASE_DIR, "js")
     return send_from_directory(js_dir, filename)
 
+@app.route("/snapshots/<path:filename>")
+def serve_snapshots(filename):
+    """
+    Men-serve hasil snapshot cctv (.jpg) dari /snapshots.
+    """
+    snap_dir = os.path.join(HTML_BASE_DIR, "snapshots")
+    return send_from_directory(snap_dir, filename)
+
 # --------------------------------------------------------------------
-# Route HLS
+# 2. Route HLS => /ch<int:channel>/
 # --------------------------------------------------------------------
 @app.route("/ch<int:channel>", strict_slashes=False)
 def ch_no_slash(channel):
-    # redirect ke /chX/
     return redirect(f"/ch{channel}/")
 
 @app.route("/ch<int:channel>/", defaults={"filename": "index.m3u8"}, strict_slashes=False)
 @app.route("/ch<int:channel>/<path:filename>")
 def serve_channel_files(channel, filename):
     """
-    Men-serve file HLS: index.m3u8, segmen .ts, dsb.
-    Validasi dulu is_active & error_msg dari channel_validation.json
+    Men-serve index.m3u8 & segmen .ts di /ch<int>/.
+    Validasi is_active & error_msg sebelum di-serve.
     """
     data = load_json_file(CHANNEL_VALIDATION_PATH)
     info = data.get(str(channel), {})
@@ -100,16 +113,15 @@ def serve_channel_files(channel, filename):
     is_active = info.get("is_active", False)
 
     if err_msg:
-        # Mask password di RTSP error
         masked = mask_any_rtsp_in_string(err_msg)
-        error_html = os.path.join(HTML_BASE_DIR, "error", "error.stream.html")
-        if os.path.isfile(error_html):
-            with open(error_html, "r") as f:
+        err_file = os.path.join(HTML_BASE_DIR, "error", "error.stream.html")
+        if os.path.isfile(err_file):
+            with open(err_file, "r") as f:
                 tmpl = f.read()
-            out_page = tmpl.replace("{{ channel }}", str(channel))
-            out_page = out_page.replace("{{ error_msg }}", masked)
-            out_page = out_page.replace("{{ is_active }}", str(is_active))
-            return out_page, 200
+            out_html = tmpl.replace("{{ channel }}", str(channel))
+            out_html = out_html.replace("{{ error_msg }}", masked)
+            out_html = out_html.replace("{{ is_active }}", str(is_active))
+            return out_html, 200
         else:
             return f"<h1>Channel {channel} error => {masked}</h1>", 404
 
@@ -120,19 +132,20 @@ def serve_channel_files(channel, filename):
     return send_from_directory(folder_path, filename)
 
 # --------------------------------------------------------------------
-# Endpoint /status => ringkasan info channel
+# 3. Endpoint /status => ringkasan channel
 # --------------------------------------------------------------------
 @app.route("/status", methods=["GET"])
 def status_all_channels():
     """
-    Kembalikan ringkasan info channel dalam format JSON.
+    Mengembalikan ringkasan info channel dalam format JSON:
     {
       "1": {
         "is_active": true,
         "error_msg": null,
-        "last_update": "2025-01-21T14:00:00...",
-        "hls_url": "http://IP:8080/ch1/",
-        "livestream_link": "rtsp://****:****@..."
+        "last_update": "...",
+        "hls_url": "http://host:port/ch1/",
+        "livestream_link": "rtsp://****:****@...",
+        "thumbnail_url": "http://host:port/snapshots/ch_1.jpg"
       },
       ...
     }
@@ -151,22 +164,31 @@ def status_all_channels():
         if err:
             err = mask_any_rtsp_in_string(err)
 
-        row = {
+        # Livestream link di-mask
+        raw_link = info.get("livestream_link", "")
+        masked_link = mask_any_rtsp_in_string(raw_link) if raw_link else None
+
+        # Cek snapshot => ch_<channel>.jpg
+        snapshot_filename = f"ch_{ch_str}.jpg"
+        snapshot_path = os.path.join(HTML_BASE_DIR, "snapshots", snapshot_filename)
+        if os.path.isfile(snapshot_path):
+            thumbnail_url = url_for("serve_snapshots", filename=snapshot_filename, _external=True)
+        else:
+            # Fallback default
+            thumbnail_url = url_for("serve_images", filename="default-thumb.jpg", _external=True)
+
+        result[ch_str] = {
             "is_active": info.get("is_active", False),
             "error_msg": err,
             "last_update": info.get("last_update"),
-            "hls_url": hls_url
+            "hls_url": hls_url,
+            "livestream_link": masked_link,
+            "thumbnail_url": thumbnail_url
         }
-        # Livestream link
-        raw_link = info.get("livestream_link")
-        if raw_link:
-            row["livestream_link"] = mask_any_rtsp_in_string(raw_link)
-
-        result[ch_str] = row
     return jsonify(result)
 
 # --------------------------------------------------------------------
-# Custom error
+# 4. Custom error
 # --------------------------------------------------------------------
 @app.errorhandler(404)
 def custom_404(e):

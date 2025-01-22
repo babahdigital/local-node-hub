@@ -37,6 +37,7 @@ def mask_user_env(user_env: str) -> str:
     return "****" if user_env else user_env
 
 def mask_rtsp_credentials(rtsp_url: str) -> str:
+    # Sembunyikan user & password
     return re.sub(r"(//)([^:]+):([^@]+)(@)", r"\1****:****\4", rtsp_url)
 
 
@@ -122,6 +123,9 @@ FRAME_SKIP       = int(os.getenv("FRAME_SKIP","5"))
 DOWNSCALE_RATIO  = float(os.getenv("DOWNSCALE_RATIO","0.5"))
 MOTION_SLEEP     = float(os.getenv("MOTION_SLEEP","0.2"))
 MOTION_AREA      = int(os.getenv("MOTION_AREA_THRESHOLD","3000"))
+
+# Interval re-check freeze/black + update JSON di dalam pipeline
+IN_PIPELINE_UPDATE_INTERVAL = int(os.getenv("IN_PIPELINE_UPDATE_INTERVAL", "10"))
 
 logger.info("[VALIDATION] BACKUP_MODE=%s", BACKUP_MODE)
 
@@ -250,7 +254,13 @@ def load_resource_config():
 # 5. Freeze / Black
 ######################################################
 def check_black_frames(rtsp_url, do_blackout, duration=None, threshold=None):
+    """
+    Return True jika TIDAK black, 
+    Return False jika terdeteksi black 
+    atau command error (subprocess error).
+    """
     if not do_blackout:
+        # Black detect disabled => anggap OK
         return True
     dur = duration if duration else BLACK_DURATION
     thr = threshold if threshold else BLACK_DETECT_THRESHOLD
@@ -271,7 +281,13 @@ def check_black_frames(rtsp_url, do_blackout, duration=None, threshold=None):
         return False
 
 def check_freeze_frames(rtsp_url, do_freeze, cpu_usage, freeze_sens=None, times=None, delay=None):
+    """
+    Return True jika TIDAK freeze,
+    Return False jika freeze terdeteksi 
+    atau command error.
+    """
     if not do_freeze:
+        # Freeze detect disabled => anggap OK
         return True
     if cpu_usage>90:
         logger.info("[FREEZE] CPU>90 => skip freeze-check => treat as freeze_ok=True.")
@@ -307,7 +323,7 @@ def _freeze_once(rtsp_url, freeze_sens):
 ######################################################
 # 6. Pipeline Classes (BackupSession sudah di import)
 ######################################################
-# Lihat di backup_manager.py
+# cek backup_manager.py di script lain
 
 ######################################################
 # 7. pipeline_xxx
@@ -315,18 +331,66 @@ def _freeze_once(rtsp_url, freeze_sens):
 from motion_detection import MotionDetector
 
 def pipeline_full(ch, config, rtsp_url):
-    """ FULL => merekam terus rolling. """
+    """
+    FULL => Merekam terus rolling. 
+    + Re-check freeze/black tiap IN_PIPELINE_UPDATE_INTERVAL detik 
+      agar JSON selalu terupdate real-time.
+
+    is_active => True menandakan pipeline jalan tanpa error.
+    recording => selalu True di mode FULL (karena selalu merekam).
+    """
     from backup_manager import BackupSession
+
     sess = BackupSession(rtsp_url, ch, config["stream_title"])
+    next_recheck = time.time() + IN_PIPELINE_UPDATE_INTERVAL
+
     while True:
         if not sess.proc:
             sess.start_recording()
+
+        # Rolling segment jika durasi habis
         if not sess.still_ok(CHUNK_DURATION):
             sess.stop_recording()
             sess.start_recording()
+
+        # Re-check freeze/black + update JSON
+        if time.time() >= next_recheck:
+            cpu_usage = config.get("cpu_usage", 0.0)
+            do_black  = ENABLE_BLACKOUT
+            do_freeze = ENABLE_FREEZE_CHECK
+
+            ok_black  = check_black_frames(rtsp_url, do_black)
+            ok_freeze = check_freeze_frames(rtsp_url, do_freeze, cpu_usage)
+
+            if not (ok_black and ok_freeze):
+                logger.warning("[pipeline_full] ch=%s => freeze/black => exit pipeline", ch)
+                sess.stop_recording()
+                raise Exception("re-check freeze/black fail in pipeline_full")
+
+            # Kalau lolos => update JSON real-time
+            update_validation_status(ch, {
+                "is_active": True,
+                "recording": True,  # full => selalu merekam
+                "freeze_check_enabled": do_freeze,
+                "black_check_enabled":  do_black,
+                "freeze_ok": ok_freeze,
+                "black_ok": ok_black,
+                "livestream_link": mask_rtsp_credentials(rtsp_url),
+                "error_msg": None
+            })
+            next_recheck = time.time() + IN_PIPELINE_UPDATE_INTERVAL
+
         time.sleep(1)
 
+
 def pipeline_motion(ch, config, rtsp_url, object_detection=False):
+    """
+    MOTION => Rekam hanya saat ada motion,
+    + Re-check freeze/black + update JSON real-time setiap interval.
+
+    is_active => True menandakan pipeline jalan (stream ok).
+    recording => True/False tergantung motion.
+    """
     import time
     from backup_manager import BackupSession
 
@@ -334,7 +398,11 @@ def pipeline_motion(ch, config, rtsp_url, object_detection=False):
     if not cap.isOpened():
         masked_err = f"ch={ch} => fail open => {mask_rtsp_credentials(rtsp_url)}"
         logger.error("[Main] %s", masked_err)
-        update_validation_status(ch,{"error_msg": masked_err, "is_active":False})
+        update_validation_status(ch,{
+            "error_msg": masked_err, 
+            "is_active": False, 
+            "recording": False
+        })
         raise RuntimeError(masked_err)
 
     motion_det = MotionDetector(area_threshold=MOTION_AREA)
@@ -354,59 +422,101 @@ def pipeline_motion(ch, config, rtsp_url, object_detection=False):
     last_motion  = 0
     frame_count  = 0
 
+    next_recheck = time.time() + IN_PIPELINE_UPDATE_INTERVAL
+
     while True:
         ret, frame = cap.read()
         if not ret or frame is None:
+            # Mungkin connection putus sementara
             time.sleep(1)
             continue
 
-        frame_count+=1
-        if frame_count % FRAME_SKIP !=0:
+        frame_count += 1
+        if frame_count % FRAME_SKIP != 0:
             time.sleep(MOTION_SLEEP)
-            continue
-
-        # downscale
-        if DOWNSCALE_RATIO<1.0:
-            try:
-                new_w = int(frame.shape[1]*DOWNSCALE_RATIO)
-                new_h = int(frame.shape[0]*DOWNSCALE_RATIO)
-                frame_small = cv2.resize(frame,(new_w,new_h), interpolation=cv2.INTER_AREA)
-            except:
-                frame_small=frame
         else:
-            frame_small=frame
-
-        bboxes = motion_det.detect(frame_small)
-        if bboxes:
-            if object_detection and obj_det:
-                results,_ = obj_det.detect(frame_small)
-                person_found = any(r[0]=="person" for r in results)
-                if not person_found:
-                    time.sleep(MOTION_SLEEP)
-                    continue
-
-            last_motion = time.time()
-            if not is_recording:
-                sess.start_recording()
-                is_recording=True
+            # downscale
+            if DOWNSCALE_RATIO < 1.0:
+                try:
+                    new_w = int(frame.shape[1]*DOWNSCALE_RATIO)
+                    new_h = int(frame.shape[0]*DOWNSCALE_RATIO)
+                    frame_small = cv2.resize(frame,(new_w,new_h), interpolation=cv2.INTER_AREA)
+                except:
+                    frame_small = frame
             else:
-                # rolling
-                if not sess.still_ok(MAX_RECORD):
-                    sess.stop_recording()
+                frame_small = frame
+
+            bboxes = motion_det.detect(frame_small)
+            motion_found = False
+
+            if bboxes:
+                if object_detection and obj_det:
+                    results,_ = obj_det.detect(frame_small)
+                    # Hanya rekam kalau ketemu orang (contoh)
+                    person_found = any(r[0] == "person" for r in results)
+                    if person_found:
+                        motion_found = True
+                else:
+                    motion_found = True
+
+            # Mulai merekam jika ada motion
+            if motion_found:
+                last_motion = time.time()
+                if not is_recording:
                     sess.start_recording()
-        else:
-            if is_recording:
-                idle_sec = time.time()-last_motion
-                if idle_sec> (MOTION_TIMEOUT+POST_MOTION_DELAY):
-                    sess.stop_recording()
-                    is_recording=False
+                    is_recording = True
+                else:
+                    # rolling
+                    if not sess.still_ok(MAX_RECORD):
+                        sess.stop_recording()
+                        sess.start_recording()
+            else:
+                # Stop recording jika idle melebihi (MOTION_TIMEOUT+POST_MOTION_DELAY)
+                if is_recording:
+                    idle_sec = time.time() - last_motion
+                    if idle_sec > (MOTION_TIMEOUT + POST_MOTION_DELAY):
+                        sess.stop_recording()
+                        is_recording = False
+
+        # Re-check freeze/black + update JSON tiap interval
+        if time.time() >= next_recheck:
+            cpu_usage = config.get("cpu_usage", 0.0)
+            do_black  = ENABLE_BLACKOUT
+            do_freeze = ENABLE_FREEZE_CHECK
+
+            ok_black  = check_black_frames(rtsp_url, do_black)
+            ok_freeze = check_freeze_frames(rtsp_url, do_freeze, cpu_usage)
+
+            if not (ok_black and ok_freeze):
+                logger.warning("[pipeline_motion] ch=%s => freeze/black => exit pipeline", ch)
+                sess.stop_recording()
+                raise Exception("re-check freeze/black fail in pipeline_motion")
+
+            # Update JSON
+            update_validation_status(ch, {
+                "is_active": True,           # stream/pipeline ok
+                "recording": is_recording,   # sedang merekam?
+                "freeze_check_enabled": do_freeze,
+                "black_check_enabled":  do_black,
+                "freeze_ok": ok_freeze,
+                "black_ok": ok_black,
+                "livestream_link": mask_rtsp_credentials(rtsp_url),
+                "error_msg": None
+            })
+
+            next_recheck = time.time() + IN_PIPELINE_UPDATE_INTERVAL
 
         time.sleep(MOTION_SLEEP)
+
 
 def pipeline_motion_dual(ch, config, main_url, with_object=False):
     """
     Baca sub-stream => if motion => rekam main_url => rolling MAX_RECORD.
+    + Re-check freeze/black + update JSON real-time tiap interval.
     Stop if idle > (MOTION_TIMEOUT+POST_MOTION_DELAY).
+
+    is_active => pipeline ok (sub-stream terbuka).
+    recording => True/False tergantung motion.
     """
     import time
     from backup_manager import BackupSession
@@ -422,7 +532,11 @@ def pipeline_motion_dual(ch, config, main_url, with_object=False):
     if not cap_sub.isOpened():
         masked_err = f"ch={ch} => fail open sub => {masked_sub}"
         logger.error("[DualStream] %s", masked_err)
-        update_validation_status(ch, {"error_msg": masked_err, "is_active":False})
+        update_validation_status(ch, {
+            "error_msg": masked_err,
+            "is_active": False,
+            "recording": False
+        })
         raise RuntimeError(masked_err)
 
     motion_det = MotionDetector(area_threshold=MOTION_AREA)
@@ -438,9 +552,11 @@ def pipeline_motion_dual(ch, config, main_url, with_object=False):
         )
 
     sess = BackupSession(main_url, ch, config["stream_title"])
-    is_recording=False
+    is_recording = False
     last_motion=0
     frame_count=0
+
+    next_recheck = time.time() + IN_PIPELINE_UPDATE_INTERVAL
 
     while True:
         ret, frame=cap_sub.read()
@@ -451,47 +567,79 @@ def pipeline_motion_dual(ch, config, main_url, with_object=False):
         frame_count+=1
         if frame_count % FRAME_SKIP !=0:
             time.sleep(MOTION_SLEEP)
-            continue
-
-        # downscale
-        if DOWNSCALE_RATIO<1.0:
-            try:
-                new_w=int(frame.shape[1]*DOWNSCALE_RATIO)
-                new_h=int(frame.shape[0]*DOWNSCALE_RATIO)
-                frame_small=cv2.resize(frame,(new_w,new_h), interpolation=cv2.INTER_AREA)
-            except:
-                frame_small=frame
         else:
-            frame_small=frame
-
-        bboxes=motion_det.detect(frame_small)
-        if bboxes:
-            if with_object and obj_det:
-                results,_=obj_det.detect(frame_small)
-                person_found=any(r[0]=="person" for r in results)
-                if not person_found:
-                    time.sleep(MOTION_SLEEP)
-                    continue
-
-            last_motion=time.time()
-            if not is_recording:
-                sess.start_recording()
-                is_recording=True
+            # downscale
+            if DOWNSCALE_RATIO<1.0:
+                try:
+                    new_w=int(frame.shape[1]*DOWNSCALE_RATIO)
+                    new_h=int(frame.shape[0]*DOWNSCALE_RATIO)
+                    frame_small=cv2.resize(frame,(new_w,new_h), interpolation=cv2.INTER_AREA)
+                except:
+                    frame_small=frame
             else:
-                if not sess.still_ok(MAX_RECORD):
-                    sess.stop_recording()
+                frame_small=frame
+
+            bboxes=motion_det.detect(frame_small)
+            motion_found=False
+
+            if bboxes:
+                if with_object and obj_det:
+                    results,_=obj_det.detect(frame_small)
+                    person_found=any(r[0]=="person" for r in results)
+                    if person_found:
+                        motion_found=True
+                else:
+                    motion_found=True
+
+            if motion_found:
+                last_motion=time.time()
+                if not is_recording:
                     sess.start_recording()
-        else:
-            if is_recording:
-                idle_sec=time.time()-last_motion
-                if idle_sec> (MOTION_TIMEOUT+POST_MOTION_DELAY):
-                    sess.stop_recording()
-                    is_recording=False
+                    is_recording=True
+                else:
+                    # rolling
+                    if not sess.still_ok(MAX_RECORD):
+                        sess.stop_recording()
+                        sess.start_recording()
+            else:
+                if is_recording:
+                    idle_sec=time.time()-last_motion
+                    if idle_sec > (MOTION_TIMEOUT+POST_MOTION_DELAY):
+                        sess.stop_recording()
+                        is_recording=False
+
+        # Re-check freeze/black + update JSON
+        if time.time() >= next_recheck:
+            cpu_usage = config.get("cpu_usage", 0.0)
+            do_black  = ENABLE_BLACKOUT
+            do_freeze = ENABLE_FREEZE_CHECK
+
+            ok_black  = check_black_frames(main_url, do_black)
+            ok_freeze = check_freeze_frames(main_url, do_freeze, cpu_usage)
+
+            if not (ok_black and ok_freeze):
+                logger.warning("[pipeline_motion_dual] ch=%s => freeze/black => exit pipeline", ch)
+                sess.stop_recording()
+                raise Exception("re-check freeze/black fail in pipeline_motion_dual")
+
+            # Update JSON
+            update_validation_status(ch, {
+                "is_active": True,            # sub-stream terbuka
+                "recording": is_recording,    # sedang merekam main-stream?
+                "freeze_check_enabled": do_freeze,
+                "black_check_enabled":  do_black,
+                "freeze_ok": ok_freeze,
+                "black_ok": ok_black,
+                "livestream_link": mask_rtsp_credentials(main_url),
+                "error_msg": None
+            })
+            next_recheck = time.time() + IN_PIPELINE_UPDATE_INTERVAL
 
         time.sleep(MOTION_SLEEP)
 
+
 ######################################################
-# --- Tambahkan definisi global LAST_CHECK_TIMES --- #
+# --- Tambahkan definisi global LAST_CHECK_TIMES ---
 ######################################################
 LAST_CHECK_TIMES = {}  # <--- PENTING: definisi global
 
@@ -507,8 +655,11 @@ def thread_for_channel(ch, config):
         channels = [int(x.strip()) for x in test_ch.split(",") if x.strip().isdigit()]
 
     while True:
-        # is_active=false
-        update_validation_status(ch, {"is_active": False})
+        # Mark is_active=false, recording=false (akan di-set true jika sukses pipeline)
+        update_validation_status(ch, {
+            "is_active": False,
+            "recording": False
+        })
 
         user    = config["rtsp_user"]
         pwd     = config["rtsp_password"]
@@ -536,14 +687,13 @@ def thread_for_channel(ch, config):
                         ch, interval, FREEZE_BLACK_INTERVAL)
         else:
             LAST_CHECK_TIMES[ch] = now
+            # blackdetect
             if cpu_usage>90:
+                # skip blackdetect
                 do_black=False
                 logger.info("[VALIDATION] ch=%s => CPU>90 => skip blackdetect", ch)
 
-            # blackdetect
-            ok_black = check_black_frames(raw_url, do_black,
-                                          duration=BLACK_DURATION,
-                                          threshold=BLACK_DETECT_THRESHOLD)
+            ok_black  = check_black_frames(raw_url, do_black)
             if not ok_black:
                 masked_err = f"ch={ch} => black => skip => {masked_url}"
                 logger.warning("[VALIDATION] %s", masked_err)
@@ -552,7 +702,8 @@ def thread_for_channel(ch, config):
                     "black_ok": False,
                     "livestream_link": masked_url,
                     "error_msg": masked_err,
-                    "is_active": False
+                    "is_active": False,
+                    "recording": False
                 })
                 check_restart_if_too_many_fail(channels)
                 time.sleep(RESTART_DELAY)
@@ -560,10 +711,7 @@ def thread_for_channel(ch, config):
 
             # freeze check
             if do_freeze:
-                ok_freeze = check_freeze_frames(raw_url, True, cpu_usage,
-                                                freeze_sens=FREEZE_DURATION,
-                                                times=FREEZE_RECHECK_TIMES,
-                                                delay=FREEZE_RECHECK_DELAY)
+                ok_freeze = check_freeze_frames(raw_url, True, cpu_usage)
                 if not ok_freeze:
                     masked_err = f"ch={ch} => freeze => skip => {masked_url}"
                     logger.warning("[VALIDATION] %s", masked_err)
@@ -572,7 +720,8 @@ def thread_for_channel(ch, config):
                         "black_ok":  ok_black,
                         "livestream_link": masked_url,
                         "error_msg": masked_err,
-                        "is_active": False
+                        "is_active": False,
+                        "recording": False
                     })
                     check_restart_if_too_many_fail(channels)
                     time.sleep(RESTART_DELAY)
@@ -580,13 +729,14 @@ def thread_for_channel(ch, config):
             else:
                 ok_freeze = True
 
-        # freeze/black pass => is_active=true
+        # freeze/black pass => is_active=true, recording=? (ditentukan di pipeline)
         update_validation_status(ch, {
             "freeze_ok": ok_freeze,
             "black_ok":  ok_black,
             "livestream_link": masked_url,
             "error_msg": None,
-            "is_active": True
+            "is_active": True,    # pipeline dianggap ok
+            "recording": False    # di pipeline nanti bisa di-set true
         })
 
         # pipeline
@@ -605,10 +755,19 @@ def thread_for_channel(ch, config):
                 logger.warning("[VALIDATION] BACKUP_MODE=%s unknown => fallback full", BACKUP_MODE)
                 pipeline_full(ch, config, raw_url)
         except Exception as e:
+            # Pipeline error => tandai is_active false, simpan error_msg
             logger.error("[Main] pipeline error ch=%s => %s", ch, e)
+            update_validation_status(ch, {
+                "is_active": False,
+                "recording": False,
+                "error_msg": f"{e}"
+            })
 
         # pipeline exit => is_active false
-        update_validation_status(ch, {"is_active": False})
+        update_validation_status(ch, {
+            "is_active": False,
+            "recording": False
+        })
         logger.info("[VALIDATION] ch=%s => pipeline exit => re-try in %ds", ch, RESTART_DELAY)
 
         # cek fail persentase

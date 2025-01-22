@@ -3,13 +3,12 @@
 ffmpeg_manager.py
 
 Script Manager yang bertugas menjalankan pipeline FFmpeg HLS:
-- Membaca daftar channel (resource_monitor_state.json) => channels.
-- Membaca channel_validation.json => cek is_active, error_msg.
+- Membaca daftar channel dari resource_monitor_state.json => (title, channels, rtsp_ip).
+- Membaca channel_validation.json => cek is_active, error_msg, dsb.
 - Menjalankan pipeline FFmpeg jika is_active=true & error_msg=None.
 - Hentikan pipeline jika is_active=false atau ada error_msg.
-- Loop memantau perubahan JSON tiap 60 detik => update pipeline.
-
-Tidak menulis balik ke channel_validation.json; hanya membaca.
+- Tidak menulis balik ke channel_validation.json (hanya membaca).
+- Memantau perubahan JSON tiap 60 detik => update pipeline (add/remove channel).
 """
 
 import os
@@ -25,20 +24,14 @@ from urllib.parse import quote, urlparse, urlunparse
 
 # Pastikan utils.py ada di /app/scripts
 sys.path.append("/app/scripts")
-from utils import (
-    decode_credentials,
-    setup_category_logger,
-    load_json_file
-)
+from utils import decode_credentials, setup_category_logger, load_json_file
 
 logger = setup_category_logger("CCTV-Manager")
 
 def log_info(msg):
     logger.info(msg)
-
 def log_warning(msg):
     logger.warning(msg)
-
 def log_error(msg):
     logger.error(msg)
 
@@ -56,7 +49,7 @@ HLS_LIST_SIZE = os.getenv("HLS_LIST_SIZE", "5")
 # Pipeline states
 ffmpeg_processes = {}   # {channel: subprocess.Popen}
 tracked_channels = set()  # channel yang terdaftar
-channel_states   = {}   # {channel: bool} => pipeline running or not
+channel_states   = {}   # {channel: bool} => pipeline running or not?
 
 # Lock & hash file
 data_lock        = threading.Lock()
@@ -94,6 +87,7 @@ def override_userpass(rtsp_url, user, pwd):
     parsed = urlparse(rtsp_url)
     user_esc = quote(user, safe='')
     pwd_esc  = quote(pwd,  safe='')
+
     host = parsed.hostname or ""
     port = f":{parsed.port}" if parsed.port else ""
     new_netloc = f"{user_esc}:{pwd_esc}@{host}{port}"
@@ -101,9 +95,9 @@ def override_userpass(rtsp_url, user, pwd):
     return urlunparse((
         parsed.scheme or "rtsp",
         new_netloc,
-        parsed.path   or "",
+        parsed.path or "",
         parsed.params or "",
-        parsed.query  or "",
+        parsed.query or "",
         parsed.fragment or ""
     ))
 
@@ -198,12 +192,12 @@ def get_channels_from_resource():
 # 5) initial_ffmpeg_setup
 # ----------------------------------------------------------------------------
 def initial_ffmpeg_setup():
-    log_info("Memulai pipeline & monitor di ffmpeg_manager (tanpa freeze/black).")
+    log_info("Memulai pipeline & monitor (ffmpeg_manager).")
 
     title, channels, rtsp_ip = get_channels_from_resource()
     log_info(f"[initial_ffmpeg_setup] => channels={channels}, title={title}, rtsp_ip={rtsp_ip}")
 
-    # Kita pakai RTSP_USER1_BASE64 + RTSP_PASSWORD_BASE64
+    # Contoh: pakai user=RTSP_USER1_BASE64, pass=RTSP_PASSWORD_BASE64
     try:
         user, pwd = decode_credentials(
             user_var="RTSP_USER1_BASE64",
@@ -214,14 +208,13 @@ def initial_ffmpeg_setup():
         log_warning("Pipeline tidak jalan => credential invalid.")
         return
 
-    # Baca channel_validation => is_active, error_msg, dsb.
     val_data = load_json_file(CHANNEL_VALIDATION_PATH)
 
     with data_lock:
         for ch in channels:
             tracked_channels.add(ch)
-
             info = val_data.get(str(ch), {})
+
             is_active = info.get("is_active", False)
             err_msg   = info.get("error_msg")
 
@@ -234,7 +227,6 @@ def initial_ffmpeg_setup():
                 raw_link = info.get("livestream_link")
                 if not raw_link:
                     raw_link = f"rtsp://{rtsp_ip}:554/cam/realmonitor?channel={ch}&subtype=0"
-
                 rtsp_link = override_userpass(raw_link, user, pwd)
                 start_ffmpeg_pipeline(ch, title, rtsp_link)
             else:
@@ -249,17 +241,19 @@ def monitor_loop(interval=60):
 
     while True:
         try:
+            # Cek hash file resource
             new_res = get_file_hash(RESOURCE_MONITOR_PATH)
+            # Cek hash file channel_validation
             new_val = get_file_hash(CHANNEL_VALIDATION_PATH)
 
             with data_lock:
-                # Jika channel_validation.json berubah
+                # Jika channel_validation.json berubah => cek state
                 if new_val != validation_hash:
                     validation_hash = new_val
                     val_data = load_json_file(CHANNEL_VALIDATION_PATH)
                     update_channels_state(val_data)
 
-                # Jika resource_monitor_state.json berubah
+                # Jika resource_monitor_state.json berubah => update channels
                 if new_res != resource_hash:
                     resource_hash = new_res
                     title, new_ch_list, rtsp_ip = get_channels_from_resource()
@@ -274,8 +268,10 @@ def monitor_loop(interval=60):
 # 7) update_channels_state => cek is_active/error_msg
 # ----------------------------------------------------------------------------
 def update_channels_state(val_data: dict):
+    """
+    Memulai/menghentikan pipeline berdasarkan is_active & error_msg.
+    """
     try:
-        # Ambil user & pass (User1, Password)
         user, pwd = decode_credentials(
             user_var="RTSP_USER1_BASE64",
             pass_var="RTSP_PASSWORD_BASE64"
@@ -284,10 +280,7 @@ def update_channels_state(val_data: dict):
         log_error(f"decode_credentials => {e}")
         return
 
-    # Juga ambil title & ip jika mau sinkron ke pipeline:
-    # (Supaya pas start, metadata pakai title dari resource.)
-    # (Mungkin resource bisa berubah juga.)
-    local_title, _, local_ip = get_channels_from_resource()
+    local_title, _, fallback_ip = get_channels_from_resource()
 
     for ch in tracked_channels:
         info = val_data.get(str(ch), {})
@@ -296,27 +289,23 @@ def update_channels_state(val_data: dict):
 
         prev_state = channel_states.get(ch, False)
 
-        # Jika ada error => stop pipeline
         if err_msg:
+            # Stop pipeline jika sedang jalan
             if prev_state:
                 log_info(f"Channel {ch} => error_msg => stop pipeline.")
                 stop_ffmpeg_pipeline(ch)
             continue
 
-        # Jika is_active => true => start pipeline kalau belum
         if is_active:
             if not prev_state:
                 raw_link = info.get("livestream_link")
                 if not raw_link:
-                    # fallback
-                    _, _, fallback_ip = get_channels_from_resource()
                     raw_link = f"rtsp://{fallback_ip}:554/cam/realmonitor?channel={ch}&subtype=0"
-
                 rtsp_link = override_userpass(raw_link, user, pwd)
                 log_info(f"Channel {ch} => is_active=true => start pipeline.")
                 start_ffmpeg_pipeline(ch, local_title, rtsp_link)
         else:
-            # stop pipeline jika sebelumnya jalan
+            # is_active=false => stop pipeline jika prev_state=true
             if prev_state:
                 log_info(f"Channel {ch} => is_active=false => stop pipeline.")
                 stop_ffmpeg_pipeline(ch)
@@ -325,11 +314,6 @@ def update_channels_state(val_data: dict):
 # 8) update_channels_list => add/remove channel
 # ----------------------------------------------------------------------------
 def update_channels_list(title, new_ch_list, rtsp_ip):
-    """
-    Menangani channel baru/hilang => jalankan/hentikan pipeline.
-    'title' & 'rtsp_ip' ini diperoleh dari get_channels_from_resource()
-    pada saat resource.json baru.
-    """
     val_data = load_json_file(CHANNEL_VALIDATION_PATH)
 
     new_set  = set(new_ch_list)
@@ -363,7 +347,6 @@ def update_channels_list(title, new_ch_list, rtsp_ip):
                 raw_link = info.get("livestream_link")
                 if not raw_link:
                     raw_link = f"rtsp://{rtsp_ip}:554/cam/realmonitor?channel={ch}&subtype=0"
-
                 rtsp_link = override_userpass(raw_link, user, pwd)
                 log_info(f"Channel {ch} => added => is_active=true => start pipeline.")
                 start_ffmpeg_pipeline(ch, title, rtsp_link)
@@ -379,13 +362,10 @@ def update_channels_list(title, new_ch_list, rtsp_ip):
             channel_states.pop(ch, None)
 
 # ----------------------------------------------------------------------------
-# 9) main_service => jalankan
+# 9) main_service
 # ----------------------------------------------------------------------------
 def main_service():
-    # Inisialisasi pipeline pertama
     initial_ffmpeg_setup()
-
-    # Jalankan monitor loop di thread daemon
     t = threading.Thread(target=monitor_loop, kwargs={"interval":60}, daemon=True)
     t.start()
 
@@ -393,5 +373,5 @@ def main_service():
     while True:
         time.sleep(1)
 
-if __name__=="__main__":
+if __name__ == "__main__":
     main_service()
