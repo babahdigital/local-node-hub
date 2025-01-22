@@ -3,14 +3,18 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Bank Kalel - Streaming CCTV</title>
+  <title>Bank Kalel - Streaming CCTV (Dua Kolom, Load More + Thumbnail)</title>
 
   <!-- hls.js dari CDN -->
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
 
   <style>
     /* Reset & body styling */
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
     body {
       font-family: Arial, sans-serif;
       background-color: #f4f7f9;
@@ -38,10 +42,14 @@
       margin: 40px auto;
       padding: 0 20px;
     }
+
+    /* Container item CCTV => grid 2 kolom, menampilkan max 4 item (2 baris) per “halaman” */
     .cctv-list {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+      grid-template-columns: repeat(2, 1fr);
+      grid-auto-rows: auto;
       gap: 20px;
+      margin-bottom: 30px;
     }
     .cctv-item {
       background-color: #fff;
@@ -53,6 +61,12 @@
     }
     .cctv-item:hover {
       transform: scale(1.02);
+    }
+    .cctv-item img.thumbnail {
+      width: 100%;
+      height: auto;
+      border-radius: 5px;
+      margin-bottom: 10px;
     }
     .cctv-item h2 {
       font-size: 1.2em;
@@ -71,6 +85,23 @@
     .cctv-item button:hover {
       background-color: #16a085;
     }
+
+    /* Tombol "Load More" */
+    #loadMoreBtn {
+      display: block;
+      margin: 0 auto 30px auto;
+      padding: 10px 20px;
+      font-size: 1.1em;
+      background-color: #1abc9c;
+      color: #fff;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    #loadMoreBtn:hover {
+      background-color: #16a085;
+    }
+
     /* Popup Overlay & content */
     #popupOverlay {
       position: fixed; 
@@ -120,6 +151,8 @@
       border-top: 1px solid #ddd;
       font-size: 0.9em;
       color: #999;
+      padding: 20px;
+      text-align: center;
     }
   </style>
 
@@ -133,12 +166,14 @@
 </header>
 
 <main>
-  <h2>Daftar CCTV</h2>
-  <p></p>
+  <h2>Daftar CCTV (2 kolom, max 4 item ditampilkan, ada thumbnail)</h2>
 
-  <div class="cctv-list" id="cctvList">
-    <!-- Daftar CCTV akan di-generate via JS (fetch /status) -->
-  </div>
+  <!-- Daftar CCTV -->
+  <div class="cctv-list" id="cctvList"></div>
+
+  <!-- Tombol Load More -->
+  <button id="loadMoreBtn" style="display:none;">Load More</button>
+
 </main>
 
 <!-- Popup/Modal -->
@@ -161,49 +196,96 @@ const cctvListDiv = document.getElementById('cctvList');
 const popupOverlay = document.getElementById('popupOverlay');
 const popupTitle   = document.getElementById('popupTitle');
 const videoPlayer  = document.getElementById('videoPlayer');
+const loadMoreBtn  = document.getElementById('loadMoreBtn');
 
-// Memuat data CCTV dari endpoint /status (contoh)
+// Variabel penampung data channel
+let allChannels = []; // array of { chStr, cctvName, isActive, errMsg, hlsUrl, thumbnail, ... }
+let currentIndex = 0; // posisi channel terakhir yg ditampilkan
+const PAGE_SIZE = 4;  // Tampilkan 4 item per batch
+
+// Load data CCTV via /status
 fetch('/status')
   .then(res => res.json())
   .then(data => {
     // data => object { "1": {...}, "2": {...}, ... }
-    // Tampilkan channel yang is_active & tanpa error_msg
+    // Ubah ke array agar memudahkan pagination
     for (let chStr in data) {
       const info = data[chStr];
-      const cctvName = "CCTV " + chStr;
-      const isActive = info.is_active;
-      const errMsg   = info.error_msg;
-      const hlsUrl   = info.hls_url || "/ch"+ chStr +"/index.m3u8";
+      const cctvName  = "CCTV " + chStr;  // atau isi nama lain
+      const isActive  = info.is_active;
+      const errMsg    = info.error_msg;
+      const hlsUrl    = info.hls_url || ("/ch"+ chStr +"/index.m3u8");
+      // Anda butuh thumbnail? misal `info.thumbnail_url` atau default
+      const thumbnail = info.thumbnail_url || "img/default-thumb.jpg";
 
-      if (isActive && !errMsg) {
-        // Buat elemen .cctv-item
-        const itemDiv = document.createElement('div');
-        itemDiv.className = 'cctv-item';
-        itemDiv.innerHTML = `
-          <h2>${cctvName}</h2>
-          <button>Play</button>
-        `;
-        // Bind event
-        const btn = itemDiv.querySelector('button');
-        btn.addEventListener('click', () => {
-          openPopup(cctvName, hlsUrl);
-        });
-        // Masukkan ke cctvListDiv
-        cctvListDiv.appendChild(itemDiv);
-      }
+      // Simpan ke array
+      allChannels.push({
+        chStr,
+        cctvName,
+        isActive,
+        errMsg,
+        hlsUrl,
+        thumbnail
+      });
+    }
+
+    // Filter => hanya channel isActive & no error
+    allChannels = allChannels.filter(item => item.isActive && !item.errMsg);
+
+    // Tampilkan batch pertama
+    renderNextBatch();
+
+    // Munculkan tombol “Load More” jika data melebihi PAGE_SIZE
+    if (allChannels.length > PAGE_SIZE) {
+      loadMoreBtn.style.display = 'block';
     }
   })
   .catch(err => {
     console.error("Gagal memuat /status =>", err);
   });
 
-let hls = null; // hls.js instance
+// Handler “Load More”
+loadMoreBtn.addEventListener('click', renderNextBatch);
+
+function renderNextBatch() {
+  // Render 4 item, start dari currentIndex
+  const endIndex = currentIndex + PAGE_SIZE;
+  const batch = allChannels.slice(currentIndex, endIndex);
+
+  batch.forEach(item => {
+    // item = { chStr, cctvName, isActive, errMsg, hlsUrl, thumbnail }
+    const itemDiv = document.createElement('div');
+    itemDiv.className = 'cctv-item';
+    itemDiv.innerHTML = `
+      <img src="${item.thumbnail}" alt="Preview CCTV" class="thumbnail" />
+      <h2>${item.cctvName}</h2>
+      <button>Play</button>
+    `;
+
+    // Event: click => open popup
+    const btn = itemDiv.querySelector('button');
+    btn.addEventListener('click', () => {
+      openPopup(item.cctvName, item.hlsUrl);
+    });
+
+    cctvListDiv.appendChild(itemDiv);
+  });
+
+  currentIndex = endIndex;
+  // Cek apakah masih ada sisa data
+  if (currentIndex >= allChannels.length) {
+    loadMoreBtn.style.display = 'none';
+  }
+}
+
+// Meng-handle popup video HLS
+let hls = null;
 
 function openPopup(cctvName, streamUrl) {
   popupTitle.textContent = cctvName;
   popupOverlay.style.display = 'flex';
 
-  // Clear video src, jika ada
+  // Clear video
   videoPlayer.pause();
   videoPlayer.removeAttribute('src');
   videoPlayer.load();
@@ -229,7 +311,6 @@ function openPopup(cctvName, streamUrl) {
 
 function closePopup() {
   popupOverlay.style.display = 'none';
-  // Lepas resource HLS
   if (hls) {
     hls.destroy();
     hls = null;
