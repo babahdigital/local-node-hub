@@ -10,30 +10,28 @@ Jika file JSON berubah (mtime berubah), skrip memuat ulang secara otomatis.
 
 Environment Variables yang diperlukan:
 --------------------------------------
-- RTSP_USER1_BASE64
+- RTSP_USER_BASE64
 - RTSP_PASSWORD_BASE64
-  (Masing-masing berisi kredensial RTSP dalam bentuk base64)
 
 Dependensi:
 -----------
 - ffmpeg (harus terinstall di container/host)
-- utils.py (berisi fungsi logger dsb., sesuai lampiran)
+- utils.py (berisi fungsi logger dsb.)
 
 Penggunaan:
 -----------
 Jalankan di supervisor atau sebagai service, misal:
   [program:dynamic_snapshot_cctv]
   command = /usr/bin/python3 /path/to/dynamic_snapshot_cctv.py
-
-Author: (Anda)
 """
 
 import os
+import sys
 import time
 import subprocess
-import sys
+import re
+import urllib.parse
 
-# Pastikan utils.py ada di /app/scripts
 sys.path.append("/app/scripts")
 from utils import decode_credentials, setup_category_logger, load_json_file
 
@@ -44,17 +42,12 @@ CHANNEL_VALIDATION_JSON = "/mnt/Data/Syslog/rtsp/channel_validation.json"
 SNAPSHOT_DIR = "/app/streamserver/html/snapshots"
 INTERVAL_SEC = 30  # Interval (detik) untuk loop snapshot
 
-# Siapkan logger kategori "RTSP"
 logger = setup_category_logger("RTSP")
 
 ###############################################################################
 # FUNGSI BANTU
 ###############################################################################
 def get_file_mtime(path: str) -> float:
-    """
-    Mengembalikan mtime (last modified time) dari sebuah file.
-    Jika file tidak ada, kembalikan 0.
-    """
     try:
         return os.path.getmtime(path)
     except FileNotFoundError:
@@ -63,24 +56,22 @@ def get_file_mtime(path: str) -> float:
 
 def replace_credentials_in_link(link: str, user: str, pwd: str) -> str:
     """
-    Jika link mengandung placeholder '****:****@', ganti dengan user:pwd.
+    Menggantikan placeholder '****:****@' (atau ****:****@@, dll.)
+    dengan user:pwd (URL-encoded) + satu '@'.
+
     Contoh:
-        link = "rtsp://****:****@172.16.10.252:554/cam/realmonitor?channel=16&subtype=0"
-        => "rtsp://admin:12345@172.16.10.252:554/cam/realmonitor?channel=16&subtype=0"
-    Kalau tidak ada placeholder, link dikembalikan apa adanya.
+      link = "rtsp://****:****@@172.16.10.252:554/cam/realmonitor?channel=1&subtype=0"
+      => "rtsp://babahdigital:Admin123%40@172.16.10.252:554/cam/realmonitor?channel=1"
     """
-    if "****:****@" in link:
-        parts = link.split("@", 1)
-        return f"rtsp://{user}:{pwd}@{parts[1]}"
-    return link
+    user_enc = urllib.parse.quote(user, safe='')
+    pwd_enc  = urllib.parse.quote(pwd,  safe='')
+
+    pattern = r"\*\*\*\*:\*\*\*\*@+"  # ****:****@ diikuti >=1 '@'
+    replacement = f"{user_enc}:{pwd_enc}@"
+    return re.sub(pattern, replacement, link)
 
 
 def take_snapshot(rtsp_link: str, output_path: str) -> bool:
-    """
-    Mengambil snapshot (1 frame) dari rtsp_link menggunakan ffmpeg,
-    lalu menyimpannya ke output_path (overwrite -y).
-    Mengembalikan True jika berhasil, False jika ffmpeg return code != 0.
-    """
     cmd = [
         "ffmpeg", "-y",
         "-rtsp_transport", "tcp",
@@ -91,17 +82,17 @@ def take_snapshot(rtsp_link: str, output_path: str) -> bool:
     result = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return (result.returncode == 0)
 
+
 ###############################################################################
 # FUNGSI MAIN
 ###############################################################################
 def main():
-    # Pastikan folder snapshots ada
     os.makedirs(SNAPSHOT_DIR, exist_ok=True)
 
     # Dekode kredensial RTSP dari environment
     try:
         user, pwd = decode_credentials("RTSP_USER_BASE64", "RTSP_PASSWORD_BASE64")
-        logger.info("Berhasil memuat kredensial RTSP (user/password di-*mask*).")
+        logger.info("Berhasil memuat kredensial RTSP (user/password dimasking).")
     except Exception as e:
         logger.error("Gagal decode RTSP_USER_BASE64/RTSP_PASSWORD_BASE64: %s", e)
         return  # Stop eksekusi, tak bisa jalan tanpa kredensial
@@ -133,7 +124,6 @@ def main():
                 logger.debug("Skip channel %s => data corrupt (not a dict).", channel_str)
                 continue
 
-            # Cek is_active & rtsp link
             is_active = info.get("is_active", False)
             rtsp_raw_link = info.get("livestream_link", "")
             if not is_active or not rtsp_raw_link:
@@ -141,13 +131,10 @@ def main():
                              channel_str, is_active, rtsp_raw_link)
                 continue
 
-            # Ganti placeholder '****:****@' jika ada
             rtsp_final_link = replace_credentials_in_link(rtsp_raw_link, user, pwd)
 
-            # Path output snapshot
             snapshot_file = os.path.join(SNAPSHOT_DIR, f"ch_{channel_str}.jpg")
 
-            # Ambil snapshot
             success = take_snapshot(rtsp_final_link, snapshot_file)
             if success:
                 logger.debug("Snapshot channel %s => %s (OK)", channel_str, snapshot_file)

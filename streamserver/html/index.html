@@ -3,25 +3,25 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Bank Kalel - Streaming CCTV (Dua Kolom, Load More + Thumbnail)</title>
+  <link rel="icon" type="image/x-icon" href="/img/favicon.ico">
+  <title>Bank Kalsel - Streaming CCTV</title>
 
-  <!-- hls.js dari CDN -->
+  <!-- Bootstrap 5 CSS (CDN) -->
+  <link 
+    rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
+  >
+
+  <!-- hls.js untuk streaming HLS -->
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
 
   <style>
-    /* Reset & body styling */
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
     body {
-      font-family: Arial, sans-serif;
       background-color: #f4f7f9;
-      color: #333;
       min-height: 100vh;
-      display: flex; 
+      display: flex;
       flex-direction: column;
+      margin: 0;
     }
     header, footer {
       background: #fff;
@@ -30,121 +30,12 @@
       border-bottom: 1px solid #ddd;
     }
     header img {
-      width: 200px;
+      width: 180px;
       margin-bottom: 10px;
     }
     header h1 {
       margin: 0;
       color: #2c3e50;
-    }
-    main {
-      max-width: 900px;
-      margin: 40px auto;
-      padding: 0 20px;
-    }
-
-    /* Container item CCTV => grid 2 kolom, menampilkan max 4 item (2 baris) per “halaman” */
-    .cctv-list {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      grid-auto-rows: auto;
-      gap: 20px;
-      margin-bottom: 30px;
-    }
-    .cctv-item {
-      background-color: #fff;
-      border-radius: 8px;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-      padding: 20px;
-      text-align: center;
-      transition: transform 0.2s ease;
-    }
-    .cctv-item:hover {
-      transform: scale(1.02);
-    }
-    .cctv-item img.thumbnail {
-      width: 100%;
-      height: auto;
-      border-radius: 5px;
-      margin-bottom: 10px;
-    }
-    .cctv-item h2 {
-      font-size: 1.2em;
-      margin-bottom: 10px;
-      color: #1abc9c;
-    }
-    .cctv-item button {
-      background-color: #1abc9c;
-      color: #fff;
-      border: none;
-      padding: 10px 15px;
-      border-radius: 5px;
-      cursor: pointer;
-      font-size: 1em;
-    }
-    .cctv-item button:hover {
-      background-color: #16a085;
-    }
-
-    /* Tombol "Load More" */
-    #loadMoreBtn {
-      display: block;
-      margin: 0 auto 30px auto;
-      padding: 10px 20px;
-      font-size: 1.1em;
-      background-color: #1abc9c;
-      color: #fff;
-      border: none;
-      border-radius: 5px;
-      cursor: pointer;
-    }
-    #loadMoreBtn:hover {
-      background-color: #16a085;
-    }
-
-    /* Popup Overlay & content */
-    #popupOverlay {
-      position: fixed; 
-      top:0; left:0; right:0; bottom:0;
-      background: rgba(0,0,0,0.6);
-      display: none; 
-      justify-content: center; 
-      align-items: center;
-      z-index: 9999;
-    }
-    .popupContent {
-      background: #fff;
-      max-width: 800px;
-      width: 95%;
-      border-radius: 8px;
-      padding: 20px;
-      position: relative;
-    }
-    .popupContent h3 {
-      margin-bottom: 15px;
-    }
-    .popupContent .closeBtn {
-      position: absolute;
-      top: 10px; 
-      right: 10px;
-      background: transparent;
-      border: none;
-      font-size: 1.5em;
-      cursor: pointer;
-      color: #999;
-    }
-    .popupContent .closeBtn:hover {
-      color: #666;
-    }
-    .video-container {
-      background: #000;
-      border-radius: 6px;
-      overflow: hidden;
-    }
-    video {
-      width: 100%;
-      height: 400px;
-      outline: none;
     }
     footer {
       margin-top: auto;
@@ -154,174 +45,247 @@
       padding: 20px;
       text-align: center;
     }
-  </style>
 
+    /* Kartu CCTV => fix width 300px, height 200px */
+    .cctv-card {
+      background-color: #fff;
+      border-radius: 0.25rem;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      width: 300px;
+      height: 200px;
+      position: relative; /* agar overlay bisa absolute di dalam */
+      margin: 0 auto;     /* agar card center di kolom */
+    }
+
+    /* Gambar filling entire cctv-card (300×200) */
+    .cctv-card img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover; 
+      border-radius: 0.25rem;
+    }
+
+    /* Tombol Play overlay di tengah */
+    .play-overlay {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      background-color: rgba(0,0,0,0.4);
+      color: #fff;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 999px;
+      cursor: pointer;
+      font-size: 1.1em;
+    }
+    .play-overlay:hover {
+      background-color: rgba(0,0,0,0.7);
+    }
+
+    /* Judul di bawah */
+    .cctv-title {
+      text-align: center;
+      position: absolute;
+      left: 0; right: 0; bottom: 0;
+      background-color: rgba(255,255,255,0.8);
+      font-weight: 500;
+      padding: 2px;
+      border-radius: 0 0 0.25rem 0.25rem;
+    }
+  </style>
 </head>
 <body>
 
 <header>
-  <img src="img/logo.png" alt="Logo Bank Kalel" />
-  <h1>Bank Kalel - Streaming CCTV</h1>
-  <p>Akses CCTV secara <strong>real-time</strong> via browser</p>
+  <img src="img/logo.png" alt="Logo Bank Kalsel" />
+  <h1>Bank Kalsel - Streaming CCTV</h1>
+  <p class="mb-0">Akses CCTV secara <strong>real-time</strong> via browser</p>
 </header>
 
-<main>
-  <h2>Daftar CCTV (2 kolom, max 4 item ditampilkan, ada thumbnail)</h2>
+<main class="container my-4">
+  <h2 class="text-center mb-4">Daftar CCTV</h2>
 
-  <!-- Daftar CCTV -->
-  <div class="cctv-list" id="cctvList"></div>
+  <!-- 3 kolom permanen -->
+  <div class="row row-cols-3 g-4" id="cctvList"></div>
 
   <!-- Tombol Load More -->
-  <button id="loadMoreBtn" style="display:none;">Load More</button>
-
+  <div class="text-center mt-4">
+    <button id="loadMoreBtn" class="btn btn-primary" style="display:none;">Load More</button>
+  </div>
 </main>
 
-<!-- Popup/Modal -->
-<div id="popupOverlay">
-  <div class="popupContent">
-    <button class="closeBtn" onclick="closePopup()">&times;</button>
-    <h3 id="popupTitle">Nama CCTV</h3>
-    <div class="video-container">
-      <video id="videoPlayer" controls></video>
+<footer>
+  &copy; 2025 Bank Kalsel - All rights reserved.
+</footer>
+
+<!-- Bootstrap 5 JS -->
+<script 
+  src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js">
+</script>
+
+<!-- Modal Video -->
+<div class="modal fade" id="videoModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content bg-dark text-light">
+      <div class="modal-header border-0">
+        <h5 class="modal-title" id="modalTitle">Nama CCTV</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="ratio ratio-16x9">
+          <video id="videoPlayer" controls></video>
+        </div>
+      </div>
     </div>
   </div>
 </div>
 
-<footer>
-  &copy; 2025 Bank Kalel - All rights reserved.
-</footer>
-
 <script>
-// Referensi ke elemen-elemen DOM
-const cctvListDiv = document.getElementById('cctvList');
-const popupOverlay = document.getElementById('popupOverlay');
-const popupTitle   = document.getElementById('popupTitle');
-const videoPlayer  = document.getElementById('videoPlayer');
-const loadMoreBtn  = document.getElementById('loadMoreBtn');
+  // DOM references
+  const cctvListDiv = document.getElementById('cctvList');
+  const loadMoreBtn = document.getElementById('loadMoreBtn');
+  const videoModalEl= document.getElementById('videoModal');
+  const modalTitle  = document.getElementById('modalTitle');
+  const videoPlayer = document.getElementById('videoPlayer');
 
-// Variabel penampung data channel
-let allChannels = []; // array of { chStr, cctvName, isActive, errMsg, hlsUrl, thumbnail, ... }
-let currentIndex = 0; // posisi channel terakhir yg ditampilkan
-const PAGE_SIZE = 4;  // Tampilkan 4 item per batch
+  let videoModal    = null;
+  let allChannels   = [];
+  let currentIndex  = 0;
+  const PAGE_SIZE   = 6; // 6 item => 3 kolom x 2 baris per batch
 
-// 1) Load data CCTV via /status
-fetch('/status')
-  .then(res => res.json())
-  .then(data => {
-    // data => object { "1": {...}, "2": {...}, ... }
-    // Ubah ke array agar memudahkan pagination
-    for (let chStr in data) {
-      const info = data[chStr];
-      const cctvName  = "CCTV " + chStr;   // Anda bisa ubah jadi nama spesifik
-      const isActive  = info.is_active;
-      const errMsg    = info.error_msg;
-      const hlsUrl    = info.hls_url || ("/ch" + chStr + "/index.m3u8");
-      
-      // Thumbnails => jika endpoint /status mengembalikan "thumbnail_url", pakai itu.
-      // Bila tidak ada, fallback ke "img/default-thumb.jpg"
-      const thumbnail = info.thumbnail_url || "img/default-thumb.jpg";
+  // 1) Ambil data channel dari /status
+  fetch('/status')
+    .then(res => res.json())
+    .then(data => {
+      // Ubah data => array
+      for (let chStr in data) {
+        const info = data[chStr];
+        const cctvName  = "CCTV " + chStr;
+        const isActive  = info.is_active;
+        const errMsg    = info.error_msg;
+        const hlsUrl    = info.hls_url || "/ch" + chStr + "/index.m3u8";
+        const thumbnail = info.thumbnail_url || "img/default-thumb.jpg";
 
-      // Buat item channel
-      allChannels.push({
-        chStr,
-        cctvName,
-        isActive,
-        errMsg,
-        hlsUrl,
-        thumbnail
+        allChannels.push({
+          chStr,
+          cctvName,
+          isActive,
+          errMsg,
+          hlsUrl,
+          thumbnail
+        });
+      }
+
+      // Hanya isActive & tanpa error
+      allChannels = allChannels.filter(item => item.isActive && !item.errMsg);
+
+      // Tampilkan batch pertama
+      renderNextBatch();
+
+      // Tampilkan tombol Load More jika total melebihi PAGE_SIZE
+      if (allChannels.length > PAGE_SIZE) {
+        loadMoreBtn.style.display = 'inline-block';
+      }
+    })
+    .catch(err => {
+      console.error("Gagal memuat /status =>", err);
+    });
+
+  // 2) Fungsi Load More
+  loadMoreBtn.addEventListener('click', renderNextBatch);
+
+  function renderNextBatch() {
+    const endIndex = currentIndex + PAGE_SIZE;
+    const batch = allChannels.slice(currentIndex, endIndex);
+
+    batch.forEach(item => {
+      // col => 3 kolom total (row-cols-3)
+      const colDiv = document.createElement('div');
+      colDiv.className = 'col';
+
+      // Card 
+      const cardDiv = document.createElement('div');
+      cardDiv.className = 'cctv-card';
+
+      // Gambar (fill 300×200)
+      const imgEl = document.createElement('img');
+      imgEl.src = item.thumbnail;
+      imgEl.alt = 'Thumbnail CCTV';
+
+      // Tombol Play overlay
+      const playBtn = document.createElement('button');
+      playBtn.className = 'play-overlay';
+      playBtn.textContent = 'Play';
+      playBtn.addEventListener('click', () => {
+        openVideoModal(item.cctvName, item.hlsUrl);
+      });
+
+      // Label judul di bawah
+      const titleEl = document.createElement('div');
+      titleEl.className = 'cctv-title';
+      titleEl.textContent = item.cctvName;
+
+      // Susun
+      cardDiv.appendChild(imgEl);
+      cardDiv.appendChild(playBtn);
+      cardDiv.appendChild(titleEl);
+
+      colDiv.appendChild(cardDiv);
+      cctvListDiv.appendChild(colDiv);
+    });
+
+    currentIndex = endIndex;
+    if (currentIndex >= allChannels.length) {
+      loadMoreBtn.style.display = 'none';
+    }
+  }
+
+  // 3) Modal video
+  let hls = null;
+  function openVideoModal(cctvName, streamUrl) {
+    if (!videoModal) {
+      videoModal = new bootstrap.Modal(videoModalEl, {
+        backdrop: 'static',
+        keyboard: false
       });
     }
+    modalTitle.textContent = cctvName;
 
-    // Filter => hanya channel isActive & tidak ada error
-    allChannels = allChannels.filter(item => item.isActive && !item.errMsg);
+    // Reset video
+    videoPlayer.pause();
+    videoPlayer.removeAttribute('src');
+    videoPlayer.load();
 
-    // Tampilkan batch pertama
-    renderNextBatch();
-
-    // Munculkan tombol “Load More” jika data melebihi PAGE_SIZE
-    if (allChannels.length > PAGE_SIZE) {
-      loadMoreBtn.style.display = 'block';
+    if (Hls.isSupported()) {
+      hls = new Hls();
+      hls.loadSource(streamUrl);
+      hls.attachMedia(videoPlayer);
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        videoPlayer.play();
+      });
+    } else if (videoPlayer.canPlayType('application/vnd.apple.mpegurl')) {
+      // Safari / iOS
+      videoPlayer.src = streamUrl;
+      videoPlayer.addEventListener('loadedmetadata', () => {
+        videoPlayer.play();
+      });
+    } else {
+      alert("Browser tidak mendukung HLS.js");
     }
-  })
-  .catch(err => {
-    console.error("Gagal memuat /status =>", err);
+
+    videoModal.show();
+  }
+
+  // 4) Saat modal tertutup => hentikan video
+  videoModalEl.addEventListener('hidden.bs.modal', () => {
+    if (hls) {
+      hls.destroy();
+      hls = null;
+    }
+    videoPlayer.pause();
+    videoPlayer.removeAttribute('src');
+    videoPlayer.load();
   });
-
-// 2) Handler “Load More”
-loadMoreBtn.addEventListener('click', renderNextBatch);
-
-function renderNextBatch() {
-  // Render 4 item, start dari currentIndex
-  const endIndex = currentIndex + PAGE_SIZE;
-  const batch = allChannels.slice(currentIndex, endIndex);
-
-  batch.forEach(item => {
-    // item = { chStr, cctvName, isActive, errMsg, hlsUrl, thumbnail }
-    const itemDiv = document.createElement('div');
-    itemDiv.className = 'cctv-item';
-    itemDiv.innerHTML = `
-      <img src="${item.thumbnail}" alt="Preview CCTV" class="thumbnail" />
-      <h2>${item.cctvName}</h2>
-      <button>Play</button>
-    `;
-
-    // Klik => open popup
-    const btn = itemDiv.querySelector('button');
-    btn.addEventListener('click', () => {
-      openPopup(item.cctvName, item.hlsUrl);
-    });
-
-    cctvListDiv.appendChild(itemDiv);
-  });
-
-  currentIndex = endIndex;
-  // Cek apakah masih ada sisa data
-  if (currentIndex >= allChannels.length) {
-    loadMoreBtn.style.display = 'none';
-  }
-}
-
-// 3) Meng-handle popup video HLS
-let hls = null;
-
-function openPopup(cctvName, streamUrl) {
-  popupTitle.textContent = cctvName;
-  popupOverlay.style.display = 'flex';
-
-  // Hentikan & reset video sebelumnya
-  videoPlayer.pause();
-  videoPlayer.removeAttribute('src');
-  videoPlayer.load();
-
-  // Inisialisasi HLS
-  if (Hls.isSupported()) {
-    hls = new Hls();
-    hls.loadSource(streamUrl);
-    hls.attachMedia(videoPlayer);
-    hls.on(Hls.Events.MANIFEST_PARSED, function() {
-      videoPlayer.play();
-    });
-  } else if (videoPlayer.canPlayType('application/vnd.apple.mpegurl')) {
-    // Safari / iOS
-    videoPlayer.src = streamUrl;
-    videoPlayer.addEventListener('loadedmetadata', () => {
-      videoPlayer.play();
-    });
-  } else {
-    alert("Browser tidak mendukung HLS.js");
-  }
-}
-
-function closePopup() {
-  popupOverlay.style.display = 'none';
-  if (hls) {
-    hls.destroy();
-    hls = null;
-  }
-  videoPlayer.pause();
-  videoPlayer.removeAttribute('src');
-  videoPlayer.load();
-}
 </script>
 
 </body>
