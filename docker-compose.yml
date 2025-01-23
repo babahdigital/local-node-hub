@@ -127,20 +127,22 @@ services:
   # =========================================================
   # API Monitor (contoh)
   # =========================================================
-  api:
+  backend:
     build:
-      context: ./api
-      dockerfile: Dockerfile
-    image: api-monitor
-    container_name: api-monitor
+      context: .
+      dockerfile: ./backend/Dockerfile
+    image: backend
+    container_name: backend
     restart: always
     volumes:
       - /mnt/Data/Backup:/mnt/Data/Backup
-      - ./api/data:/app/data
+      - /mnt/Data/Syslog:/mnt/Data/Syslog
+      - ./scripts/utils.py:/app/scripts/utils.py
+      - ./config/log_messages.json:/app/config/log_messages.json
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
-    environment:
-      LOG_DIR: "/app/data"
+    ports:
+      - "5001:5001"
     networks:
       babahdigital:
 
