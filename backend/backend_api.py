@@ -111,14 +111,14 @@ def monitor_directory_usage(directory: str) -> dict:
 def parse_resource_json() -> dict:
     """
     Membaca resource_monitor_state.json.
-    Misalnya berisi:
+    Contoh data:
     {
+      "stream_config": { "stream_title": "KC. Ayani", "rtsp_ip": "...", ... },
       "resource_usage": {
         "cpu": { "usage_percent":..., "core_count_logical":... },
         "ram": { "usage_percent":..., "used":..., "free":... },
         ...
       }
-      ...
     }
     """
     try:
@@ -201,13 +201,14 @@ def get_backup_info(directory: str) -> dict:
 def status_all():
     """
     Menampilkan:
+    - Informasi node (stream_title) dari resource_monitor_state.json
     - Uptime
     - current_time
     - Disk usage (backup & syslog)
-    - CPU usage (usage_percent, core_count_logical) dari resource_monitor_state.json
-    - Memory usage (usage_percent, used, free) dari resource_monitor_state.json
-    - Channel aktif (channel_validation.json)
-    - Info file backup (file_count, date_range dd-MM-yyyy)
+    - CPU usage (usage_percent, core_count_logical)
+    - Memory usage (usage_percent, used, free)
+    - Channel aktif
+    - Info file backup
     """
     try:
         # 1) Uptime & current_time
@@ -218,11 +219,16 @@ def status_all():
         backup_usage = monitor_directory_usage(BACKUP_DIR)
         syslog_usage = monitor_directory_usage(SYSLOG_DIR)
 
-        # 3) Resource => CPU & RAM
+        # 3) Baca resource_data => CPU, RAM, dan stream_title
         resource_data = parse_resource_json()
         cpu_data = {}
         mem_data = {}
+        stream_title = "Unknown Node"
         if resource_data:
+            # stream_config => ambil 'stream_title'
+            stream_config = resource_data.get("stream_config", {})
+            stream_title = stream_config.get("stream_title", "Unknown Location")
+
             cpu_dict = resource_data.get("resource_usage", {}).get("cpu", {})
             cpu_data = {
                 "usage_percent": cpu_dict.get("usage_percent", 0),
@@ -230,7 +236,6 @@ def status_all():
             }
 
             ram_dict = resource_data.get("resource_usage", {}).get("ram", {})
-            # Kita tampilkan usage_percent, used, free saja (dalam MB, misal)
             mem_data = {
                 "usage_percent": ram_dict.get("usage_percent", 0),
                 "used_mb": round(ram_dict.get("used", 0) / (1024 * 1024), 1),
@@ -251,6 +256,7 @@ def status_all():
 
         # Gabungkan semua
         result = {
+            "node_title": stream_title,  # Informasi lokasi / nama node
             "uptime": uptime_str,
             "current_time": current_time_str,
             "backup_disk_usage": backup_usage,
