@@ -52,6 +52,9 @@ LOG_BASE_DIR="/mnt/Data/Syslog"
 # Bersihkan logs saat startup?
 CLEAN_ON_STARTUP="${CLEAN_ON_STARTUP:-true}"
 
+# Sentinel file untuk menandakan bahwa container sudah pernah diinisialisasi
+SENTINEL_FILE="$LOG_BASE_DIR/.initialized"
+
 ###############################################################################
 # 3. Load pesan dari log_messages.json
 ###############################################################################
@@ -122,7 +125,7 @@ clean_logs() {
     local filepath="$LOG_BASE_DIR/$file"
     mkdir -p "$(dirname "$filepath")"
     # Jangan dihapus jika CLEAN_ON_STARTUP=false?
-    # Boleh disesuaikan. Sekarang kita 'touch' agar exist
+    # Kita hanya 'touch' agar exist
     touch "$filepath"
     chown "$USER_OWNER:$GROUP_OWNER" "$filepath"
     chmod "$CHMOD_FILE" "$filepath"
@@ -236,7 +239,16 @@ setup_logrotate_and_cron() {
 ###############################################################################
 main() {
   load_messages
-  clean_logs
+
+  # Periksa sentinel file .initialized
+  if [[ ! -f "$SENTINEL_FILE" ]]; then
+    log "First-time container start => jalankan clean_logs()"
+    clean_logs
+    touch "$SENTINEL_FILE"
+  else
+    log "Container telah diinisialisasi sebelumnya => skip clean_logs()"
+  fi
+
   setup_logrotate_and_cron
 
   log "Memeriksa config syslog-ng: $SYSLOG_CONFIG"
