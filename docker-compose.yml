@@ -58,7 +58,7 @@ services:
       babahdigital:
     ports:
       # HLS Services
-      - "80:8080"
+      - "8080:8080"
     env_file:
       - ./streamserver/.env
 
